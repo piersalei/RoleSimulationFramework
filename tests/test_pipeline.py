@@ -1,0 +1,163 @@
+import copy
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from rolesim.catalog import build_catalog, digest
+from rolesim.persona import compile_views, validate_persona
+from rolesim.providers import MockBackend, strict_json
+from rolesim.runtime import (execute, initial_state, make_payload, observe,
+                             run_episode, validate_decision, validate_scenario)
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def load(name):
+    return json.loads((ROOT / "examples" / name).read_text())
+
+
+class CaptureBackend(MockBackend):
+    def __init__(self):
+        self.payloads = []
+
+    def decide(self, payload):
+        self.payloads.append(copy.deepcopy(payload))
+        return super().decide(payload)
+
+    def express(self, payload):
+        self.payloads.append(copy.deepcopy(payload))
+        return super().express(payload)
+
+
+class PipelineTests(unittest.TestCase):
+    def setUp(self):
+        self.persona = load("cautious.json")
+        self.scenario = load("cooperation_conflict.json")
+
+    def test_hidden_world_and_partner_information_never_reaches_either_call(self):
+        backend = CaptureBackend()
+        with tempfile.TemporaryDirectory() as folder:
+            run_episode(self.persona, self.scenario, backend, Path(folder) / "run")
+        calls = json.dumps(backend.payloads, ensure_ascii=False)
+        self.assertNotIn("HIDDEN_WORLD_SENTINEL", calls)
+        self.assertNotIn("下周的人员安排", calls)
+        self.assertNotIn("system_truth", calls)
+        self.assertEqual(len(backend.payloads), 8)
+
+    def test_views_do_not_expose_psychological_truth_to_other_roles(self):
+        views = compile_views(self.persona)
+        self.assertEqual(set(views["other_visible"]), {"id", "name", "description"})
+        self.assertNotIn("stable", views["role_self"])
+        views["system_truth"]["stable"]["attachment"]["anxiety"] = -2
+        self.assertEqual(self.persona["stable"]["attachment"]["anxiety"], .8)
+
+    def test_repeated_and_invisible_events_cannot_change_state(self):
+        state = initial_state()
+        observe(state, self.scenario["events"][0], self.persona)
+        prior = copy.deepcopy(state)
+        self.assertFalse(observe(state, self.scenario["events"][0], self.persona))
+        self.assertFalse(observe(state, self.scenario["events"][-1], self.persona))
+        self.assertEqual(state, prior)
+
+    def test_same_observation_has_persona_conditioned_state_response(self):
+        a, b = initial_state(), initial_state()
+        observe(a, self.scenario["events"][0], self.persona)
+        observe(b, self.scenario["events"][0], load("assertive.json"))
+        self.assertGreater(a["tension"], b["tension"])
+        self.assertEqual(a["reliability"], b["reliability"])
+
+    def test_promises_and_own_plans_do_not_count_as_fulfilment(self):
+        state = initial_state()
+        observe(state, self.scenario["events"][2], self.persona)
+        feedback = execute("propose_plan", self.persona["id"], self.scenario, 1)
+        observe(state, feedback, self.persona)
+        self.assertEqual(state["reliability"], .55)
+        observe(state, self.scenario["events"][3], self.persona)
+        self.assertGreater(state["reliability"], .55)
+
+    def test_unavailable_record_is_not_revealed_by_request_action(self):
+        self.scenario["evidence"]["readers"] = ["partner"]
+        result = execute("request_evidence", "cautious", self.scenario, 1)
+        self.assertNotEqual(result["id"], "status_receipt")
+        self.assertNotIn("部分数据仍在复核", result["text"])
+
+    def test_action_and_evidence_validation_rejects_fabrication(self):
+        state = initial_state()
+        event = self.scenario["events"][0]
+        observe(state, event, self.persona)
+        payload = make_payload(self.persona, state, event, self.scenario, "mechanisms")
+        valid = {"action": "wait", "evidence_ids": ["e1"], "brief_reason": "需要核对"}
+        validate_decision(valid, payload)
+        for patch in ({"action": "declare_success"}, {"evidence_ids": ["partner_private"]},
+                      {"stable_patch": {"values": {}}}, {"evidence_ids": []}):
+            with self.subTest(patch=patch), self.assertRaises(ValueError):
+                validate_decision({**valid, **patch}, payload)
+
+    def test_failed_model_is_recorded_without_mock_fallback(self):
+        class Broken(MockBackend):
+            def decide(self, payload):
+                return {"action": "invent", "evidence_ids": [], "brief_reason": "bad"}
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "run"
+            with self.assertRaises(ValueError):
+                run_episode(self.persona, self.scenario, Broken(), output)
+            manifest = json.loads((output / "manifest.json").read_text())
+            self.assertEqual(manifest["status"], "failed")
+            self.assertEqual((output / "audit.jsonl").read_text(), "")
+
+    def test_episode_reproducible_and_stable_persona_immutable(self):
+        before = copy.deepcopy(self.persona)
+        with tempfile.TemporaryDirectory() as folder:
+            a, b = Path(folder) / "a", Path(folder) / "b"
+            for target in (a, b):
+                run_episode(self.persona, self.scenario, MockBackend(), target)
+            self.assertEqual((a / "audit.jsonl").read_bytes(), (b / "audit.jsonl").read_bytes())
+            self.assertEqual((a / "manifest.json").read_bytes(), (b / "manifest.json").read_bytes())
+            with self.assertRaises(FileExistsError):
+                run_episode(self.persona, self.scenario, MockBackend(), a)
+        self.assertEqual(self.persona, before)
+
+    def test_profile_only_uses_same_observation_without_mechanism_or_state_prompt(self):
+        state = initial_state()
+        event = self.scenario["events"][0]
+        observe(state, event, self.persona)
+        a = make_payload(self.persona, state, event, self.scenario, "mechanisms")
+        b = make_payload(self.persona, state, event, self.scenario, "profile_only")
+        self.assertEqual(a["visible_history"], b["visible_history"])
+        self.assertNotIn("active_mechanisms", b)
+        self.assertNotIn("current_state", b)
+
+    def test_invalid_profiles_rejected(self):
+        for value in (True, float("nan"), 9):
+            bad = copy.deepcopy(self.persona)
+            bad["stable"]["personality"]["facets"]["neuroticism.anxiety"] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_persona(bad)
+        bad = copy.deepcopy(self.persona)
+        bad["stable"]["personality"]["scheme"] = "P1+P3"
+        with self.assertRaises(ValueError):
+            validate_persona(bad)
+
+    def test_claim_cannot_be_used_as_verified_trust_signal(self):
+        self.scenario["events"][2]["reliability_signal"] = .9
+        with self.assertRaises(ValueError):
+            validate_scenario(self.scenario)
+
+    def test_catalog_matches_sources_and_references(self):
+        catalog = build_catalog(ROOT / "data" / "sources")
+        saved = json.loads((ROOT / "data" / "catalog.json").read_text())
+        self.assertEqual(digest(catalog), digest(saved))
+        ids = [r["id"] for r in catalog["sections"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(r["status"] == "reference_only" for r in catalog["sections"]))
+        for source in self.persona["provenance"].values():
+            self.assertIn(source["source_ref"], ids)
+
+    def test_nonstandard_json_is_rejected(self):
+        with self.assertRaises(ValueError):
+            strict_json('{"value": NaN}')
+
+
+if __name__ == "__main__":
+    unittest.main()

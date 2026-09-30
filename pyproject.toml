@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "role-simulation-framework"
+version = "0.1.0"
+description = "Psychology-informed persona authoring and role simulation research prototype"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+rolesim = "rolesim.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["rolesim*"]
