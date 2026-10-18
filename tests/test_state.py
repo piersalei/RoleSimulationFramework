@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 
 from rolesim.mechanisms import CARD_MECHANISMS, CARDS
-from rolesim.runtime import initial_state, observe
+from rolesim.agent import initial_state, observe
+from rolesim.runtime import ScriptedEnvironment
 from rolesim.state import MECHANISMS, apply_delta, validate_dynamic
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -92,7 +93,7 @@ class RuntimeStateTests(unittest.TestCase):
         persona = json.loads((ROOT / "examples" / "cautious.json").read_text())
         scenario = json.loads((ROOT / "examples" / "cooperation_conflict.json").read_text())
         state = initial_state()
-        for event in scenario["events"]:
+        for _, event in ScriptedEnvironment(scenario, persona["id"]).scheduled():
             observe(state, event, persona)
         for delta in state["updates"]:
             for change in delta["changes"]:

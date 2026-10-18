@@ -90,14 +90,14 @@
 
 - 职责：实现发给场景组的那份接口合同——`step` / `perceive`、Event / ProposedAction / AgentState / StateDelta 的序列化、可见性过滤的二次校验。
 - 边界：环境裁决"实际发生了什么、谁看见了"；我们只提交尝试。角色提出计划不等于计划被接受。
-- 现状：**只有脚本执行器**（`runtime.execute`，单焦点角色、四轮固定反馈）。合同里的 `step` / `perceive` 接口尚未实现。这是最大的缺口。
+- 现状：`rolesim/contract.py` 定义合同附录里的数据类（Event、ProposedAction、Step/Perceive 请求与响应）；`rolesim/agent.py` 的 `Agent.step` / `Agent.perceive` 按合同实现。AgentState、StateDelta 是可 JSON 序列化的 dict，按合同 2.4、2.5 的外层结构组织。`runtime.ScriptedEnvironment` 是其中一种裁决器：单焦点角色、四轮固定反馈，产出 `type=outcome` 事件并带 `of_proposal`。多角色调度器尚未实现。两处工程侧扩展待环境组确认：一是 `Event.signals` 携带脚本标注的线索，真实环境可以不给；二是脚本裁决器从 `ProposedAction.intent_note` 读取动作标签。
 - 归属：场景组定义接口，工程侧实现适配器。
 
 ### M7 轨迹记录与回放（trace）
 
 - 职责：manifest、输入快照、views、audit、public、state 落盘；按 state_id 回放；配置哈希。
 - 边界：`inputs.json` 含世界私有数据，只能用于系统侧复现，不能进入任何评审包；`audit.jsonl` 是内部审计，不混入外显行为评分。
-- 现状：六类产物已落盘。缺 git SHA 登记、缺按 state_id 的回放工具。
+- 现状：已落盘的产物新增 `states.jsonl`（每个 AgentState 快照，按 state_id 串链）和 `environment_events.json`（环境产生的全部 Event，含私有事件，只用于系统侧）。仍缺 git SHA 登记，也缺按 state_id 的回放工具。
 - 归属：工程侧。
 
 ### M8 评测（evaluation）
@@ -110,7 +110,7 @@
 ### M9 工程基础（infra）
 
 - 职责：CLI、测试、CI、同步脚本、依赖与环境约束（标准库、Python 3.11+）。
-- 现状：29 项测试，CI 工作流已配置。本地跑测试时需要回环监听权限。`ChatBackend` 对 localhost / 127.0.0.1 / ::1 不走 `HTTP(S)_PROXY`，全局代理环境下 `tests.test_transport` 不再需要设置 `no_proxy`。
+- 现状：40 项测试，CI 工作流已配置。本地跑测试时需要回环监听权限。`ChatBackend` 对 localhost / 127.0.0.1 / ::1 不走 `HTTP(S)_PROXY`，全局代理环境下 `tests.test_transport` 不再需要设置 `no_proxy`。
 - 归属：工程侧。
 
 ### 细分实现单元（U1–U13）
@@ -122,13 +122,13 @@
 | U1 | 来源目录 | M1 | 两份库的快照、章节索引、哈希 | 原文 → `catalog.json` | — | `catalog.py`，已完成 |
 | U2 | 人物档案 | M2 | 稳定画像 schema 与校验：P1 分面、依恋、需要、施瓦兹价值、情绪/认知基线、71 维能力（待定义）、来源与置信度 | 档案 JSON → 已校验 stable | 心理学组 2.1、4 | `persona.py`，部分 |
 | U3 | 视图编译 | M2 | 系统真值 / 角色自知 / 他者可见 / 控制器约束四种投影；条件化行为语句 | stable → views | 心理学组 2.1、环境组 1 | `compile_views`，部分 |
-| U4 | 状态存储 | M3 | AgentState（stable/dynamic/memory）、StateDelta、版本号、落盘与按 state_id 回放 | — | 环境组 2.4–2.5、心理学组 6 | `state.py` + `initial_state`；dynamic 五块已有，state_id 链与回放未做 |
+| U4 | 状态存储 | M3 | AgentState（stable/dynamic/memory）、StateDelta、版本号、落盘与按 state_id 回放 | — | 环境组 2.4–2.5、心理学组 6 | `state.py` + `initial_state`；dynamic 五块已有，state_id 链已有（`Agent._commit`），回放工具未做 |
 | U5 | 感知与记忆 | M3、M6 | 可见性二次校验、去重、记忆条目带来源与类型（观察/他人说法/反馈/自己行动） | Event → memory | 环境组 3.2、3.3 | `observe`，部分 |
 | U6 | 机制注册与调度 | M4 | 机制卡（触发、阈值、可行性门、候选动作、例外）、多卡竞争排序 | 事件 + 状态 + stable → 激活卡 | 心理学组 3；决策库 0.2、0.6 | `mechanisms.py`，五张卡 |
 | U7 | 状态更新器 | M3 | 按 mechanism 执行 appraisal / belief_revision / tom_inference / relation_update / goal_update / self_commit / decay；硬约束拒绝、软约束标记 | 激活卡 + 事件 → StateDelta | 心理学组 3.1–3.3 | `apply_delta` 校验已有；只有紧张、信任两条规则 |
 | U8 | 决策控制器 | M5 | 生成并筛选选项，选出 ProposedAction，产出私有 thought | 视图 + 状态 + 卡 → actions | 环境组 2.3、3.1 | `make_payload` + `decide`，部分 |
 | U9 | 表达 | M5 | 按已选动作和风格生成台词，不泄露机制和分数 | action + 自知 + 风格 → speech | 环境组 2.3 | `express`，已有 |
-| U10 | 环境适配层 | M6 | 实现 `step` / `perceive` 接口，Event / ProposedAction 数据类；脚本环境作测试替身；多角色调度器 | 环境组请求 ⇄ Agent | 环境组 3、4 | `execute`，单角色脚本 |
+| U10 | 环境适配层 | M6 | 实现 `step` / `perceive` 接口，Event / ProposedAction 数据类；脚本环境作测试替身；多角色调度器 | 环境组请求 ⇄ Agent | 环境组 3、4 | `agent.py` + `contract.py` + `ScriptedEnvironment`；多角色调度未做 |
 | U11 | 模型后端 | M5 | 兼容接口调用、严格 JSON、失败不回退 mock；回环地址不走代理 | — | — | `providers.py`，已有 |
 | U12 | 运行记录 | M7 | manifest、inputs、audit、public、state 序列、prompt 与原始输出、Git SHA | — | 环境组 5 | `run_episode`，部分 |
 | U13 | 评测 | M8 | 自动检查（越界、无证据、stable 被改、引用不可见事件）、盲评导出、标注工具 | 运行目录 → 报告 | 心理学组 5 | 仅单元测试 |
@@ -151,11 +151,11 @@
 2. **M3 的四条硬约束写成独立校验器 + 测试。** 当前 `stable` 不可改只在 run_episode 末尾用哈希兜底，证据约束只在 decision 层检查。应抽成 `validate_delta(delta, visible_ids)`，对每条 change 逐一检查 path 白名单、evidence 可见、取值范围，并为每条约束各写一个反例测试。**已完成**：`apply_delta(dynamic, delta, visible_ids)`，反例见 `tests/test_state.py`；整条 delta 有一条违规即整体拒绝，`before` 与当前值不符也拒绝。
 3. **mechanism 取值统一。** 环境组合同示例用了 `belief_revision`，心理学组合同的机制表是 7 项（appraisal / belief_revision / tom_inference / relation_update / goal_update / self_commit / decay），而代码注册表是 5 张卡（verify / appraise / trust / repair / boundary）。这是两套命名：卡片是"调度单元"，mechanism 是"状态变化类型"。需要在代码里建立显式映射表，并在文档里说明两者不是一回事，否则后面日志无法对照。**已完成**：`mechanisms.CARD_MECHANISMS`，属于待审工程假设。
 
-### 阶段 2：把环境接口先按我们的合同实现一遍（下周）
+### 阶段 2：把环境接口先按我们的合同实现一遍（2026-10-18 完成，多角色调度除外）
 
-4. **M6 按合同实现 `step` / `perceive`。** 定义 Event / ProposedAction / AgentState / StateDelta 的 dataclass，同进程调用，参数和返回值可 JSON 序列化。现有脚本环境改造成这套接口的一个**实现**（一个最简裁决器），而不是另一条路径。这样场景组回复后只需替换裁决器。
-5. **可见性过滤的二次校验。** 环境应该已经过滤过，我们再校验一次：收到 audience 不含自己的事件直接丢弃并告警。写测试。
-6. **行动者自己也要收到裁决结果。** 现有 `execute` 返回的 feedback 只给行动者，形式上满足，但没有 `type=outcome` 和 `of_proposal` 字段。补上，否则"提案—裁决—写回"的因果链断在中间。
+4. **M6 按合同实现 `step` / `perceive`。** 定义 Event / ProposedAction / AgentState / StateDelta 的 dataclass，同进程调用，参数和返回值可 JSON 序列化。现有脚本环境改造成这套接口的一个**实现**（一个最简裁决器），而不是另一条路径。这样场景组回复后只需替换裁决器。**已完成**：`contract.py`、`agent.py`、`runtime.ScriptedEnvironment`；mock 公开轨迹与改造前逐字一致。
+5. **可见性过滤的二次校验。** 环境应该已经过滤过，我们再校验一次：收到 audience 不含自己的事件直接丢弃并告警。写测试。**已完成**：`Agent.warnings`，写入 manifest 的 `visibility_warnings`；测试见 `tests/test_agent.py`。
+6. **行动者自己也要收到裁决结果。** 现有 `execute` 返回的 feedback 只给行动者，形式上满足，但没有 `type=outcome` 和 `of_proposal` 字段。补上，否则"提案—裁决—写回"的因果链断在中间。**已完成**：裁决结果以 `type=outcome` 事件回到行动者，`perceive` 之后的下一次 `step` 读取的就是这个状态；`prev_state_id` 不匹配时返回 `status=error`。
 
 ### 阶段 3：补上实验基础设施（之后）
 

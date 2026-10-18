@@ -1,16 +1,18 @@
-"""One focal role interacting with an executable scripted environment.
+"""One focal role interacting with a scripted environment through the contract interface.
 
-This vertical slice is not a free-form multi-agent world simulator.
+The scripted environment is one adjudicator implementation behind `step`/`perceive`;
+it is a test double, not a free-form multi-agent world simulator.
 """
 import copy
 import json
 from pathlib import Path
 
+from .agent import Agent
 from .catalog import digest, write_json
-from .mechanisms import CARDS, select_cards
+from .contract import (Event, PerceiveRequest, StepRequest, Visibility, to_dict,
+                       validate_event as validate_contract_event)
+from .mechanisms import CARDS
 from .persona import bounded, compile_views, text, validate_persona
-from .state import (PSYCHOLOGY_VERSION, SCHEMA_VERSION, apply_delta, empty_dynamic,
-                    validate_dynamic)
 
 ACTIONS = {"request_evidence", "ask_clarification", "propose_plan", "set_boundary", "wait"}
 CUES = {"uncertainty", "pressure", "commitment", "repair", "conflict"}
@@ -49,7 +51,7 @@ def validate_scenario(scenario):
     events = scenario["events"] + [scenario["evidence"]]
     for event in events:
         validate_event(event)
-        if event["id"].startswith(("action:", "feedback:")):
+        if event["id"].startswith(("action:", "feedback:", "speech:")):
             raise ValueError("reserved event id prefix")
     if len({e["id"] for e in events}) != len(events):
         raise ValueError("duplicate event ids")
@@ -57,102 +59,91 @@ def validate_scenario(scenario):
         raise ValueError("world_private must be an object")
 
 
-def visible(event, role_id):
-    return "*" in event["readers"] or role_id in event["readers"]
+PARTNER_ID = "partner"
+# Fixture adjudications for actions that do not depend on world data.
+REPLIES = {"request_evidence": ("failed", "当前没有对你开放的可核对记录。"),
+           "ask_clarification": ("success", "合作方说明：请先明确今天可交付的范围，再商定剩余时间。"),
+           "propose_plan": ("partial", "方案已送交合作方，尚未得到接受或实际执行的证据。"),
+           "set_boundary": ("partial", "合作方听到了你提出的边界，尚未承诺接受。"),
+           "wait": ("success", "核对时间已预留，当前没有新的事实到达。")}
 
 
-def observation(event):
-    # Do not return readers or any world-private fields to a role.
-    return {k: copy.deepcopy(event[k]) for k in ("id", "text", "cues", "kind")}
+class ScriptedEnvironment:
+    """Converts a scripted scenario into contract Events and adjudicates proposals."""
+
+    def __init__(self, scenario, role_id):
+        validate_scenario(scenario)
+        self.scenario, self.role_id = scenario, role_id
+        self.cast = [role_id, PARTNER_ID]
+        self.log = []   # every Event the environment produced, for replay
+
+    def _event(self, raw, turn, type_, actor, outcome=None, caused_by=None):
+        if "*" in raw["readers"]:
+            visibility = Visibility("public", list(self.cast))
+        else:
+            visibility = Visibility("private", list(raw["readers"]))
+        event = Event(event_id=raw["id"], turn=turn, type=type_, actor=actor, content=raw["text"],
+                      visibility=visibility, outcome=outcome, caused_by=caused_by,
+                      signals={"cues": copy.deepcopy(raw["cues"]),
+                               "reliability_signal": raw["reliability_signal"]})
+        validate_contract_event(event)
+        self.log.append(event)
+        return event
+
+    def scheduled(self):
+        """Yield (turn, Event) for scheduled events, already filtered to the focal role."""
+        turn = 0
+        for raw in self.scenario["events"]:
+            if raw["kind"] == "claim":
+                type_, actor = "speech", PARTNER_ID
+            else:
+                type_, actor = "narration", "env"
+            if not visible(raw, self.role_id):
+                self._event(raw, turn + 1, type_, actor)  # logged, never delivered
+                continue
+            turn += 1
+            yield turn, self._event(raw, turn, type_, actor)
+
+    def adjudicate(self, proposal, turn):
+        """Return the Events a proposal produces; the outcome always reaches the actor."""
+        action = proposal.intent_note
+        speech = Event(event_id=f"speech:{turn}", turn=turn, type="speech", actor=self.role_id,
+                       content=proposal.content, target=list(proposal.target),
+                       visibility=Visibility("public", list(self.cast)), caused_by=proposal.proposal_id)
+        validate_contract_event(speech)
+        self.log.append(speech)
+        evidence = self.scenario["evidence"]
+        # The world, not the model, decides whether information/action results exist.
+        if action == "request_evidence" and visible(evidence, self.role_id):
+            raw, status = evidence, "success"
+        elif action in self.scenario["allowed_actions"]:
+            status, reply = REPLIES[action]
+            raw = {"id": f"feedback:{turn}", "text": reply, "readers": [self.role_id],
+                   "cues": {}, "reliability_signal": 0}
+        else:
+            status = "blocked"
+            raw = {"id": f"feedback:{turn}", "text": "该行动在本场景中不可执行。", "readers": [self.role_id],
+                   "cues": {}, "reliability_signal": 0}
+        outcome = {"of_proposal": proposal.proposal_id, "status": status, "detail": raw["text"]}
+        result = self._event(raw, turn, "outcome", "env", outcome=outcome, caused_by=proposal.proposal_id)
+        return speech, [result]
 
 
-def initial_state():
-    dynamic = empty_dynamic()
-    # Prototype starting values; the focal partner is keyed "partner" in this single-role slice.
-    dynamic["emotion"].update(label="紧张", intensity=.15)
-    dynamic["relations"]["partner"] = {"trust": .55, "closeness": None, "note": ""}
-    validate_dynamic(dynamic)
-    return {"schema_version": SCHEMA_VERSION, "psychology_version": PSYCHOLOGY_VERSION,
-            "dynamic": dynamic, "memory": [], "seen_ids": [], "updates": []}
+def visible(raw, role_id):
+    return "*" in raw["readers"] or role_id in raw["readers"]
 
 
-def observe(state, event, persona):
-    if not visible(event, persona["id"]) or event["id"] in state["seen_ids"]:
-        return False
-    s = persona["stable"]
-    dynamic = state["dynamic"]
-    tension = dynamic["emotion"]["intensity"]
-    trust = dynamic["relations"]["partner"]["trust"]
-    pressure = event["cues"].get("pressure", 0)
-    sensitivity = s["emotion"]["threat_sensitivity"]
-    recovery = s["emotion"]["recovery_rate"]
-    # Explicit prototype dynamics, not fitted psychological coefficients.
-    new_tension = round(min(1, max(0, tension * (1 - recovery) + .35 * pressure * sensitivity)), 4)
-    new_trust = round(min(1, max(0, trust + .15 * event["reliability_signal"])), 4)
-    changes = []
-    if new_tension != tension:
-        changes.append({"path": "dynamic.emotion.intensity", "before": tension, "after": new_tension,
-                        "evidence": [event["id"]], "mechanism": "appraisal" if pressure else "decay",
-                        "reason": "事件带有压力线索" if pressure else "无新压力，紧张按恢复速率回落"})
-    if new_trust != trust:
-        changes.append({"path": "dynamic.relations.partner.trust", "before": trust, "after": new_trust,
-                        "evidence": [event["id"]], "mechanism": "relation_update",
-                        "reason": "可核验的兑现/失约记录"})
-    delta = {"trigger": "perceive", "event_id": event["id"], "changes": changes,
-             "rule_version": "engineering-v1"}
-    known = {item["id"] for item in state["memory"]} | {event["id"]}
-    state["dynamic"] = apply_delta(dynamic, delta, known)
-    state["memory"].append(observation(event))
-    state["seen_ids"].append(event["id"])
-    state["updates"].append(delta)
-    return True
+def _public(handle, turn, speaker, text_, action=None):
+    record = {"turn": turn, "speaker": speaker}
+    if action:
+        record["action"] = action
+    record["text"] = text_
+    handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def make_payload(persona, state, event, scenario, mode):
-    views = compile_views(persona)
-    allowed = list(scenario["allowed_actions"])
-    # Information already obtained should not be requested forever.
-    if scenario["evidence"]["id"] in state["seen_ids"]:
-        allowed = [a for a in allowed if a != "request_evidence"]
-    if not allowed:
-        raise ValueError("no feasible action remains")
-    data = {"role": views["role_self"], "behavioral_constraints": views["controller_only"],
-            "goal": scenario["goal"], "partner": scenario["partner"],
-            "visible_history": copy.deepcopy(state["memory"]),
-            "allowed_actions": allowed}
-    if mode == "mechanisms":
-        data["current_state"] = copy.deepcopy(state["dynamic"])
-        data["active_mechanisms"] = select_cards(persona, state, observation(event), allowed)
-    elif mode != "profile_only":
-        raise ValueError("unknown mode")
-    return data
-
-
-def validate_decision(decision, payload):
-    if not isinstance(decision, dict) or set(decision) != {"action", "evidence_ids", "brief_reason"}:
-        raise ValueError("decision must contain action, evidence_ids, brief_reason only")
-    if decision["action"] not in payload["allowed_actions"]:
-        raise ValueError("infeasible action")
-    known = {item["id"] for item in payload["visible_history"]}
-    ids = decision["evidence_ids"]
-    if not isinstance(ids, list) or not ids or any(not isinstance(i, str) or i not in known for i in ids):
-        raise ValueError("decision cites unavailable information")
-    text(decision["brief_reason"], "brief_reason")
-    if len(decision["brief_reason"]) > 200:
-        raise ValueError("brief_reason too long")
-
-
-def execute(action, role_id, scenario, turn):
-    # The world, not the model, decides whether information/action results exist.
-    if action == "request_evidence" and visible(scenario["evidence"], role_id):
-        return copy.deepcopy(scenario["evidence"])
-    replies = {"request_evidence": "当前没有对你开放的可核对记录。",
-               "ask_clarification": "合作方说明：请先明确今天可交付的范围，再商定剩余时间。",
-               "propose_plan": "方案已送交合作方，尚未得到接受或实际执行的证据。",
-               "set_boundary": "合作方听到了你提出的边界，尚未承诺接受。",
-               "wait": "核对时间已预留，当前没有新的事实到达。"}
-    return {"id": f"feedback:{turn}", "text": replies[action], "readers": [role_id],
-            "kind": "feedback", "cues": {}, "reliability_signal": 0}
+def _raise(agent, response):
+    if response.status != "ok":
+        raise agent.last_error
 
 
 def run_episode(persona, scenario, backend, output, mode="mechanisms"):
@@ -160,12 +151,15 @@ def run_episode(persona, scenario, backend, output, mode="mechanisms"):
     validate_scenario(scenario)
     if set(persona["stable"]["mechanism_priors"]) != {c["id"] for c in CARDS}:
         raise ValueError("mechanism priors must match the enabled card registry")
+    role_id = persona["id"]
+    env = ScriptedEnvironment(scenario, role_id)
+    agent = Agent(backend, scenario["allowed_actions"], scenario["partner"], PARTNER_ID, mode)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
-    state = initial_state()
     fingerprint = digest(persona)
-    manifest = {"schema_version": "1.0", "status": "running", "backend": backend.label,
-                "model": backend.model, "mode": mode, "persona_hash": fingerprint,
+    manifest = {"schema_version": "1.1", "status": "running", "backend": backend.label,
+                "model": backend.model, "mode": mode, "interface": "env-contract-v0 step/perceive",
+                "persona_hash": fingerprint,
                 "scenario_hash": digest(scenario), "mechanism_hash": digest(CARDS),
                 "sampling": "mock deterministic; real model temperature 0.3; server determinism not guaranteed",
                 "evidence_boundary": "engineering smoke run; no human-validity or method-effectiveness claim"}
@@ -173,39 +167,43 @@ def run_episode(persona, scenario, backend, output, mode="mechanisms"):
     write_json(output / "inputs.json", {"persona": persona, "scenario": scenario, "mechanisms": CARDS})
     write_json(output / "views.json", compile_views(persona))
     try:
-        with (output / "audit.jsonl").open("w", encoding="utf-8") as audit, (output / "public.jsonl").open("w", encoding="utf-8") as public:
+        with (output / "audit.jsonl").open("w", encoding="utf-8") as audit, \
+                (output / "public.jsonl").open("w", encoding="utf-8") as public, \
+                (output / "states.jsonl").open("w", encoding="utf-8") as states:
             turn = 0
-            for event in scenario["events"]:
-                if not observe(state, event, persona):
-                    continue
-                turn += 1
-                if "*" in event["readers"]:
-                    public.write(json.dumps({"turn": turn, "speaker": "environment", "text": event["text"]}, ensure_ascii=False) + "\n")
-                payload = make_payload(persona, state, event, scenario, mode)
-                decision = backend.decide(copy.deepcopy(payload))
-                validate_decision(decision, payload)
-                expression_input = {"role": compile_views(persona)["role_self"],
-                                    "style_constraints": [r for r in compile_views(persona)["controller_only"]["conditional_rules"] if r["source_field"].startswith("communication.")],
-                                    "action": decision["action"], "visible_history": copy.deepcopy(state["memory"])}
-                speech = backend.express(expression_input)
-                text(speech, "speech")
-                if len(speech) > 600:
-                    raise ValueError("speech too long")
-                public.write(json.dumps({"turn": turn, "speaker": persona["id"], "action": decision["action"], "text": speech}, ensure_ascii=False) + "\n")
-                state["memory"].append({"id": f"action:{turn}", "kind": "own_action", "text": speech, "cues": {}})
-                feedback = execute(decision["action"], persona["id"], scenario, turn)
-                observe(state, feedback, persona)
-                if "*" in feedback["readers"]:
-                    public.write(json.dumps({"turn": turn, "speaker": "environment", "text": feedback["text"]}, ensure_ascii=False) + "\n")
+            for turn, event in env.scheduled():
+                if event.visibility.scope == "public":
+                    _public(public, turn, "environment", event.content)
+                stepped = agent.step(StepRequest(role_id=role_id, turn=turn, scene_context=scenario["goal"],
+                                                 new_events=[event], prev_state_id=agent.state_id,
+                                                 role_profile=persona if turn == 1 else None,
+                                                 allowed_kinds=["speech"]))
+                _raise(agent, stepped)
+                proposal = stepped.actions[0]
+                _public(public, turn, role_id, proposal.content, proposal.intent_note)
+                speech_event, outcomes = env.adjudicate(proposal, turn)
+                perceived = agent.perceive(PerceiveRequest(role_id=role_id, turn=turn, events=outcomes,
+                                                           prev_state_id=stepped.state["state_id"]))
+                _raise(agent, perceived)
+                for item in outcomes:
+                    if item.visibility.scope == "public":
+                        _public(public, turn, "environment", item.content)
                 if digest(persona) != fingerprint:
                     raise AssertionError("stable persona was modified")
-                audit.write(json.dumps({"turn": turn, "controller_input": payload, "decision": decision,
-                                        "speech": speech, "feedback": observation(feedback),
-                                        "state_after": copy.deepcopy(state)}, ensure_ascii=False) + "\n")
-                write_json(output / "state.json", state)
+                for snapshot in (stepped.state, perceived.state):
+                    states.write(json.dumps(snapshot, ensure_ascii=False) + "\n")
+                audit.write(json.dumps({"turn": turn, "controller_input": agent.last_payload,
+                                        "decision": agent.last_decision, "thought": stepped.thought,
+                                        "proposal": to_dict(proposal), "step_delta": stepped.delta,
+                                        "outcomes": [to_dict(e) for e in outcomes],
+                                        "perceive_delta": perceived.delta,
+                                        "state_after": perceived.state}, ensure_ascii=False) + "\n")
+                write_json(output / "state.json", perceived.state)
         if not turn:
             raise ValueError("scenario has no events visible to this role")
-        manifest.update(status="completed", turns=turn, api_calls=backend.calls)
+        write_json(output / "environment_events.json", [to_dict(e) for e in env.log])
+        manifest.update(status="completed", turns=turn, api_calls=backend.calls,
+                        final_state_id=agent.state_id, visibility_warnings=agent.warnings)
         write_json(output / "manifest.json", manifest)
         return manifest
     except Exception as exc:

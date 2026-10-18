@@ -70,9 +70,11 @@ python3.11 -m rolesim run --backend chat --out runs/model-first
 | `manifest.json` | 人物、场景、机制哈希，模型、模式、调用数、完成/失败状态 | 复核本次运行的配置与证据范围 |
 | `inputs.json` | 输入快照，包括环境私有数据 | 系统侧复现，不能提供给角色或行为裁判 |
 | `views.json` | 系统真值、角色自知、他者可见、控制器行为约束 | 检查画像编译结果 |
-| `audit.jsonl` | 每轮模型输入、短决策依据、反馈、状态 | 开发与机制检查，不能混入行为表现评分 |
+| `audit.jsonl` | 每轮模型输入、决策、thought、ProposedAction、step/perceive 两个 StateDelta、裁决事件、状态 | 开发与机制检查，不能混入行为表现评分 |
 | `public.jsonl` | 公开事件与外显行动/话语 | 为后续盲评准备公开轨迹；有私有信息场景需另配角色可见评审包 |
-| `state.json` | 当前状态、可见记忆与更新来源 | 检查逐轮状态延续 |
+| `state.json` | 最新 AgentState（state_id、prev_state_id、stable、dynamic、memory） | 检查逐轮状态延续 |
+| `states.jsonl` | 每次 step/perceive 后的 AgentState 快照，按 state_id 串链 | 按状态链复核与后续回放 |
+| `environment_events.json` | 脚本环境产生的全部合同 Event，含私有事件 | 系统侧复现，不能提供给角色或行为裁判 |
 
 `runs/`、`outputs/`、密钥与本地环境文件不进入 Git。版本控制保存源码、来源文档、模板和实验配置；大规模实验结果单独管理。
 
@@ -88,7 +90,7 @@ python3.11 -m rolesim run --backend chat --out runs/model-first
 | 社会心智 71 维 | 缺少原引用定义，显式待接入；未伪造维度与能力分数 |
 | 机制 | 核查、事件评价、信任、修复、边界五张卡；参数为待校准工程假设 |
 | 状态 | 合同 state-v0 的 dynamic 五块结构 + StateDelta 硬约束校验；当前规则只更新紧张（emotion.intensity）与对合作方的信任，带来源可见记忆 |
-| 环境 | 单焦点角色 + 有限动作 + 四轮脚本反馈；自由多智能体环境待实现 |
+| 环境 | 已按环境组合同 v0 实现 `Agent.step` / `perceive`；脚本环境是其中一种裁决器（单焦点角色 + 有限动作 + 四轮反馈）；多角色调度与自由多智能体环境待实现 |
 | 模型接口 | 两阶段兼容接口；已做本机 HTTP 模拟测试，真实模型待接入 |
 | 对照入口 | `--mode profile_only`；有相同历史但不注入机制和计算状态，尚无对照效果结果 |
 | GitHub CI | 已提供工作流；执行结果以实际仓库 Actions 为准 |

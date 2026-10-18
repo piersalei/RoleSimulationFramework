@@ -7,14 +7,24 @@ from pathlib import Path
 from rolesim.catalog import build_catalog, digest
 from rolesim.persona import compile_views, validate_persona
 from rolesim.providers import MockBackend, strict_json
-from rolesim.runtime import (execute, initial_state, make_payload, observe,
-                             run_episode, validate_decision, validate_scenario)
+from rolesim.agent import initial_state, make_payload, observe, observation, validate_decision
+from rolesim.contract import ProposedAction, Visibility
+from rolesim.runtime import ScriptedEnvironment, run_episode, validate_scenario
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def load(name):
     return json.loads((ROOT / "examples" / name).read_text())
+
+
+def scheduled(scenario, role_id="cautious"):
+    return [event for _, event in ScriptedEnvironment(scenario, role_id).scheduled()]
+
+
+def propose(action, role_id="cautious", turn=1):
+    return ProposedAction(f"{role_id}@t{turn:03d}#1", "speech", "……", Visibility("public", [role_id, "partner"]),
+                          ["partner"], action)
 
 
 class CaptureBackend(MockBackend):
@@ -53,40 +63,47 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.persona["stable"]["attachment"]["anxiety"], .8)
 
     def test_repeated_and_invisible_events_cannot_change_state(self):
+        events = scheduled(self.scenario)
+        hidden = copy.deepcopy(events[0])
+        hidden.event_id, hidden.visibility = "partner_private", Visibility("private", ["partner"])
         state = initial_state()
-        observe(state, self.scenario["events"][0], self.persona)
+        observe(state, events[0], self.persona)
         prior = copy.deepcopy(state)
-        self.assertFalse(observe(state, self.scenario["events"][0], self.persona))
-        self.assertFalse(observe(state, self.scenario["events"][-1], self.persona))
+        self.assertIsNone(observe(state, events[0], self.persona))
+        self.assertIsNone(observe(state, hidden, self.persona))
         self.assertEqual(state, prior)
 
     def test_same_observation_has_persona_conditioned_state_response(self):
         a, b = initial_state(), initial_state()
-        observe(a, self.scenario["events"][0], self.persona)
-        observe(b, self.scenario["events"][0], load("assertive.json"))
+        observe(a, scheduled(self.scenario)[0], self.persona)
+        observe(b, scheduled(self.scenario, "assertive")[0], load("assertive.json"))
         self.assertGreater(a["dynamic"]["emotion"]["intensity"], b["dynamic"]["emotion"]["intensity"])
         self.assertEqual(a["dynamic"]["relations"], b["dynamic"]["relations"])
 
     def test_promises_and_own_plans_do_not_count_as_fulfilment(self):
+        events = scheduled(self.scenario)
         state = initial_state()
-        observe(state, self.scenario["events"][2], self.persona)
-        feedback = execute("propose_plan", self.persona["id"], self.scenario, 1)
-        observe(state, feedback, self.persona)
+        observe(state, events[2], self.persona)
+        _, outcomes = ScriptedEnvironment(self.scenario, "cautious").adjudicate(propose("propose_plan"), 1)
+        self.assertEqual(outcomes[0].outcome["status"], "partial")
+        observe(state, outcomes[0], self.persona)
         self.assertEqual(state["dynamic"]["relations"]["partner"]["trust"], .55)
-        observe(state, self.scenario["events"][3], self.persona)
+        observe(state, events[3], self.persona)
         self.assertGreater(state["dynamic"]["relations"]["partner"]["trust"], .55)
 
     def test_unavailable_record_is_not_revealed_by_request_action(self):
         self.scenario["evidence"]["readers"] = ["partner"]
-        result = execute("request_evidence", "cautious", self.scenario, 1)
-        self.assertNotEqual(result["id"], "status_receipt")
-        self.assertNotIn("部分数据仍在复核", result["text"])
+        _, outcomes = ScriptedEnvironment(self.scenario, "cautious").adjudicate(propose("request_evidence"), 1)
+        self.assertNotEqual(outcomes[0].event_id, "status_receipt")
+        self.assertEqual(outcomes[0].outcome["status"], "failed")
+        self.assertNotIn("部分数据仍在复核", outcomes[0].content)
 
     def test_action_and_evidence_validation_rejects_fabrication(self):
         state = initial_state()
-        event = self.scenario["events"][0]
+        event = scheduled(self.scenario)[0]
         observe(state, event, self.persona)
-        payload = make_payload(self.persona, state, event, self.scenario, "mechanisms")
+        payload = make_payload(self.persona, state, observation(event), self.scenario["goal"],
+                               self.scenario["partner"], self.scenario["allowed_actions"], "mechanisms")
         valid = {"action": "wait", "evidence_ids": ["e1"], "brief_reason": "需要核对"}
         validate_decision(valid, payload)
         for patch in ({"action": "declare_success"}, {"evidence_ids": ["partner_private"]},
@@ -120,10 +137,11 @@ class PipelineTests(unittest.TestCase):
 
     def test_profile_only_uses_same_observation_without_mechanism_or_state_prompt(self):
         state = initial_state()
-        event = self.scenario["events"][0]
+        event = scheduled(self.scenario)[0]
         observe(state, event, self.persona)
-        a = make_payload(self.persona, state, event, self.scenario, "mechanisms")
-        b = make_payload(self.persona, state, event, self.scenario, "profile_only")
+        args = (observation(event), self.scenario["goal"], self.scenario["partner"], self.scenario["allowed_actions"])
+        a = make_payload(self.persona, state, *args, "mechanisms")
+        b = make_payload(self.persona, state, *args, "profile_only")
         self.assertEqual(a["visible_history"], b["visible_history"])
         self.assertNotIn("active_mechanisms", b)
         self.assertNotIn("current_state", b)
