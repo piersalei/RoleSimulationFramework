@@ -68,7 +68,7 @@
   2. path 以 `stable.` 开头一律拒绝。
   3. 每个 mechanism 只能改白名单内的字段块。
   4. 数值越界直接拒绝，不截断。
-- 现状：只有 `tension` 和 `reliability` 两个标量 + 带来源的 memory。信念、目标、关系、other_models 尚未实现。
+- 现状：`rolesim/state.py` 已按合同初稿落地 dynamic 五块结构、取值范围、`source` 必填，以及 `apply_delta` 的四条硬约束和 trust 单步软约束。实际运行中只有两条更新规则在写：`emotion.intensity`（原 tension，appraisal/decay）和 `relations.partner.trust`（原 reliability，relation_update）。beliefs、goals_now、other_models 有结构和校验，但还没有更新规则。
 - 归属：心理学组定义字段与更新规则，工程侧实现与校验。
 
 ### M4 机制库（mechanisms）
@@ -110,7 +110,7 @@
 ### M9 工程基础（infra）
 
 - 职责：CLI、测试、CI、同步脚本、依赖与环境约束（标准库、Python 3.11+）。
-- 现状：16 项测试，CI 工作流已配置。本地跑测试时需要回环监听权限。`ChatBackend` 对 localhost / 127.0.0.1 / ::1 不走 `HTTP(S)_PROXY`，全局代理环境下 `tests.test_transport` 不再需要设置 `no_proxy`。
+- 现状：29 项测试，CI 工作流已配置。本地跑测试时需要回环监听权限。`ChatBackend` 对 localhost / 127.0.0.1 / ::1 不走 `HTTP(S)_PROXY`，全局代理环境下 `tests.test_transport` 不再需要设置 `no_proxy`。
 - 归属：工程侧。
 
 ### 细分实现单元（U1–U13）
@@ -122,10 +122,10 @@
 | U1 | 来源目录 | M1 | 两份库的快照、章节索引、哈希 | 原文 → `catalog.json` | — | `catalog.py`，已完成 |
 | U2 | 人物档案 | M2 | 稳定画像 schema 与校验：P1 分面、依恋、需要、施瓦兹价值、情绪/认知基线、71 维能力（待定义）、来源与置信度 | 档案 JSON → 已校验 stable | 心理学组 2.1、4 | `persona.py`，部分 |
 | U3 | 视图编译 | M2 | 系统真值 / 角色自知 / 他者可见 / 控制器约束四种投影；条件化行为语句 | stable → views | 心理学组 2.1、环境组 1 | `compile_views`，部分 |
-| U4 | 状态存储 | M3 | AgentState（stable/dynamic/memory）、StateDelta、版本号、落盘与按 state_id 回放 | — | 环境组 2.4–2.5、心理学组 6 | `initial_state`，仅两个标量 |
+| U4 | 状态存储 | M3 | AgentState（stable/dynamic/memory）、StateDelta、版本号、落盘与按 state_id 回放 | — | 环境组 2.4–2.5、心理学组 6 | `state.py` + `initial_state`；dynamic 五块已有，state_id 链与回放未做 |
 | U5 | 感知与记忆 | M3、M6 | 可见性二次校验、去重、记忆条目带来源与类型（观察/他人说法/反馈/自己行动） | Event → memory | 环境组 3.2、3.3 | `observe`，部分 |
 | U6 | 机制注册与调度 | M4 | 机制卡（触发、阈值、可行性门、候选动作、例外）、多卡竞争排序 | 事件 + 状态 + stable → 激活卡 | 心理学组 3；决策库 0.2、0.6 | `mechanisms.py`，五张卡 |
-| U7 | 状态更新器 | M3 | 按 mechanism 执行 appraisal / belief_revision / tom_inference / relation_update / goal_update / self_commit / decay；硬约束拒绝、软约束标记 | 激活卡 + 事件 → StateDelta | 心理学组 3.1–3.3 | 只有紧张、可靠性两条规则 |
+| U7 | 状态更新器 | M3 | 按 mechanism 执行 appraisal / belief_revision / tom_inference / relation_update / goal_update / self_commit / decay；硬约束拒绝、软约束标记 | 激活卡 + 事件 → StateDelta | 心理学组 3.1–3.3 | `apply_delta` 校验已有；只有紧张、信任两条规则 |
 | U8 | 决策控制器 | M5 | 生成并筛选选项，选出 ProposedAction，产出私有 thought | 视图 + 状态 + 卡 → actions | 环境组 2.3、3.1 | `make_payload` + `decide`，部分 |
 | U9 | 表达 | M5 | 按已选动作和风格生成台词，不泄露机制和分数 | action + 自知 + 风格 → speech | 环境组 2.3 | `express`，已有 |
 | U10 | 环境适配层 | M6 | 实现 `step` / `perceive` 接口，Event / ProposedAction 数据类；脚本环境作测试替身；多角色调度器 | 环境组请求 ⇄ Agent | 环境组 3、4 | `execute`，单角色脚本 |
@@ -145,11 +145,11 @@
 
 按优先级排，每项都不依赖对方的未定事项。
 
-### 阶段 1：先把两条硬约束补成可执行的（本周）
+### 阶段 1：先把两条硬约束补成可执行的（2026-10-18 完成）
 
-1. **M3 扩成合同里的状态结构。** 现在只有两个标量，合同承诺了情绪 / 信念 / 目标 / 关系 / other_models 五块。先把结构、取值范围、`source` 必填落地，更新规则留成可替换的参数表，等心理学组给值。字段名按合同初稿写，改名成本很低。
-2. **M3 的四条硬约束写成独立校验器 + 测试。** 当前 `stable` 不可改只在 run_episode 末尾用哈希兜底，证据约束只在 decision 层检查。应抽成 `validate_delta(delta, visible_ids)`，对每条 change 逐一检查 path 白名单、evidence 可见、取值范围，并为每条约束各写一个反例测试。
-3. **mechanism 取值统一。** 环境组合同示例用了 `belief_revision`，心理学组合同的机制表是 7 项（appraisal / belief_revision / tom_inference / relation_update / goal_update / self_commit / decay），而代码注册表是 5 张卡（verify / appraise / trust / repair / boundary）。这是两套命名：卡片是"调度单元"，mechanism 是"状态变化类型"。需要在代码里建立显式映射表，并在文档里说明两者不是一回事，否则后面日志无法对照。
+1. **M3 扩成合同里的状态结构。** 现在只有两个标量，合同承诺了情绪 / 信念 / 目标 / 关系 / other_models 五块。先把结构、取值范围、`source` 必填落地，更新规则留成可替换的参数表，等心理学组给值。字段名按合同初稿写，改名成本很低。**已完成**：`rolesim/state.py`。
+2. **M3 的四条硬约束写成独立校验器 + 测试。** 当前 `stable` 不可改只在 run_episode 末尾用哈希兜底，证据约束只在 decision 层检查。应抽成 `validate_delta(delta, visible_ids)`，对每条 change 逐一检查 path 白名单、evidence 可见、取值范围，并为每条约束各写一个反例测试。**已完成**：`apply_delta(dynamic, delta, visible_ids)`，反例见 `tests/test_state.py`；整条 delta 有一条违规即整体拒绝，`before` 与当前值不符也拒绝。
+3. **mechanism 取值统一。** 环境组合同示例用了 `belief_revision`，心理学组合同的机制表是 7 项（appraisal / belief_revision / tom_inference / relation_update / goal_update / self_commit / decay），而代码注册表是 5 张卡（verify / appraise / trust / repair / boundary）。这是两套命名：卡片是"调度单元"，mechanism 是"状态变化类型"。需要在代码里建立显式映射表，并在文档里说明两者不是一回事，否则后面日志无法对照。**已完成**：`mechanisms.CARD_MECHANISMS`，属于待审工程假设。
 
 ### 阶段 2：把环境接口先按我们的合同实现一遍（下周）
 

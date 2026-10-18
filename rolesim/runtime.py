@@ -9,6 +9,8 @@ from pathlib import Path
 from .catalog import digest, write_json
 from .mechanisms import CARDS, select_cards
 from .persona import bounded, compile_views, text, validate_persona
+from .state import (PSYCHOLOGY_VERSION, SCHEMA_VERSION, apply_delta, empty_dynamic,
+                    validate_dynamic)
 
 ACTIONS = {"request_evidence", "ask_clarification", "propose_plan", "set_boundary", "wait"}
 CUES = {"uncertainty", "pressure", "commitment", "repair", "conflict"}
@@ -65,25 +67,44 @@ def observation(event):
 
 
 def initial_state():
-    return {"tension": .15, "reliability": .55, "memory": [], "seen_ids": [], "updates": []}
+    dynamic = empty_dynamic()
+    # Prototype starting values; the focal partner is keyed "partner" in this single-role slice.
+    dynamic["emotion"].update(label="紧张", intensity=.15)
+    dynamic["relations"]["partner"] = {"trust": .55, "closeness": None, "note": ""}
+    validate_dynamic(dynamic)
+    return {"schema_version": SCHEMA_VERSION, "psychology_version": PSYCHOLOGY_VERSION,
+            "dynamic": dynamic, "memory": [], "seen_ids": [], "updates": []}
 
 
 def observe(state, event, persona):
     if not visible(event, persona["id"]) or event["id"] in state["seen_ids"]:
         return False
     s = persona["stable"]
-    before = {k: state[k] for k in ("tension", "reliability")}
+    dynamic = state["dynamic"]
+    tension = dynamic["emotion"]["intensity"]
+    trust = dynamic["relations"]["partner"]["trust"]
     pressure = event["cues"].get("pressure", 0)
     sensitivity = s["emotion"]["threat_sensitivity"]
     recovery = s["emotion"]["recovery_rate"]
     # Explicit prototype dynamics, not fitted psychological coefficients.
-    state["tension"] = round(min(1, max(0, state["tension"] * (1 - recovery) + .35 * pressure * sensitivity)), 4)
-    state["reliability"] = round(min(1, max(0, state["reliability"] + .15 * event["reliability_signal"])), 4)
+    new_tension = round(min(1, max(0, tension * (1 - recovery) + .35 * pressure * sensitivity)), 4)
+    new_trust = round(min(1, max(0, trust + .15 * event["reliability_signal"])), 4)
+    changes = []
+    if new_tension != tension:
+        changes.append({"path": "dynamic.emotion.intensity", "before": tension, "after": new_tension,
+                        "evidence": [event["id"]], "mechanism": "appraisal" if pressure else "decay",
+                        "reason": "事件带有压力线索" if pressure else "无新压力，紧张按恢复速率回落"})
+    if new_trust != trust:
+        changes.append({"path": "dynamic.relations.partner.trust", "before": trust, "after": new_trust,
+                        "evidence": [event["id"]], "mechanism": "relation_update",
+                        "reason": "可核验的兑现/失约记录"})
+    delta = {"trigger": "perceive", "event_id": event["id"], "changes": changes,
+             "rule_version": "engineering-v1"}
+    known = {item["id"] for item in state["memory"]} | {event["id"]}
+    state["dynamic"] = apply_delta(dynamic, delta, known)
     state["memory"].append(observation(event))
     state["seen_ids"].append(event["id"])
-    state["updates"].append({"event_id": event["id"], "before": before,
-                             "after": {k: state[k] for k in before},
-                             "rule_version": "engineering-v1"})
+    state["updates"].append(delta)
     return True
 
 
@@ -100,7 +121,7 @@ def make_payload(persona, state, event, scenario, mode):
             "visible_history": copy.deepcopy(state["memory"]),
             "allowed_actions": allowed}
     if mode == "mechanisms":
-        data["current_state"] = {k: state[k] for k in ("tension", "reliability")}
+        data["current_state"] = copy.deepcopy(state["dynamic"])
         data["active_mechanisms"] = select_cards(persona, state, observation(event), allowed)
     elif mode != "profile_only":
         raise ValueError("unknown mode")

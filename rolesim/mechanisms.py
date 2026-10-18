@@ -20,10 +20,24 @@ CARDS = [
 ]
 
 
+# Cards are scheduling units (which actions to favour); mechanisms are state-change
+# types from the psychology contract. This table records which state changes a card's
+# situation is expected to involve. Engineering hypothesis, pending psychology review.
+CARD_MECHANISMS = {
+    "verify": ["belief_revision"],
+    "appraise": ["appraisal", "decay"],
+    "trust": ["relation_update"],
+    "repair": ["relation_update", "tom_inference"],
+    "boundary": ["self_commit"],
+}
+
+
 def select_cards(persona, state, observation, allowed):
     s = persona["stable"]
+    dynamic = state["dynamic"]
     moderators = {"verification": s["cognition"]["verification_bias"],
-                  "threat": state["tension"], "distrust": 1 - state["reliability"],
+                  "threat": dynamic["emotion"]["intensity"],
+                  "distrust": 1 - dynamic["relations"]["partner"]["trust"],
                   "cooperation": (s["personality"]["facets"]["agreeableness.compliance"] + 2) / 4,
                   "directness": s["communication"]["directness"]}
     candidates = []

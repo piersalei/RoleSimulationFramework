@@ -64,17 +64,17 @@ class PipelineTests(unittest.TestCase):
         a, b = initial_state(), initial_state()
         observe(a, self.scenario["events"][0], self.persona)
         observe(b, self.scenario["events"][0], load("assertive.json"))
-        self.assertGreater(a["tension"], b["tension"])
-        self.assertEqual(a["reliability"], b["reliability"])
+        self.assertGreater(a["dynamic"]["emotion"]["intensity"], b["dynamic"]["emotion"]["intensity"])
+        self.assertEqual(a["dynamic"]["relations"], b["dynamic"]["relations"])
 
     def test_promises_and_own_plans_do_not_count_as_fulfilment(self):
         state = initial_state()
         observe(state, self.scenario["events"][2], self.persona)
         feedback = execute("propose_plan", self.persona["id"], self.scenario, 1)
         observe(state, feedback, self.persona)
-        self.assertEqual(state["reliability"], .55)
+        self.assertEqual(state["dynamic"]["relations"]["partner"]["trust"], .55)
         observe(state, self.scenario["events"][3], self.persona)
-        self.assertGreater(state["reliability"], .55)
+        self.assertGreater(state["dynamic"]["relations"]["partner"]["trust"], .55)
 
     def test_unavailable_record_is_not_revealed_by_request_action(self):
         self.scenario["evidence"]["readers"] = ["partner"]
