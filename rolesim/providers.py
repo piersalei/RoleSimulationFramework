@@ -32,7 +32,11 @@ class ChatBackend:
         if not self.model:
             raise ValueError("Set ROLE_SIM_MODEL explicitly")
         self.calls = 0
-        self.opener = urllib.request.build_opener(NoRedirect())
+        handlers = [NoRedirect()]
+        if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+            # Local model servers must not be routed through HTTP(S)_PROXY.
+            handlers.append(urllib.request.ProxyHandler({}))
+        self.opener = urllib.request.build_opener(*handlers)
 
     def _call(self, system, payload):
         body = {"model": self.model, "temperature": .3, "max_tokens": 700,
