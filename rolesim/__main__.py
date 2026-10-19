@@ -7,6 +7,8 @@ from pathlib import Path
 from .catalog import build_catalog, write_json
 from .persona import compile_views, validate_persona
 from .providers import ChatBackend, MockBackend, strict_json
+from .agent import MODES
+from .audit import write_report
 from .runtime import run_episode
 
 
@@ -21,11 +23,13 @@ def main():
         item.add_argument("persona")
         if name == "compile":
             item.add_argument("--out", required=True)
+    audit = sub.add_parser("audit", help="re-audit a finished run directory")
+    audit.add_argument("run_dir")
     demo = sub.add_parser("run", help="one focal role in a scripted environment")
     demo.add_argument("--persona", default="examples/cautious.json")
     demo.add_argument("--scenario", default="examples/cooperation_conflict.json")
     demo.add_argument("--backend", choices=["mock", "chat"], default="mock")
-    demo.add_argument("--mode", choices=["mechanisms", "profile_only"], default="mechanisms")
+    demo.add_argument("--mode", choices=list(MODES), default="profile_state_mechanisms")
     demo.add_argument("--out", default=None)
     args = parser.parse_args()
     try:
@@ -34,6 +38,10 @@ def main():
             write_json(args.out, data)
             print(f"Indexed {len(data['sections'])} reference sections; no theory was automatically enabled.")
             return
+        if args.command == "audit":
+            report = write_report(args.run_dir)
+            print(f"{'PASS' if report['passed'] else 'FAIL'}: {args.run_dir}/audit_report.md")
+            sys.exit(0 if report["passed"] else 2)
         persona = strict_json(Path(args.persona).read_text(encoding="utf-8"))
         if args.command == "validate":
             validate_persona(persona)

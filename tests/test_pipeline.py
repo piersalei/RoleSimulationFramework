@@ -7,7 +7,7 @@ from pathlib import Path
 from rolesim.catalog import build_catalog, digest
 from rolesim.persona import compile_views, validate_persona
 from rolesim.providers import MockBackend, strict_json
-from rolesim.agent import initial_state, make_payload, observe, observation, validate_decision
+from rolesim.agent import Agent, MODES, initial_state, make_payload, observe, observation, validate_decision
 from rolesim.contract import ProposedAction, Visibility
 from rolesim.runtime import ScriptedEnvironment, run_episode, validate_scenario
 
@@ -103,7 +103,7 @@ class PipelineTests(unittest.TestCase):
         event = scheduled(self.scenario)[0]
         observe(state, event, self.persona)
         payload = make_payload(self.persona, state, observation(event), self.scenario["goal"],
-                               self.scenario["partner"], self.scenario["allowed_actions"], "mechanisms")
+                               self.scenario["partner"], self.scenario["allowed_actions"], "profile_state_mechanisms")
         valid = {"action": "wait", "evidence_ids": ["e1"], "brief_reason": "需要核对"}
         validate_decision(valid, payload)
         for patch in ({"action": "declare_success"}, {"evidence_ids": ["partner_private"]},
@@ -140,11 +140,42 @@ class PipelineTests(unittest.TestCase):
         event = scheduled(self.scenario)[0]
         observe(state, event, self.persona)
         args = (observation(event), self.scenario["goal"], self.scenario["partner"], self.scenario["allowed_actions"])
-        a = make_payload(self.persona, state, *args, "mechanisms")
+        a = make_payload(self.persona, state, *args, "profile_state_mechanisms")
         b = make_payload(self.persona, state, *args, "profile_only")
         self.assertEqual(a["visible_history"], b["visible_history"])
         self.assertNotIn("active_mechanisms", b)
         self.assertNotIn("current_state", b)
+
+    def test_ablation_levels_add_state_then_mechanisms(self):
+        state = initial_state()
+        event = scheduled(self.scenario)[0]
+        observe(state, event, self.persona)
+        args = (observation(event), self.scenario["goal"], self.scenario["partner"], self.scenario["allowed_actions"])
+        payloads = {m: make_payload(self.persona, state, *args, m) for m in MODES}
+        self.assertEqual(set(payloads["profile_only"]) & {"current_state", "active_mechanisms"}, set())
+        self.assertIn("current_state", payloads["profile_state"])
+        self.assertNotIn("active_mechanisms", payloads["profile_state"])
+        self.assertIn("active_mechanisms", payloads["profile_state_mechanisms"])
+        base = {k: v for k, v in payloads["profile_only"].items()}
+        for mode in ("profile_state", "profile_state_mechanisms"):
+            self.assertEqual({k: v for k, v in payloads[mode].items() if k in base}, base)
+        for old in ("mechanisms", "profile", ""):
+            with self.subTest(mode=old), self.assertRaises(ValueError):
+                make_payload(self.persona, state, *args, old)
+            with self.assertRaises(ValueError):
+                Agent(MockBackend(), ["wait"], "p", mode=old)
+
+    def test_adding_state_to_the_prompt_does_not_change_bookkeeping(self):
+        finals = {}
+        with tempfile.TemporaryDirectory() as folder:
+            for mode in MODES:
+                out = Path(folder) / mode
+                manifest = run_episode(self.persona, self.scenario, MockBackend(), out, mode)
+                finals[mode] = json.loads((out / "state.json").read_text())["dynamic"]
+                self.assertEqual(manifest["mode"], mode)
+        # The mock reads the active cards but not current_state, so adding state to the
+        # prompt must not change the trajectory; adding cards may (it picks by card order).
+        self.assertEqual(finals["profile_only"], finals["profile_state"])
 
     def test_invalid_profiles_rejected(self):
         for value in (True, float("nan"), 9):

@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 from .agent import Agent
+from .audit import write_report
 from .catalog import digest, write_json
 from .contract import (Event, PerceiveRequest, StepRequest, Visibility, to_dict,
                        validate_event as validate_contract_event)
@@ -147,7 +148,7 @@ def _raise(agent, response):
         raise agent.last_error
 
 
-def run_episode(persona, scenario, backend, output, mode="mechanisms"):
+def run_episode(persona, scenario, backend, output, mode="profile_state_mechanisms"):
     validate_persona(persona)
     validate_scenario(scenario)
     if set(persona["stable"]["mechanism_priors"]) != {c["id"] for c in CARDS}:
@@ -213,6 +214,10 @@ def run_episode(persona, scenario, backend, output, mode="mechanisms"):
                         final_state_id=agent.state_id, visibility_warnings=agent.warnings,
                         rejected_groups=sum(len(e["rejected"]) for e in agent.mechanism_log),
                         status_transitions=len(agent.state["status_log"]))
+        write_json(output / "manifest.json", manifest)
+        report = write_report(output)
+        manifest["audit"] = {"passed": report["passed"],
+                             "failed_checks": [c["id"] for c in report["checks"] if c["status"] != "pass"]}
         write_json(output / "manifest.json", manifest)
         return manifest
     except Exception as exc:

@@ -14,3 +14,4 @@ jobs:
       - run: python -m rolesim validate examples/cautious.json
       - run: python -m rolesim validate examples/assertive.json
       - run: python -m rolesim run --out runs/ci-smoke
+      - run: python -m rolesim audit runs/ci-smoke

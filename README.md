@@ -92,7 +92,8 @@ python3.11 -m rolesim run --backend chat --out runs/model-first
 | 状态 | state-v1：六个状态域、模块状态枚举（active / unknown / not_modeled 等）、11 个更新算子的写权限、按依赖组原子提交、硬错/软错/豁免三级处理、`mechanism_log` 与四类版本号；当前更新规则只写紧张（`affect_state.emotion.intensity`）与对合作方的信任，其余模块为 unknown 或 not_modeled，规则卡数值待心理学组交付 |
 | 环境 | 已按环境组合同 v0 实现 `Agent.step` / `perceive`；脚本环境是其中一种裁决器（单焦点角色 + 有限动作 + 四轮反馈）；多角色调度与自由多智能体环境待实现 |
 | 模型接口 | 两阶段兼容接口；已做本机 HTTP 模拟测试，真实模型待接入 |
-| 对照入口 | `--mode profile_only`；有相同历史但不注入机制和计算状态，尚无对照效果结果 |
+| 对照入口 | `--mode` 三档：`profile_only`（相同历史，不注入状态与机制）、`profile_state`（加动态状态）、`profile_state_mechanisms`（再加机制卡，默认）。状态在三档下都计算并记录，档位只决定控制器提示内容；尚无对照效果结果 |
+| 自动审计 | 每次运行产出 `audit_report.json/.md`（字段有效性、证据与可见性、写权限、stable 一致、轨迹可追溯），可用 `python3.11 -m rolesim audit <run_dir>` 重审；通过不代表心理有效 |
 | GitHub CI | 已提供工作流；执行结果以实际仓库 Actions 为准 |
 
 下一步优先让心理学同学审定少量“人物—触发—行为锚点”样例，再接真实模型做反事实情境对照。不要先把全部理论变成一张任意赋值的大表。

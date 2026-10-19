@@ -14,6 +14,9 @@ from .state import (PSYCHOLOGY_VERSION, SCHEMA_VERSION, VERSIONS, activate, comm
                     new_dynamic, validate_dynamic)
 
 PARTNER = "partner"  # relation key for the single focal partner in this slice
+# Ablation levels. State is computed and logged in every mode; the mode only decides
+# what the controller prompt may contain.
+MODES = ("profile_only", "profile_state", "profile_state_mechanisms")
 
 
 def initial_state():
@@ -100,11 +103,12 @@ def make_payload(persona, state, trigger, scene_context, partner, allowed, mode)
             "goal": scene_context, "partner": partner,
             "visible_history": copy.deepcopy(state["memory"]),
             "allowed_actions": list(allowed)}
-    if mode == "mechanisms":
+    if mode not in MODES:
+        raise ValueError(f"unknown mode: {mode}")
+    if mode != "profile_only":
         data["current_state"] = copy.deepcopy(state["dynamic"])
+    if mode == "profile_state_mechanisms":
         data["active_mechanisms"] = select_cards(persona, state, trigger, allowed) if trigger else []
-    elif mode != "profile_only":
-        raise ValueError("unknown mode")
     return data
 
 
@@ -123,7 +127,9 @@ def validate_decision(decision, payload):
 
 
 class Agent:
-    def __init__(self, backend, allowed_actions, partner, partner_id=PARTNER, mode="mechanisms"):
+    def __init__(self, backend, allowed_actions, partner, partner_id=PARTNER, mode="profile_state_mechanisms"):
+        if mode not in MODES:
+            raise ValueError(f"unknown mode: {mode}")
         self.backend = backend
         self.allowed_actions = list(allowed_actions)
         self.partner, self.partner_id, self.mode = partner, partner_id, mode
