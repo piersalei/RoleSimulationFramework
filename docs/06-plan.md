@@ -7,7 +7,7 @@
 **口径说明。**
 - 心理学组回复里的"拟改动方向"和问答答复，本文档一律采用为 **v1 目标口径**。
 - 回复给出的是结构、分类和流程；规则卡的触发条件、幅度区间、衰减时间尺度、人格调节参数尚未交付，仍是空缺。
-- 因此下文"现状"一栏描述的代码仍是按 v0 合同（`state-v0`、`psy-v0`）实现的，与 v1 目标有差距，差距集中列在第 5 节。
+- 阶段 A 的结构升级已于 2026-10-19 完成（见第 5 节）：状态层已是 `state-v1`。画像层（M2）、规则数值、评测和多方案比较仍按 v0 或空缺，各节"现状"逐项标明。
 - 工程侧自行采用的默认假设只保留给场景/环境组的未决项（第 6 节）。
 
 ## 1. 心理学组回复的变更摘要
@@ -92,7 +92,7 @@
   - 每个模块必须有 `provenance`（来源、赋值方式、置信度）。
   - 71 维能力在定义缺失期间保持 `pending_source_definition`，对应 status 为 `not_modeled`，不伪造分数。
   - 推断出的 stable 字段按影响分层：档案明写的身份/年龄/职业可自动进入候选初始状态；会改变行为约束、评测结论或能力上限的高影响字段须心理学组审核或规则校验。
-- 现状：按 v0 实现。校验与编译已完成；30 分面中只有 4 个参与条件化语句投影，其余仅存储；`values` 仍是旧结构，无 `identity`、`core_goals`、`speech_style`，无模块 status。
+- 现状：仍按 v0 实现（阶段 A 未涉及 M2）。校验与编译已完成；30 分面中只有 4 个参与条件化语句投影，其余仅存储；`values` 仍是旧结构，无 `identity`、`core_goals`、`speech_style`，stable 子模块无 status。快照里已带 `stable_snapshot_id`（stable 内容哈希）。
 - 归属：心理学组定义字段含义，工程侧实现校验与投影。
 
 ### M3 动态状态（state）
@@ -108,7 +108,15 @@
 - 软约束：典型区间外、衰减过慢、调节过强、跨字段变化不典型，提交并标 `soft_violation`；仅规则卡明确允许的软边界可被重大事件豁免，须记 `exception_approved`。
 - 同路径多条变化：先去重同一证据的重复贡献，再按规则卡指定的聚合方式、写权限和固定优先级裁决，不默认求和、平均或后写覆盖。动作竞争权重不能替代字段写权限。
 - 没有规则的字段不得默认衰减；时间推进须登记为可审计的时间事件。
-- 现状：`rolesim/state.py` 按 v0 合同实现五块结构、取值范围、`source` 必填、`apply_delta` 的四条硬约束和 trust 单步软约束。整条 delta 一错全拒，没有依赖组、`event_phase`、`mechanism_log`、模块 status、`exception_approved`。运行中只有两条更新规则在写：`emotion.intensity`（appraisal/decay）和 `relations.partner.trust`（relation_update）。其余块有结构和校验，没有更新规则。
+- 现状（`state-v1`，`rolesim/state.py` + `rolesim/modules.py`）：
+  - 六个状态域和模块状态表已落地。unknown 必须为 null，active 不得为 null，not_modeled / disabled 不得持值，树中出现未登记模块的值一律拒绝。状态转换写入 `status_log`。
+  - 11 个算子有写权限表；`memory_update` 不写 dynamic 路径。
+  - `commit_phase` 按依赖组原子提交，同路径冲突整组拒绝，完全相同的重复贡献去重，`commit_key` 保证重试幂等。
+  - 三级错误：硬错拒绝所在组，软错标记 `soft_violation`，豁免需 `exception` 记录且规则卡允许；目前唯一的软规则 `trust_step` 不允许豁免。
+  - 运行中只有两条更新规则在写：`affect_state.emotion.intensity`（emotion_update / decay_or_recovery）和 `relation_state.partner.trust`（relation_update）。输入为 null 时跳过该分支，不用中性值代替。
+  - 初始只有 `emotion.label`、`emotion.intensity`、`partner.trust` 三个原型默认值（origin 为 `default`，经审计转换写入）；其余关系维度、tom、情绪连续坐标为 unknown。
+  - `power_asymmetry` 默认 `not_applicable`，没有值槽；客观方向属于系统侧数据，不进入 AgentState，角色主观感知待场景需要时再开。
+  - 11 个算子的机制卡为空壳，只有写权限，没有幅度、时间尺度和聚合规则。
 - 归属：心理学组定义字段与更新规则，工程侧实现与校验。
 
 ### M4 机制库（mechanisms）
@@ -119,7 +127,7 @@
   - **决策机制**（注意、记忆、归因、评价、推断、选择、表达、学习）通过 `decision_mechanisms` 映射到更新算子。
   - **更新算子**是 11 个写回对象，每个须有一张机制卡，至少含：触发事件、输入状态、可修改路径、变化方向、幅度等级、时间尺度、优先级、正例、反例、证据格式、软约束、评测指标。
 - 动作选择顺序：先按规则卡声明的安全、能力、制度、承诺门槛筛选，再比较机制支持、目标价值、关系后果和执行成本；选中动作不等于动作成功。
-- 现状：五张调度卡（verify / appraise / trust / repair / boundary），公式 `score = cue × (0.5 + 0.3×prior + 0.2×moderator)`，阈值 0.3。这是未校准的工程假设，用于检验调度接口，不是实证规律。`CARD_MECHANISMS` 映射到的是旧的 7 个机制名，需要改指 11 个算子。
+- 现状：五张调度卡（verify / appraise / trust / repair / boundary），公式 `score = cue × (0.5 + 0.3×prior + 0.2×moderator)`，阈值 0.3。这是未校准的工程假设，用于检验调度接口，不是实证规律。`CARD_MECHANISMS` 已改指 11 个算子，属待审工程假设。
 - 后续版本才纳入的算子（先作为决策机制或日志标签；结果若要跨事件影响行为则须升为独立字段或算子）：emotion_regulation、learning_adaptation、memory_consolidation、self_evaluation_update、conflict_arbitration、reputation_update、norm_activation、repair_update。
 - 归属：心理学组定义卡片内容，工程侧实现调度。
 
@@ -151,7 +159,7 @@
   - 新增 `mechanism_log`：实际调用的机制、中间判断、候选与最终变化、采纳/拒绝原因、优先级、输入/输出 `state_id`、异常标记。
   - 每条轨迹及回放日志记录四类版本号、启用配置和 `stable_snapshot` 标识。
   - 所有状态转换（含 status 转换）留审计记录。
-- 现状：已落盘 `states.jsonl`（state_id 串链）和 `environment_events.json`（含私有事件，仅系统侧）。仍缺 git SHA 登记、按 state_id 的回放工具、`mechanism_log`、四类版本号。
+- 现状：已落盘 `states.jsonl`（state_id 串链）、`environment_events.json`（含私有事件，仅系统侧）和 `mechanism_log.jsonl`（候选、采纳、拒绝原因、软标记、输入/输出 state_id、四类版本号）。manifest 记录四类版本号、`stable_snapshot_id`、`rejected_groups` 和 `status_transitions`；每个 AgentState 快照带 `versions`、`module_status`、`stable_snapshot_id`。仍缺 git SHA、模型版本登记和按 state_id 的回放工具。
 - 归属：工程侧。
 
 ### M8 评测（evaluation）
@@ -197,15 +205,15 @@
 | U1 | 来源目录 | M1 | 两份库的快照、章节索引、哈希 | 原文 → `catalog.json` | — | `catalog.py`，已完成 |
 | U2 | 人物档案 | M2 | stable schema 与校验：主人格（P1/P2/P3）、依恋、动机、施瓦兹价值、情绪/认知基线、71 维能力（待定义）、core_goals、来源与置信度、模块 status | 档案 JSON → 已校验 stable | 心理学组 2.1、4 | `persona.py`，部分（仅 P1） |
 | U3 | 视图编译 | M2 | 系统真值 / 角色自知 / 他者可见 / 控制器约束四种投影；条件化行为语句；三方案统一的行为约束接口 | stable → views | 心理学组 2.1、环境组 1 | `compile_views`，部分 |
-| U4 | 状态存储 | M3 | AgentState（stable/dynamic/memory）、StateDelta、版本号、落盘与按 state_id 回放 | — | 环境组 2.4–2.5、心理学组 6 | `state.py` + `initial_state`；五块、state_id 链已有，回放工具未做 |
+| U4 | 状态存储 | M3 | AgentState（stable/dynamic/memory）、StateDelta、版本号、落盘与按 state_id 回放 | — | 环境组 2.4–2.5、心理学组 6 | `state.py` + `modules.py` + `initial_state`；六域、模块状态、state_id 链已有，回放工具未做 |
 | U5 | 感知与记忆 | M3、M6 | 可见性二次校验、去重、记忆条目带来源与类型（观察/他人说法/反馈/自己行动） | Event → memory | 环境组 3.2、3.3 | `observe`，部分 |
 | U6 | 机制注册与调度 | M4 | 机制卡（触发、阈值、可行性门、候选动作、例外）、多卡竞争排序、`decision_mechanisms` 映射 | 事件 + 状态 + stable → 激活卡 | 心理学组 3；决策库 0.2、0.6 | `mechanisms.py`，五张调度卡 |
-| U7 | 状态更新器 | M3 | 按 11 个算子生成候选 StateDelta；依赖组原子提交；硬错拒绝、软错标记、豁免记录 | 激活卡 + 事件 → StateDelta | 心理学组 3.1–3.3、7 | `apply_delta` 校验已有；只有紧张、信任两条规则 |
+| U7 | 状态更新器 | M3 | 按 11 个算子生成候选 StateDelta；依赖组原子提交；硬错拒绝、软错标记、豁免记录 | 激活卡 + 事件 → StateDelta | 心理学组 3.1–3.3、7 | `commit_phase` 已有；只有紧张、信任两条规则 |
 | U8 | 决策控制器 | M5 | 生成并筛选选项，选出 ProposedAction，产出私有 thought，在规则区间内选变化量 | 视图 + 状态 + 卡 → actions | 环境组 2.3、3.1 | `make_payload` + `decide`，部分 |
 | U9 | 表达 | M5 | 按已选动作和风格生成台词，不泄露机制和分数 | action + 自知 + 风格 → speech | 环境组 2.3 | `express`，已有 |
 | U10 | 环境适配层 | M6 | 实现 `step` / `perceive`，数据类；`event_phase` 与幂等；脚本环境作测试替身；多角色调度器 | 环境组请求 ⇄ Agent | 环境组 3、4 | `agent.py` + `contract.py` + `ScriptedEnvironment`；多角色调度未做 |
 | U11 | 模型后端 | M5 | 兼容接口调用、严格 JSON、失败不回退 mock；回环地址不走代理 | — | — | `providers.py`，已有 |
-| U12 | 运行记录 | M7 | manifest、inputs、audit、public、state 序列、`mechanism_log`、prompt 与原始输出、四类版本号、Git SHA | — | 环境组 5 | `run_episode`，部分 |
+| U12 | 运行记录 | M7 | manifest、inputs、audit、public、state 序列、`mechanism_log`、prompt 与原始输出、四类版本号、Git SHA | — | 环境组 5 | `run_episode`，部分（缺 Git SHA、模型版本） |
 | U13 | 评测 | M8 | 自动审计（越界、无证据、stable 被改、引用不可见事件、规则覆盖）、样本包导出、标注工具 | 运行目录 → 报告 | 心理学组 5、第三部分 | 仅单元测试 |
 
 单元间依赖：U2→U3→U8/U9；U5→U4；U6→U7→U4；U10 调用 U5、U6、U7、U8、U9；U12、U13 读取全部产物。M9 工程基础不单列实现单元。
@@ -220,25 +228,27 @@
 
 ### 已完成（按 v0 合同，2026-10-18）
 
-阶段 1、2 按 `state-v0` / `psy-v0` 完成，是 v1 迁移的起点，不是终点。
+阶段 1、2 按 `state-v0` / `psy-v0` 完成，是 v1 迁移的起点。其中状态部分已被阶段 A 取代，环境接口部分（`step` / `perceive`、可见性二次校验、`outcome` 回写）沿用。
 
 - 五块 dynamic 结构、范围、`source` 必填、`apply_delta` 四条硬约束和反例测试（`state.py`、`tests/test_state.py`）。
 - 机制卡到 7 个旧机制名的映射 `CARD_MECHANISMS`。
 - `step` / `perceive` 数据类与 Agent 实现、可见性二次校验、`type=outcome` 事件回写、`prev_state_id` 校验（`contract.py`、`agent.py`、`runtime.ScriptedEnvironment`）。
 
-### 阶段 A：结构升级到 v1（不依赖规则数值，可立即做）
+### 阶段 A：结构升级到 v1（2026-10-19 完成，第 7 项和 Git SHA 除外）
 
-目标是把结构和流程换到 v1 口径，规则数值留成可替换的参数表，等心理学组交付后填入。顺序按依赖排列。
+目标是把结构和流程换到 v1 口径，规则数值留成可替换的参数表，等心理学组交付后填入。
 
-1. **模块状态枚举。** 给 stable、dynamic 子模块和机制配置加 `status`、来源、原因、版本；区分 `unknown`（null）与真实的 0 / 中性值；默认先验标 `default`。现有 `intensity: 0`、`valence: None` 的混用要拆开。
-2. **dynamic 升为六个状态域，`state-v1`。** 先建骨架和合同里已定的字段（情绪六字段、关系四项 + `harm_history`、`power_asymmetry` 条件字段、信念结构、`tom_level`），其余字段 status 为 `not_modeled`。旧版本轨迹标为不兼容，不做静默转换。
-3. **11 个算子的注册表与写权限。** 每个算子声明可写路径；`MECHANISMS` 由旧 7 项换成 11 项；`CARD_MECHANISMS` 改映射。算子的机制卡先放空壳（只含已知的路径与理论依据），不填幅度。
-4. **候选 → 依赖组原子提交。** 引入 `event_phase`、同阶段共用快照、依赖组、同路径聚合与冲突整组拒绝、幂等重试。
-5. **三级错误策略。** 硬错 / 软错 / 豁免三类，豁免只认规则卡声明的软边界；所有拒绝与标记写入日志。
-6. **`mechanism_log` 与四类版本号**写入 manifest 和每条轨迹；git SHA 与模型版本一并补上。
-7. **stable 变更流程。** 只做数据结构：修订候选记录与 `stable_snapshot` 标识。审核流程本身由心理学组执行，不在代码里自动化。
+1. **模块状态枚举。** 已完成：`rolesim/modules.py`，六种状态、转换审计、默认先验标 `origin: default`。
+2. **dynamic 升为六个状态域，`state-v1`。** 已完成：情绪六字段、关系四项 + `harm_history`、`power_asymmetry` 条件字段、信念与他人模型结构、`tom` 槽位；其余子模块 not_modeled。旧版轨迹不做静默转换。
+3. **11 个算子的注册表与写权限。** 已完成：`state.OPERATORS`；`CARD_MECHANISMS` 改映射；机制卡仍是空壳。
+4. **候选 → 依赖组原子提交。** 已完成：同阶段共用快照、依赖组、同路径冲突整组拒绝、重复贡献去重、`commit_key` 幂等。`event_phase` 目前由 Agent 取 `step` / `perceive` 触发点，不由环境组下发。
+5. **三级错误策略。** 已完成：硬错 / 软错 / 豁免；豁免只认规则卡声明的软边界，现无任何规则可豁免。
+6. **`mechanism_log` 与四类版本号。** 已完成：写入每次提交、manifest 和快照。未完成：git SHA 与实际模型版本。
+7. **stable 变更流程。** 未做：修订候选记录与 `stable_snapshot` 迁移的数据结构。目前只有 `stable_snapshot_id` 哈希。
 
-每一步需要：先写反例测试，再改实现；v0 的 40 项测试按新口径迁移，不得删除用来掩盖失败。
+验证：61 项测试通过（含每条硬约束的反例）；mock 冒烟运行的 `public.jsonl` 与升级前逐字一致，状态数值轨迹与决策一致。这只说明升级没有改变工程行为，不构成心理有效性证据。
+
+阶段 A 没有做、需要后续注意的点：`mechanism_log` 目前没有"未选候选动作及原因"；模型自选变化量的区间校验仍只有 trust 单步 0.3 的占位上限；`goal_state`、`cognition_state` 里除信念和他人模型外没有更新规则。
 
 ### 阶段 B：实验基础设施
 

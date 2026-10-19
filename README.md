@@ -89,7 +89,7 @@ python3.11 -m rolesim run --backend chat --out runs/model-first
 | 依恋 | 保存基线，尚未实现关系特异激活 |
 | 社会心智 71 维 | 缺少原引用定义，显式待接入；未伪造维度与能力分数 |
 | 机制 | 核查、事件评价、信任、修复、边界五张卡；参数为待校准工程假设 |
-| 状态 | 合同 state-v0 的 dynamic 五块结构 + StateDelta 硬约束校验；当前规则只更新紧张（emotion.intensity）与对合作方的信任，带来源可见记忆 |
+| 状态 | state-v1：六个状态域、模块状态枚举（active / unknown / not_modeled 等）、11 个更新算子的写权限、按依赖组原子提交、硬错/软错/豁免三级处理、`mechanism_log` 与四类版本号；当前更新规则只写紧张（`affect_state.emotion.intensity`）与对合作方的信任，其余模块为 unknown 或 not_modeled，规则卡数值待心理学组交付 |
 | 环境 | 已按环境组合同 v0 实现 `Agent.step` / `perceive`；脚本环境是其中一种裁决器（单焦点角色 + 有限动作 + 四轮反馈）；多角色调度与自由多智能体环境待实现 |
 | 模型接口 | 两阶段兼容接口；已做本机 HTTP 模拟测试，真实模型待接入 |
 | 对照入口 | `--mode profile_only`；有相同历史但不注入机制和计算状态，尚无对照效果结果 |
