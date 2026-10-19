@@ -56,7 +56,7 @@ class AuditTests(unittest.TestCase):
         self.assertIn("需人工评分的维度", (self.run_dir / "audit_report.md").read_text())
 
     def test_detects_modified_stable(self):
-        self.edit_states(lambda s: s["stable"]["emotion"].update(threat_sensitivity=-2))
+        self.edit_states(lambda s: s["stable"]["traits"]["affective_capacities"].update(threat_sensitivity=-2))
         self.assertIn("stable_unchanged", self.failed())
 
     def test_detects_out_of_range_and_inconsistent_status(self):

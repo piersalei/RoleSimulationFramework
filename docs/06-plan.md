@@ -7,7 +7,7 @@
 **口径说明。**
 - 心理学组回复里的"拟改动方向"和问答答复，本文档一律采用为 **v1 目标口径**。
 - 回复给出的是结构、分类和流程；规则卡的触发条件、幅度区间、衰减时间尺度、人格调节参数尚未交付，仍是空缺。
-- 阶段 A 的结构升级已于 2026-10-19 完成（见第 5 节）：状态层已是 `state-v1`。画像层（M2）、规则数值、评测和多方案比较仍按 v0 或空缺，各节"现状"逐项标明。
+- 阶段 A 的结构升级已于 2026-10-19 完成（见第 5 节）：状态层是 `state-v1`，画像层是 persona schema 2.0。规则数值、评测协议和多方案比较仍空缺，各节"现状"逐项标明。
 - 工程侧自行采用的默认假设只保留给场景/环境组的未决项（第 6 节）。
 
 ## 1. 心理学组回复的变更摘要
@@ -86,13 +86,19 @@
 ### M2 画像（persona）
 
 - 职责：稳定画像的字段契约、校验、三视图编译（系统真值 / 角色自知 / 他者可见）、条件化行为语句投影。
-- v1 持有数据：`identity`、`traits`（见第 1 节八个子对象）、`values`（施瓦兹 19 项权重）、`core_goals`、`speech_style`、`self_view`、`public_description`、`provenance`、`deferred_modules`，以及每个子模块的 status。
+- v1 持有数据：`identity`、`traits`（见第 1 节八个子对象）、`values`（施瓦兹 19 项权重）、`core_goals`、`speech_style`、`self_view`、`public_description`、`provenance`，以及每个子模块的 status（`deferred_modules` 已由 status 取代）。
 - 硬规则：
   - 轨迹内 `stable` 只读，任何写入视为错误；长期变更只能走审核后的版本迁移，产出新 `stable_snapshot`。
   - 每个模块必须有 `provenance`（来源、赋值方式、置信度）。
   - 71 维能力在定义缺失期间保持 `pending_source_definition`，对应 status 为 `not_modeled`，不伪造分数。
   - 推断出的 stable 字段按影响分层：档案明写的身份/年龄/职业可自动进入候选初始状态；会改变行为约束、评测结论或能力上限的高影响字段须心理学组审核或规则校验。
-- 现状：仍按 v0 实现（阶段 A 未涉及 M2）。校验与编译已完成；30 分面中只有 4 个参与条件化语句投影，其余仅存储；`values` 仍是旧结构，无 `identity`、`core_goals`、`speech_style`，stable 子模块无 status。快照里已带 `stable_snapshot_id`（stable 内容哈希）。
+- 现状（persona schema 2.0，结构升级已完成）：
+  - 校验与编译已落地：`identity`、`traits` 八个子对象、施瓦兹 19 项权重（和为 1，未列出的价值是 unknown）、`core_goals`（1–3 个，带优先级、稳定度、来源、至多 2 个子目标）、`speech_style`（基线 + 情境规则）。
+  - 20 个稳定模块各有 status 与理由，`module_status` 属于 stable，所以 `stable_snapshot_id` 同时覆盖值和状态。active 必须有值和来源，unknown 必须为 null，没有适配器的模块（71 维、发展位置、荣格功能、道德推理、文化取向）不能设为 active。
+  - 仍只执行 P1；P2/P3 的 schema 与行为约束接口未做。30 分面中只有 4 个参与条件化语句投影，其余仅存储；分面级还不能表达 unknown。
+  - 情境表达规则会进入表达提示；`core_goals` 与价值只进入决策控制器的约束，不进入角色自知和表达提示。
+  - 旧的 1.0 档案会被拒绝，没有做自动转换；`deferred_modules` 字段取消，其内容由 `module_status` 的 not_modeled 与理由承担。
+  - 未做：stable 变更的修订候选与版本迁移结构。
 - 归属：心理学组定义字段含义，工程侧实现校验与投影。
 
 ### M3 动态状态（state）
@@ -198,12 +204,12 @@
 
 ### 细分实现单元（U1–U13）
 
-九个模块按数据归属划分。落到代码和合同时再细分为 13 个实现单元，编号用 U 以免与 M 混淆。"现有代码"列均为 v0 实现；v1 差距见第 5 节。
+九个模块按数据归属划分。落到代码和合同时再细分为 13 个实现单元，编号用 U 以免与 M 混淆。"现有代码"列写的是当前实现；与 v1 目标的差距见第 5 节。
 
 | # | 单元 | 所属模块 | 职责 | 主要输入/输出 | 对应合同 | 现有代码 |
 |---|---|---|---|---|---|---|
 | U1 | 来源目录 | M1 | 两份库的快照、章节索引、哈希 | 原文 → `catalog.json` | — | `catalog.py`，已完成 |
-| U2 | 人物档案 | M2 | stable schema 与校验：主人格（P1/P2/P3）、依恋、动机、施瓦兹价值、情绪/认知基线、71 维能力（待定义）、core_goals、来源与置信度、模块 status | 档案 JSON → 已校验 stable | 心理学组 2.1、4 | `persona.py`，部分（仅 P1） |
+| U2 | 人物档案 | M2 | stable schema 与校验：主人格（P1/P2/P3）、依恋、动机、施瓦兹价值、情绪/认知基线、71 维能力（待定义）、core_goals、来源与置信度、模块 status | 档案 JSON → 已校验 stable | 心理学组 2.1、4 | `persona.py`，schema 2.0（仅 P1） |
 | U3 | 视图编译 | M2 | 系统真值 / 角色自知 / 他者可见 / 控制器约束四种投影；条件化行为语句；三方案统一的行为约束接口 | stable → views | 心理学组 2.1、环境组 1 | `compile_views`，部分 |
 | U4 | 状态存储 | M3 | AgentState（stable/dynamic/memory）、StateDelta、版本号、落盘与按 state_id 回放 | — | 环境组 2.4–2.5、心理学组 6 | `state.py` + `modules.py` + `initial_state`；六域、模块状态、state_id 链已有，回放工具未做 |
 | U5 | 感知与记忆 | M3、M6 | 可见性二次校验、去重、记忆条目带来源与类型（观察/他人说法/反馈/自己行动） | Event → memory | 环境组 3.2、3.3 | `observe`，部分 |
@@ -249,6 +255,17 @@
 验证：61 项测试通过（含每条硬约束的反例）；mock 冒烟运行的 `public.jsonl` 与升级前逐字一致，状态数值轨迹与决策一致。这只说明升级没有改变工程行为，不构成心理有效性证据。
 
 阶段 A 没有做、需要后续注意的点：`mechanism_log` 目前没有"未选候选动作及原因"；模型自选变化量的区间校验仍只有 trust 单步 0.3 的占位上限；`goal_state`、`cognition_state` 里除信念和他人模型外没有更新规则。
+
+### 阶段 A2：画像 schema 2.0（2026-10-19 完成）
+
+1. **顶层结构。** 已完成：`identity` / `traits`（八个子对象）/ `values` / `core_goals` / `speech_style` / `mechanism_priors`，旧的 `needs`、`emotion`、`cognition`、`communication`、`abilities` 分别并入 `traits.motivation_baseline`、`traits.affective_capacities`、`traits.cognitive_style`、`speech_style.baseline`、`traits.social_cognition_71d`。
+2. **模块状态。** 已完成：`stable.module_status` 覆盖 20 个登记模块；状态与值互相约束；`provenance` 只给 active 模块。`modules.check_consistency` 与动态状态共用。
+3. **价值与目标。** 已完成：施瓦兹 19 项、权重和为 1、可选冲突阈值与可让步范围；核心目标 1–3 个。
+4. **表达。** 已完成：情境表达规则进入表达提示。
+5. **迁移。** 示例档案由 `scripts/bootstrap_examples.py` 重建；1.0 档案被拒绝，不做静默转换。
+
+验证：96 项测试通过，每个反例断言的是预期错误而非任意错误；示例运行的审计报告全部通过。
+未做：P2/P3 与三方案比较；分面级 unknown；stable 变更的修订候选与版本迁移结构；`moral_reasoning`、`cultural_orientation`、`developmental_position` 等适配器。
 
 ### 阶段 B：实验基础设施
 

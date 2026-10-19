@@ -8,7 +8,7 @@ import copy
 import json
 import math
 
-from .modules import (NO_VALUE, STATUSES, default_module_status, governing, initial_slots,
+from .modules import (check_consistency, default_module_status, governing, initial_slots,
                       relation_entries, transition)
 
 SCHEMA_VERSION = "state-v1"
@@ -53,7 +53,6 @@ CHANGE_FIELDS = {"path", "before", "after", "evidence", "mechanism", "reason"}
 OPTIONAL_FIELDS = {"flag", "group", "exception"}
 EXCEPTION_FIELDS = {"soft_rule", "evidence", "approved_by", "review"}
 HARM_FIELDS = {"event_id", "severity", "acknowledged", "repaired", "last_activated"}
-MISSING = object()
 
 
 # -- construction ------------------------------------------------------------
@@ -100,56 +99,10 @@ def _require_source(item, where):
         raise ValueError(f"{where} requires a non-empty source list")
 
 
-def _lookup(tree, parts):
-    for part in parts:
-        if isinstance(tree, dict) and part in tree:
-            tree = tree[part]
-        else:
-            return MISSING
-    return tree
-
-
-def _ungoverned(node, path, status):
-    if path in status:
-        return None
-    if isinstance(node, dict):
-        for key, child in node.items():
-            found = _ungoverned(child, f"{path}.{key}", status)
-            if found:
-                return found
-        return None
-    return path
-
-
-def validate_status(status):
-    if not isinstance(status, dict):
-        raise ValueError("module_status must be an object")
-    for path, item in status.items():
-        if not isinstance(item, dict) or item.get("status") not in STATUSES:
-            raise ValueError(f"{path}: unsupported module status")
-        if not isinstance(item.get("reason"), str) or not item["reason"].strip():
-            raise ValueError(f"{path}: module status requires a reason")
-        if item.get("status") == "active" and item.get("origin") not in {None, "default", "profile", "observed"}:
-            raise ValueError(f"{path}: unsupported origin")
-
-
 def validate_dynamic(dynamic, status):
     if not isinstance(dynamic, dict) or tuple(dynamic) != DOMAINS:
         raise ValueError("dynamic: unexpected or missing domain")
-    validate_status(status)
-    for path, item in status.items():
-        value = _lookup({"dynamic": dynamic}, path.split("."))
-        if item["status"] == "active":
-            if value is MISSING or value is None:
-                raise ValueError(f"{path}: active module requires a value; use unknown for missing evidence")
-        elif item["status"] == "unknown":
-            if value is MISSING or value is not None:
-                raise ValueError(f"{path}: unknown module must hold null")
-        elif item["status"] in NO_VALUE and value not in (MISSING, None, {}, []):
-            raise ValueError(f"{path}: {item['status']} module may not hold a value")
-    stray = _ungoverned(dynamic, "dynamic", status)
-    if stray:
-        raise ValueError(f"{stray}: value is not governed by a registered module")
+    check_consistency("dynamic", dynamic, status)
     goals = dynamic["goal_state"].get("goals_now")
     if goals is not None and not isinstance(goals, list):
         raise ValueError("dynamic.goal_state.goals_now must be a list")

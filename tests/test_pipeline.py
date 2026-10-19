@@ -59,8 +59,8 @@ class PipelineTests(unittest.TestCase):
         views = compile_views(self.persona)
         self.assertEqual(set(views["other_visible"]), {"id", "name", "description"})
         self.assertNotIn("stable", views["role_self"])
-        views["system_truth"]["stable"]["attachment"]["anxiety"] = -2
-        self.assertEqual(self.persona["stable"]["attachment"]["anxiety"], .8)
+        views["system_truth"]["stable"]["traits"]["attachment"]["anxiety"] = -2
+        self.assertEqual(self.persona["stable"]["traits"]["attachment"]["anxiety"], .8)
 
     def test_repeated_and_invisible_events_cannot_change_state(self):
         events = scheduled(self.scenario)
@@ -193,11 +193,11 @@ class PipelineTests(unittest.TestCase):
     def test_invalid_profiles_rejected(self):
         for value in (True, float("nan"), 9):
             bad = copy.deepcopy(self.persona)
-            bad["stable"]["personality"]["facets"]["neuroticism.anxiety"] = value
+            bad["stable"]["traits"]["personality"]["facets"]["neuroticism.anxiety"] = value
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate_persona(bad)
         bad = copy.deepcopy(self.persona)
-        bad["stable"]["personality"]["scheme"] = "P1+P3"
+        bad["stable"]["traits"]["personality"]["scheme"] = "P1+P3"
         with self.assertRaises(ValueError):
             validate_persona(bad)
 

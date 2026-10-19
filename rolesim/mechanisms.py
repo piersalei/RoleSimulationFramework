@@ -38,11 +38,11 @@ def select_cards(persona, state, observation, allowed):
     # An unknown (null) dynamic value contributes nothing; it is not replaced by a neutral guess.
     tension = dynamic["affect_state"]["emotion"]["intensity"]
     trust = dynamic["relation_state"]["partner"]["trust"]
-    moderators = {"verification": s["cognition"]["verification_bias"],
+    moderators = {"verification": s["traits"]["cognitive_style"]["verification_bias"],
                   "threat": tension if tension is not None else 0,
                   "distrust": 1 - trust if trust is not None else 0,
-                  "cooperation": (s["personality"]["facets"]["agreeableness.compliance"] + 2) / 4,
-                  "directness": s["communication"]["directness"]}
+                  "cooperation": (s["traits"]["personality"]["facets"]["agreeableness.compliance"] + 2) / 4,
+                  "directness": s["speech_style"]["baseline"]["directness"]}
     candidates = []
     for card in CARDS:
         intensity = observation["cues"].get(card["cue"], 0)

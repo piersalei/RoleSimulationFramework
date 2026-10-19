@@ -137,6 +137,16 @@ class AgentContractTests(unittest.TestCase):
         second = agent.step(StepRequest("cautious", 2, "g", [self.events[1]], perceived.state["state_id"]))
         self.assertEqual(second.actions[0].intent_note, "wait")
 
+    def test_situational_speech_rule_reaches_only_the_expression_prompt_as_style(self):
+        self.first()
+        decide_payload, express_payload = self.backend.payloads[-2:]
+        styles = [r["source_field"] for r in express_payload["style_constraints"]]
+        self.assertIn("speech_style.situational_rules", styles)
+        self.assertTrue(all(s.startswith("speech_style.") for s in styles))
+        goals = decide_payload["behavioral_constraints"]["core_goals"]
+        self.assertEqual(goals[0]["id"], "g1")
+        self.assertNotIn("core_goals", json.dumps(express_payload, ensure_ascii=False))
+
     def test_snapshot_carries_versions_module_status_and_stable_id(self):
         state = self.first().state
         self.assertEqual(state["schema_version"], "state-v1")

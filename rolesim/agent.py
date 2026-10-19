@@ -62,8 +62,8 @@ def observe(state, event, persona, phase="perceive"):
     # Someone's words are not evidence of fulfilment: only narrated facts and
     # adjudicated outcomes may move reliability.
     signal = signals.get("reliability_signal", 0) if event.type in {"narration", "outcome"} else 0
-    sensitivity = s["emotion"]["threat_sensitivity"]
-    recovery = s["emotion"]["recovery_rate"]
+    sensitivity = s["traits"]["affective_capacities"]["threat_sensitivity"]
+    recovery = s["traits"]["affective_capacities"]["recovery_rate"]
     changes = []
     # Unknown (null) inputs skip their branch instead of being replaced by a neutral guess.
     if tension is not None:
@@ -223,7 +223,7 @@ class Agent:
             speech = self.backend.express({
                 "role": views["role_self"],
                 "style_constraints": [r for r in views["controller_only"]["conditional_rules"]
-                                      if r["source_field"].startswith("communication.")],
+                                      if r["source_field"].startswith("speech_style.")],
                 "action": decision["action"], "visible_history": copy.deepcopy(work["memory"])})
             text(speech, "speech")
             if len(speech) > 600:
