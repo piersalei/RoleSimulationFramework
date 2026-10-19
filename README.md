@@ -11,6 +11,8 @@
 - [与 PersonaForge 的关系及证据范围](docs/03-personaforge.md)
 - [评测方案与当前验证记录](docs/04-evaluation.md)
 - [GitHub、本机与服务器同步](docs/05-github-server.md)
+- [模块划分与实现计划](docs/06-plan.md)
+- [当前架构与实现总结（含图示）](docs/07-architecture.md)
 
 ## 基本思路
 
