@@ -159,7 +159,7 @@
   - 新增 `mechanism_log`：实际调用的机制、中间判断、候选与最终变化、采纳/拒绝原因、优先级、输入/输出 `state_id`、异常标记。
   - 每条轨迹及回放日志记录四类版本号、启用配置和 `stable_snapshot` 标识。
   - 所有状态转换（含 status 转换）留审计记录。
-- 现状：已落盘 `states.jsonl`（state_id 串链）、`environment_events.json`（含私有事件，仅系统侧）和 `mechanism_log.jsonl`（候选、采纳、拒绝原因、软标记、输入/输出 state_id、四类版本号）。manifest 记录四类版本号、`stable_snapshot_id`、`rejected_groups` 和 `status_transitions`；每个 AgentState 快照带 `versions`、`module_status`、`stable_snapshot_id`。仍缺 git SHA、模型版本登记和按 state_id 的回放工具。
+- 现状：已落盘 `states.jsonl`（state_id 串链）、`environment_events.json`（含私有事件，仅系统侧）和 `mechanism_log.jsonl`（候选、采纳、拒绝原因、软标记、输入/输出 state_id、四类版本号）。manifest 记录四类版本号、`stable_snapshot_id`、`code_version`、`model_served`、`rejected_groups` 和 `status_transitions`；每个 AgentState 快照带 `versions`、`module_status`、`stable_snapshot_id`。仍缺按 state_id 的回放工具。
 - 归属：工程侧。
 
 ### M8 评测（evaluation）
@@ -173,7 +173,7 @@
   - **样本包**：事件前状态、触发事件及角色可见信息、模型输出与 thought、事件后状态、全部候选与最终 StateDelta、拒绝原因、相关历史、对方真实状态。后者只供对照；判断推断是否合理仍限于该角色可见证据。
   - **协议五阶段**：样本包 → 自动审计 → 人工评分 → 复标校准 → 报告回写。评测者不得临时改评分口径。
   - 真人基线不是第一版前置条件。
-- 现状：三档消融入口（`profile_only` / `profile_state` / `profile_state_mechanisms`）和自动审计报告（`rolesim/audit.py`）已有，覆盖字段有效性、证据与可见性、写权限、稳定一致性、轨迹可追溯性五项自动审计；其余维度只列为"需人工评分"。缺样本包导出、标注工具、复标统计。
+- 现状：三档消融入口（`profile_only` / `profile_state` / `profile_state_mechanisms`）、自动审计报告（`rolesim/audit.py`）和盲化样本包导出（`rolesim/package.py`，`python3.11 -m rolesim package`）已有。自动审计覆盖字段有效性、证据与可见性、写权限、稳定一致性、轨迹可追溯性五项；其余维度列为"需人工评分"。样本包含评测版（前后状态、可见触发事件、模型输出、全部候选及去向）、角色可见轨迹、对方真实状态（仅供对照）和标注模板。缺标注工具与复标统计；评测协议本身尚未冻结。
 - 归属：心理学组定维度与量表，工程侧提供数据与工具。
 
 ### M9 工程基础（infra）
@@ -213,8 +213,8 @@
 | U9 | 表达 | M5 | 按已选动作和风格生成台词，不泄露机制和分数 | action + 自知 + 风格 → speech | 环境组 2.3 | `express`，已有 |
 | U10 | 环境适配层 | M6 | 实现 `step` / `perceive`，数据类；`event_phase` 与幂等；脚本环境作测试替身；多角色调度器 | 环境组请求 ⇄ Agent | 环境组 3、4 | `agent.py` + `contract.py` + `ScriptedEnvironment`；多角色调度未做 |
 | U11 | 模型后端 | M5 | 兼容接口调用、严格 JSON、失败不回退 mock；回环地址不走代理 | — | — | `providers.py`，已有 |
-| U12 | 运行记录 | M7 | manifest、inputs、audit、public、state 序列、`mechanism_log`、prompt 与原始输出、四类版本号、Git SHA | — | 环境组 5 | `run_episode`，部分（缺 Git SHA、模型版本） |
-| U13 | 评测 | M8 | 自动审计（越界、无证据、stable 被改、引用不可见事件、规则覆盖）、样本包导出、标注工具 | 运行目录 → 报告 | 心理学组 5、第三部分 | 仅单元测试 |
+| U12 | 运行记录 | M7 | manifest、inputs、audit、public、state 序列、`mechanism_log`、prompt 与原始输出、四类版本号、Git SHA | — | 环境组 5 | `run_episode`，部分（缺原始模型输出落盘与回放） |
+| U13 | 评测 | M8 | 自动审计（越界、无证据、stable 被改、引用不可见事件、规则覆盖）、样本包导出、标注工具 | 运行目录 → 报告 | 心理学组 5、第三部分 | `audit.py`、`package.py` 已有；标注工具、复标统计未做 |
 
 单元间依赖：U2→U3→U8/U9；U5→U4；U6→U7→U4；U10 调用 U5、U6、U7、U8、U9；U12、U13 读取全部产物。M9 工程基础不单列实现单元。
 
@@ -243,7 +243,7 @@
 3. **11 个算子的注册表与写权限。** 已完成：`state.OPERATORS`；`CARD_MECHANISMS` 改映射；机制卡仍是空壳。
 4. **候选 → 依赖组原子提交。** 已完成：同阶段共用快照、依赖组、同路径冲突整组拒绝、重复贡献去重、`commit_key` 幂等。`event_phase` 目前由 Agent 取 `step` / `perceive` 触发点，不由环境组下发。
 5. **三级错误策略。** 已完成：硬错 / 软错 / 豁免；豁免只认规则卡声明的软边界，现无任何规则可豁免。
-6. **`mechanism_log` 与四类版本号。** 已完成：写入每次提交、manifest 和快照。未完成：git SHA 与实际模型版本。
+6. **`mechanism_log` 与四类版本号。** 已完成：写入每次提交、manifest 和快照。manifest 另记 `code_version`（git SHA 和是否有未提交改动）与 `model_served`（服务端响应里报告的模型名，mock 为空）。
 7. **stable 变更流程。** 未做：修订候选记录与 `stable_snapshot` 迁移的数据结构。目前只有 `stable_snapshot_id` 哈希。
 
 验证：61 项测试通过（含每条硬约束的反例）；mock 冒烟运行的 `public.jsonl` 与升级前逐字一致，状态数值轨迹与决策一致。这只说明升级没有改变工程行为，不构成心理有效性证据。
@@ -253,7 +253,7 @@
 ### 阶段 B：实验基础设施
 
 8. **消融入口拆开。** 已完成：`profile_only` / `profile_state` / `profile_state_mechanisms` 三档，旧名 `mechanisms` 不再接受。状态在三档下都计算，只有提示内容不同。
-9. **样本包导出。** 按第 3 节 M8 的样本包内容导出；对方真实状态单独成区，标明只供对照；另导出一份不含世界私有数据和对方真实状态的角色可见版。
+9. **样本包导出。** 已完成：每个运行一个盲化编号目录，方法标签（模式、后端、模型、代码版本）只在根目录 `blind_key.json`，控制器提示不进入样本包（其键名会暴露消融档位）。对方真实状态单独成文件；角色可见轨迹不含状态、推理和世界私有数据。标注模板含 0–3 级锚点和硬错类型（类型表为工程侧拟定，回复未枚举）。已知限制：首个样本没有前状态，因为运行不记录初始状态，只能看各 change 的 `before`。
 10. **自动审计报告。** 已完成：每次运行自动产出 `audit_report.json/.md`，并可用 `rolesim audit` 重审；软约束、豁免、被拒依赖组单列且计入错误率，隐藏事件内容进入控制器输入会判失败。审计从落盘产物重新推导，不信任引擎自己的记录。
 11. **回放工具**：按 `state_id` 和四类版本号回放。
 

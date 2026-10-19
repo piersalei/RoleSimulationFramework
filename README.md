@@ -93,6 +93,7 @@ python3.11 -m rolesim run --backend chat --out runs/model-first
 | 环境 | 已按环境组合同 v0 实现 `Agent.step` / `perceive`；脚本环境是其中一种裁决器（单焦点角色 + 有限动作 + 四轮反馈）；多角色调度与自由多智能体环境待实现 |
 | 模型接口 | 两阶段兼容接口；已做本机 HTTP 模拟测试，真实模型待接入 |
 | 对照入口 | `--mode` 三档：`profile_only`（相同历史，不注入状态与机制）、`profile_state`（加动态状态）、`profile_state_mechanisms`（再加机制卡，默认）。状态在三档下都计算并记录，档位只决定控制器提示内容；尚无对照效果结果 |
+| 评审包 | `python3.11 -m rolesim package RUN... --out DIR` 导出盲化样本包：评测版样本、角色可见轨迹、对方真实状态（仅供对照）、标注模板；方法标签只在 `blind_key.json`。评测协议尚未冻结 |
 | 自动审计 | 每次运行产出 `audit_report.json/.md`（字段有效性、证据与可见性、写权限、stable 一致、轨迹可追溯），可用 `python3.11 -m rolesim audit <run_dir>` 重审；通过不代表心理有效 |
 | GitHub CI | 已提供工作流；执行结果以实际仓库 Actions 为准 |
 

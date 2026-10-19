@@ -9,7 +9,7 @@ from rolesim.persona import compile_views, validate_persona
 from rolesim.providers import MockBackend, strict_json
 from rolesim.agent import Agent, MODES, initial_state, make_payload, observe, observation, validate_decision
 from rolesim.contract import ProposedAction, Visibility
-from rolesim.runtime import ScriptedEnvironment, run_episode, validate_scenario
+from rolesim.runtime import ScriptedEnvironment, code_version, run_episode, validate_scenario
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -164,6 +164,19 @@ class PipelineTests(unittest.TestCase):
                 make_payload(self.persona, state, *args, old)
             with self.assertRaises(ValueError):
                 Agent(MockBackend(), ["wait"], "p", mode=old)
+
+    def test_manifest_records_code_version_and_served_model(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manifest = run_episode(self.persona, self.scenario, MockBackend(), Path(folder) / "run")
+        version = manifest["code_version"]
+        self.assertTrue(version["git_sha"] == "unavailable" or len(version["git_sha"]) == 40)
+        self.assertIn(version["git_dirty"], (True, False, None))
+        self.assertEqual(manifest["model_served"], [])
+        self.assertEqual(manifest["model"], "deterministic-fixture-v1")
+
+    def test_code_version_degrades_explicitly_outside_a_repository(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(code_version(folder), {"git_sha": "unavailable", "git_dirty": None})
 
     def test_adding_state_to_the_prompt_does_not_change_bookkeeping(self):
         finals = {}

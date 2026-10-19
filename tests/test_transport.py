@@ -17,7 +17,7 @@ class TransportTests(unittest.TestCase):
             def do_POST(self):
                 received.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
                 result = {"action": "wait", "evidence_ids": ["e1"], "brief_reason": "核对"} if len(received) == 1 else {"speech": "我核对一下。"}
-                raw = json.dumps({"choices": [{"message": {"content": json.dumps(result)}}]}).encode()
+                raw = json.dumps({"model": "fake-2026-01", "choices": [{"message": {"content": json.dumps(result)}}]}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(raw)))
@@ -36,6 +36,7 @@ class TransportTests(unittest.TestCase):
                 self.assertEqual(backend.decide({})["action"], "wait")
                 self.assertEqual(backend.express({}), "我核对一下。")
                 self.assertEqual(backend.calls, 2)
+                self.assertEqual(backend.served_models, ["fake-2026-01"])
                 self.assertTrue(all(p["response_format"] == {"type": "json_object"} for p in received))
         finally:
             server.shutdown()

@@ -9,6 +9,7 @@ from .persona import compile_views, validate_persona
 from .providers import ChatBackend, MockBackend, strict_json
 from .agent import MODES
 from .audit import write_report
+from .package import export_package
 from .runtime import run_episode
 
 
@@ -25,6 +26,10 @@ def main():
             item.add_argument("--out", required=True)
     audit = sub.add_parser("audit", help="re-audit a finished run directory")
     audit.add_argument("run_dir")
+    package = sub.add_parser("package", help="export a blinded review package from finished runs")
+    package.add_argument("run_dirs", nargs="+")
+    package.add_argument("--out", required=True)
+    package.add_argument("--seed", type=int, default=0)
     demo = sub.add_parser("run", help="one focal role in a scripted environment")
     demo.add_argument("--persona", default="examples/cautious.json")
     demo.add_argument("--scenario", default="examples/cooperation_conflict.json")
@@ -42,6 +47,9 @@ def main():
             report = write_report(args.run_dir)
             print(f"{'PASS' if report['passed'] else 'FAIL'}: {args.run_dir}/audit_report.md")
             sys.exit(0 if report["passed"] else 2)
+        if args.command == "package":
+            print(json.dumps(export_package(args.run_dirs, args.out, args.seed), ensure_ascii=False))
+            return
         persona = strict_json(Path(args.persona).read_text(encoding="utf-8"))
         if args.command == "validate":
             validate_persona(persona)

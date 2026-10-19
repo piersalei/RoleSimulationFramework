@@ -5,6 +5,7 @@ it is a test double, not a free-form multi-agent world simulator.
 """
 import copy
 import json
+import subprocess
 from pathlib import Path
 
 from .agent import Agent
@@ -16,6 +17,7 @@ from .mechanisms import CARDS
 from .persona import bounded, compile_views, text, validate_persona
 from .state import VERSIONS
 
+CODE_ROOT = Path(__file__).resolve().parents[1]
 ACTIONS = {"request_evidence", "ask_clarification", "propose_plan", "set_boundary", "wait"}
 CUES = {"uncertainty", "pressure", "commitment", "repair", "conflict"}
 
@@ -148,6 +150,19 @@ def _raise(agent, response):
         raise agent.last_error
 
 
+def code_version(root=CODE_ROOT):
+    """Git commit of the code that produced a run; `git_dirty` is True when it differs from HEAD."""
+    def git(*args):
+        done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=10)
+        if done.returncode:
+            raise OSError(done.stderr.strip())
+        return done.stdout.strip()
+    try:
+        return {"git_sha": git("rev-parse", "HEAD"), "git_dirty": bool(git("status", "--porcelain"))}
+    except (OSError, subprocess.SubprocessError):
+        return {"git_sha": "unavailable", "git_dirty": None}
+
+
 def run_episode(persona, scenario, backend, output, mode="profile_state_mechanisms"):
     validate_persona(persona)
     validate_scenario(scenario)
@@ -161,7 +176,7 @@ def run_episode(persona, scenario, backend, output, mode="profile_state_mechanis
     fingerprint = digest(persona)
     manifest = {"schema_version": "1.1", "status": "running", "backend": backend.label,
                 "model": backend.model, "mode": mode, "interface": "env-contract-v0 step/perceive", "versions": dict(VERSIONS),
-                "stable_snapshot_id": digest(persona["stable"]),
+                "stable_snapshot_id": digest(persona["stable"]), "code_version": code_version(),
                 "persona_hash": fingerprint,
                 "scenario_hash": digest(scenario), "mechanism_hash": digest(CARDS),
                 "sampling": "mock deterministic; real model temperature 0.3; server determinism not guaranteed",
@@ -211,6 +226,7 @@ def run_episode(persona, scenario, backend, output, mode="profile_state_mechanis
             raise ValueError("scenario has no events visible to this role")
         write_json(output / "environment_events.json", [to_dict(e) for e in env.log])
         manifest.update(status="completed", turns=turn, api_calls=backend.calls,
+                        model_served=sorted(backend.served_models),
                         final_state_id=agent.state_id, visibility_warnings=agent.warnings,
                         rejected_groups=sum(len(e["rejected"]) for e in agent.mechanism_log),
                         status_transitions=len(agent.state["status_log"]))
@@ -221,6 +237,7 @@ def run_episode(persona, scenario, backend, output, mode="profile_state_mechanis
         write_json(output / "manifest.json", manifest)
         return manifest
     except Exception as exc:
-        manifest.update(status="failed", error_type=type(exc).__name__, api_calls=backend.calls)
+        manifest.update(status="failed", error_type=type(exc).__name__, api_calls=backend.calls,
+                        model_served=sorted(backend.served_models))
         write_json(output / "manifest.json", manifest)
         raise

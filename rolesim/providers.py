@@ -32,6 +32,7 @@ class ChatBackend:
         if not self.model:
             raise ValueError("Set ROLE_SIM_MODEL explicitly")
         self.calls = 0
+        self.served_models = []   # model names the server reported, as opposed to the configured one
         handlers = [NoRedirect()]
         if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
             # Local model servers must not be routed through HTTP(S)_PROXY.
@@ -55,6 +56,9 @@ class ChatBackend:
                 if len(raw) > 2_000_000:
                     raise ValueError("API response too large")
                 data = strict_json(raw)
+            served = data.get("model") if isinstance(data, dict) else None
+            if isinstance(served, str) and served and served not in self.served_models:
+                self.served_models.append(served)
             return strict_json(data["choices"][0]["message"]["content"])
         except urllib.error.HTTPError as exc:
             raise RuntimeError(f"Model API HTTP {exc.code}; response body omitted to protect credentials") from None
@@ -85,6 +89,7 @@ class MockBackend:
     """Deterministic plumbing fixture; never use its outputs as psychological evidence."""
     label = "mock_fixture_not_model_evidence"
     model = "deterministic-fixture-v1"
+    served_models = ()
     calls = 0
 
     def decide(self, payload):
