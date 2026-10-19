@@ -13,6 +13,7 @@ from .contract import (Event, PerceiveRequest, StepRequest, Visibility, to_dict,
                        validate_event as validate_contract_event)
 from .mechanisms import CARDS
 from .persona import bounded, compile_views, text, validate_persona
+from .state import VERSIONS
 
 ACTIONS = {"request_evidence", "ask_clarification", "propose_plan", "set_boundary", "wait"}
 CUES = {"uncertainty", "pressure", "commitment", "repair", "conflict"}
@@ -158,7 +159,8 @@ def run_episode(persona, scenario, backend, output, mode="mechanisms"):
     output.mkdir(parents=True, exist_ok=False)
     fingerprint = digest(persona)
     manifest = {"schema_version": "1.1", "status": "running", "backend": backend.label,
-                "model": backend.model, "mode": mode, "interface": "env-contract-v0 step/perceive",
+                "model": backend.model, "mode": mode, "interface": "env-contract-v0 step/perceive", "versions": dict(VERSIONS),
+                "stable_snapshot_id": digest(persona["stable"]),
                 "persona_hash": fingerprint,
                 "scenario_hash": digest(scenario), "mechanism_hash": digest(CARDS),
                 "sampling": "mock deterministic; real model temperature 0.3; server determinism not guaranteed",
@@ -169,8 +171,10 @@ def run_episode(persona, scenario, backend, output, mode="mechanisms"):
     try:
         with (output / "audit.jsonl").open("w", encoding="utf-8") as audit, \
                 (output / "public.jsonl").open("w", encoding="utf-8") as public, \
-                (output / "states.jsonl").open("w", encoding="utf-8") as states:
+                (output / "states.jsonl").open("w", encoding="utf-8") as states, \
+                (output / "mechanism_log.jsonl").open("w", encoding="utf-8") as mech_log:
             turn = 0
+            logged = 0
             for turn, event in env.scheduled():
                 if event.visibility.scope == "public":
                     _public(public, turn, "environment", event.content)
@@ -199,11 +203,16 @@ def run_episode(persona, scenario, backend, output, mode="mechanisms"):
                                         "perceive_delta": perceived.delta,
                                         "state_after": perceived.state}, ensure_ascii=False) + "\n")
                 write_json(output / "state.json", perceived.state)
+                for entry in agent.mechanism_log[logged:]:
+                    mech_log.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                logged = len(agent.mechanism_log)
         if not turn:
             raise ValueError("scenario has no events visible to this role")
         write_json(output / "environment_events.json", [to_dict(e) for e in env.log])
         manifest.update(status="completed", turns=turn, api_calls=backend.calls,
-                        final_state_id=agent.state_id, visibility_warnings=agent.warnings)
+                        final_state_id=agent.state_id, visibility_warnings=agent.warnings,
+                        rejected_groups=sum(len(e["rejected"]) for e in agent.mechanism_log),
+                        status_transitions=len(agent.state["status_log"]))
         write_json(output / "manifest.json", manifest)
         return manifest
     except Exception as exc:

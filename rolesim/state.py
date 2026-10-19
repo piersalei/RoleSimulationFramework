@@ -1,40 +1,84 @@
-"""Dynamic state blocks and StateDelta validation (psychology contract v0, sections 2.2 and 3).
+"""Dynamic state (state-v1): six domains, update operators and staged atomic commits.
 
-Field names follow the contract draft. Numeric parameters here are engineering
-placeholders until the psychology group supplies rules; they are not fitted values.
+Structure and processes follow the psychology group's reply (docs/06-plan.md, section 1).
+The reply fixes structure, operator list and error policy but not rule-card numbers; the
+numeric parameters below are engineering placeholders, not fitted values.
 """
 import copy
+import json
 import math
 
-SCHEMA_VERSION = "state-v0"
-PSYCHOLOGY_VERSION = "psy-v0"
+from .modules import (NO_VALUE, STATUSES, default_module_status, governing, initial_slots,
+                      relation_entries, transition)
 
-# Which dynamic blocks each state-change type may write (contract 3, hard rule 3).
-MECHANISMS = {
-    "appraisal": {"emotion", "beliefs"},
-    "belief_revision": {"beliefs"},
-    "tom_inference": {"other_models"},
-    "relation_update": {"relations"},
-    "goal_update": {"goals_now"},
-    "self_commit": {"goals_now"},
-    "decay": {"emotion"},
+SCHEMA_VERSION = "state-v1"
+PSYCHOLOGY_VERSION = "psy-v1"
+# Four version numbers recorded with every trajectory (reply, section 4.4). The construct
+# registry and the evaluation protocol are not frozen yet, so they say so explicitly.
+VERSIONS = {"construct_definition_version": "unregistered",
+            "state_schema_version": SCHEMA_VERSION,
+            "update_rule_version": "engineering-v1",
+            "evaluation_protocol_version": "unfrozen"}
+
+DOMAINS = ("affect_state", "cognition_state", "goal_state", "relation_state", "group_state", "policy_state")
+
+# The eleven update operators and the dynamic paths each may write. "*" matches one
+# path segment (a partner id). An empty list means the operator writes no dynamic path.
+OPERATORS = {
+    "emotion_update": ["dynamic.affect_state"],
+    "belief_revision": ["dynamic.cognition_state.beliefs"],
+    "other_model_update": ["dynamic.cognition_state.other_models"],
+    "self_state_update": ["dynamic.cognition_state.self_state"],
+    "relation_update": ["dynamic.relation_state"],
+    "group_state_update": ["dynamic.group_state"],
+    "goal_update": ["dynamic.goal_state"],
+    "commitment_update": ["dynamic.policy_state.commitments"],
+    "strategy_learning": ["dynamic.policy_state.strategy"],
+    "memory_update": [],   # memory entries live in AgentState.memory, not under dynamic
+    "decay_or_recovery": ["dynamic.affect_state.emotion", "dynamic.relation_state.*.harm_history",
+                          "dynamic.policy_state.strategy"],
 }
 
-# Closed ranges by leaf field name; None means "not represented yet" and is allowed.
+# Closed ranges by leaf field name; None means "unknown" and is allowed only where the
+# module status says so.
 RANGES = {"valence": (-1, 1), "arousal": (0, 1), "intensity": (0, 1), "confidence": (0, 1),
-          "priority": (0, 1), "trust": (0, 1), "closeness": (0, 1)}
+          "priority": (0, 1), "trust": (0, 1), "closeness": (0, 1), "dependence": (0, 1),
+          "commitment": (0, 1), "severity": (0, 1)}
 
-# Soft limits (contract 3.2): violations are written and flagged, not rejected.
-MAX_STEP = {"trust": .3}
+# Soft rules: violations are written and flagged. `exceptionable` is True only when a
+# rule card explicitly lets a major event waive the boundary; no card does yet.
+SOFT_RULES = {"trust_step": {"field": "trust", "limit": .3, "exceptionable": False}}
 
 CHANGE_FIELDS = {"path", "before", "after", "evidence", "mechanism", "reason"}
+OPTIONAL_FIELDS = {"flag", "group", "exception"}
+EXCEPTION_FIELDS = {"soft_rule", "evidence", "approved_by", "review"}
+HARM_FIELDS = {"event_id", "severity", "acknowledged", "repaired", "last_activated"}
+MISSING = object()
 
 
-def empty_dynamic():
-    return {"emotion": {"label": None, "valence": None, "arousal": None, "intensity": 0},
-            "beliefs": {}, "goals_now": [], "relations": {}, "other_models": {}}
+# -- construction ------------------------------------------------------------
+def new_dynamic(partner_ids=()):
+    """Return (dynamic, module_status) with every module unknown/not_modeled as registered."""
+    return initial_slots(partner_ids), default_module_status(partner_ids)
 
 
+def add_partner(dynamic, status, partner):
+    if partner in dynamic["relation_state"]:
+        raise ValueError(f"partner already present: {partner}")
+    dynamic["relation_state"][partner] = initial_slots([partner])["relation_state"][partner]
+    status.update(relation_entries(partner))
+
+
+def activate(dynamic, status, log, path, value, basis, source, origin="default"):
+    """Fill an unknown module with a value and mark it active in one audited step."""
+    keys = _split(path)
+    transition(status, log, path, "active", basis, source=source)
+    status[path]["origin"] = origin
+    _set(dynamic, keys, copy.deepcopy(value))
+    validate_dynamic(dynamic, status)
+
+
+# -- validation --------------------------------------------------------------
 def _check_ranges(value, name):
     if isinstance(value, dict):
         for key, item in value.items():
@@ -56,31 +100,86 @@ def _require_source(item, where):
         raise ValueError(f"{where} requires a non-empty source list")
 
 
-def validate_dynamic(dynamic):
-    if not isinstance(dynamic, dict) or set(dynamic) != set(empty_dynamic()):
-        raise ValueError("dynamic: unexpected or missing block")
-    if not isinstance(dynamic["emotion"], dict) or set(dynamic["emotion"]) != set(empty_dynamic()["emotion"]):
-        raise ValueError("dynamic.emotion: unexpected or missing field")
-    if not isinstance(dynamic["goals_now"], list):
-        raise ValueError("dynamic.goals_now must be a list")
-    for block in ("beliefs", "relations", "other_models"):
-        if not isinstance(dynamic[block], dict):
-            raise ValueError(f"dynamic.{block} must be an object")
-    for key, belief in dynamic["beliefs"].items():
-        _require_source(belief, f"beliefs.{key}")
-    for key, model in dynamic["other_models"].items():
-        _require_source(model, f"other_models.{key}")
+def _lookup(tree, parts):
+    for part in parts:
+        if isinstance(tree, dict) and part in tree:
+            tree = tree[part]
+        else:
+            return MISSING
+    return tree
+
+
+def _ungoverned(node, path, status):
+    if path in status:
+        return None
+    if isinstance(node, dict):
+        for key, child in node.items():
+            found = _ungoverned(child, f"{path}.{key}", status)
+            if found:
+                return found
+        return None
+    return path
+
+
+def validate_status(status):
+    if not isinstance(status, dict):
+        raise ValueError("module_status must be an object")
+    for path, item in status.items():
+        if not isinstance(item, dict) or item.get("status") not in STATUSES:
+            raise ValueError(f"{path}: unsupported module status")
+        if not isinstance(item.get("reason"), str) or not item["reason"].strip():
+            raise ValueError(f"{path}: module status requires a reason")
+        if item.get("status") == "active" and item.get("origin") not in {None, "default", "profile", "observed"}:
+            raise ValueError(f"{path}: unsupported origin")
+
+
+def validate_dynamic(dynamic, status):
+    if not isinstance(dynamic, dict) or tuple(dynamic) != DOMAINS:
+        raise ValueError("dynamic: unexpected or missing domain")
+    validate_status(status)
+    for path, item in status.items():
+        value = _lookup({"dynamic": dynamic}, path.split("."))
+        if item["status"] == "active":
+            if value is MISSING or value is None:
+                raise ValueError(f"{path}: active module requires a value; use unknown for missing evidence")
+        elif item["status"] == "unknown":
+            if value is MISSING or value is not None:
+                raise ValueError(f"{path}: unknown module must hold null")
+        elif item["status"] in NO_VALUE and value not in (MISSING, None, {}, []):
+            raise ValueError(f"{path}: {item['status']} module may not hold a value")
+    stray = _ungoverned(dynamic, "dynamic", status)
+    if stray:
+        raise ValueError(f"{stray}: value is not governed by a registered module")
+    goals = dynamic["goal_state"].get("goals_now")
+    if goals is not None and not isinstance(goals, list):
+        raise ValueError("dynamic.goal_state.goals_now must be a list")
+    for block in ("beliefs", "other_models"):
+        items = dynamic["cognition_state"][block]
+        if not isinstance(items, dict):
+            raise ValueError(f"dynamic.cognition_state.{block} must be an object")
+        for key, item in items.items():
+            _require_source(item, f"{block}.{key}")
+    for partner, relation in dynamic["relation_state"].items():
+        events = relation["harm_history"]["events"]
+        if not isinstance(events, list):
+            raise ValueError("harm_history.events must be a list")
+        for event in events:
+            if not isinstance(event, dict) or set(event) != HARM_FIELDS:
+                raise ValueError("harm_history event: unexpected or missing field")
+            if not all(isinstance(event[k], bool) for k in ("acknowledged", "repaired")):
+                raise ValueError("harm_history event: acknowledged/repaired must be booleans")
     _check_ranges(dynamic, "dynamic")
 
 
+# -- paths -------------------------------------------------------------------
 def _split(path):
     if not isinstance(path, str) or not path:
         raise ValueError("change path must be a non-empty string")
     parts = path.split(".")
     if parts[0] == "stable":
         raise ValueError("stable fields are read-only within an episode")
-    if parts[0] != "dynamic" or len(parts) < 2 or not all(parts):
-        raise ValueError("change path must address dynamic.<block>[...]")
+    if parts[0] != "dynamic" or len(parts) < 3 or not all(parts):
+        raise ValueError("change path must address dynamic.<domain>.<module>[...]")
     return parts[1:]
 
 
@@ -108,45 +207,155 @@ def _set(tree, keys, value):
         tree[keys[-1]] = value
 
 
-def check_change(change, visible_ids):
-    """Apply the four hard constraints to one change; return a soft-violation flag or None."""
-    if not isinstance(change, dict) or not CHANGE_FIELDS <= set(change) <= CHANGE_FIELDS | {"flag"}:
+def _matches(pattern, path):
+    want, have = pattern.split("."), path.split(".")
+    return len(have) >= len(want) and all(w in ("*", h) for w, h in zip(want, have))
+
+
+def may_write(operator, path):
+    return any(_matches(pattern, path) for pattern in OPERATORS[operator])
+
+
+# -- single change -----------------------------------------------------------
+def _soft_rule(path, before, after):
+    for rule_id, rule in SOFT_RULES.items():
+        if path.split(".")[-1] == rule["field"] and isinstance(before, (int, float)) \
+                and isinstance(after, (int, float)) and abs(after - before) > rule["limit"] + 1e-9:
+            return rule_id
+    return None
+
+
+def check_change(change, visible_ids, dynamic, status):
+    """Apply the hard rules to one change; return its soft flag (or None).
+
+    Raises ValueError on any hard error: structure, evidence, permission, module status,
+    range, stale `before`, or an exception request the rule card does not allow.
+    """
+    if not isinstance(change, dict) or not CHANGE_FIELDS <= set(change) <= CHANGE_FIELDS | OPTIONAL_FIELDS:
         raise ValueError("change: unexpected or missing field")
-    keys = _split(change["path"])
+    path = change["path"]
+    keys = _split(path)
     evidence = change["evidence"]
     if not isinstance(evidence, list) or not evidence:
         raise ValueError("change requires evidence")
     if any(not isinstance(e, str) or e not in visible_ids for e in evidence):
         raise ValueError("change cites evidence this role has not seen")
-    if change["mechanism"] not in MECHANISMS:
+    operator = change["mechanism"]
+    if operator not in OPERATORS:
         raise ValueError("unregistered mechanism")
-    if keys[0] not in MECHANISMS[change["mechanism"]]:
-        raise ValueError(f"{change['mechanism']} may not write dynamic.{keys[0]}")
+    if not may_write(operator, path):
+        raise ValueError(f"{operator} may not write {path}")
+    module = governing(status, path)
+    if module is None:
+        raise ValueError(f"{path}: no registered module governs this path")
+    if status[module]["status"] != "active":
+        raise ValueError(f"{module} is {status[module]['status']}; only active modules can be written")
     if not isinstance(change["reason"], str) or not change["reason"].strip():
         raise ValueError("change requires a reason")
     _check_ranges(change["after"], keys[-1])
-    before, after = change["before"], change["after"]
-    limit = MAX_STEP.get(keys[-1])
-    if limit is not None and isinstance(before, (int, float)) and isinstance(after, (int, float)) \
-            and abs(after - before) > limit + 1e-9:
-        return "soft_violation"
-    return None
+    if _get(dynamic, keys) != change["before"]:
+        raise ValueError(f"stale before value for {path}")
+    rule_id = _soft_rule(path, change["before"], change["after"])
+    exception = change.get("exception")
+    if exception is not None:
+        if not isinstance(exception, dict) or set(exception) != EXCEPTION_FIELDS:
+            raise ValueError("exception: unexpected or missing field")
+        if rule_id is None or exception["soft_rule"] != rule_id:
+            raise ValueError("exception does not match a soft-rule violation")
+        if not SOFT_RULES[rule_id]["exceptionable"]:
+            raise ValueError(f"rule card does not allow waiving {rule_id}")
+        if not isinstance(exception["evidence"], list) or not exception["evidence"] \
+                or any(e not in visible_ids for e in exception["evidence"]):
+            raise ValueError("exception requires visible evidence")
+        if not all(isinstance(exception[k], str) and exception[k] for k in ("approved_by", "review")):
+            raise ValueError("exception requires approved_by and review")
+        return "exception_approved"
+    return "soft_violation" if rule_id else None
 
 
-def apply_delta(dynamic, delta, visible_ids):
-    """Validate every change, then return an updated copy; any hard violation rejects the whole delta."""
+# -- staged commit -----------------------------------------------------------
+def _signature(change):
+    return (change["mechanism"], tuple(sorted(change["evidence"])),
+            json.dumps(change["after"], ensure_ascii=False, sort_keys=True))
+
+
+def commit_phase(dynamic, status, delta, visible_ids, commit_key=None, committed=None):
+    """Validate candidate changes against one shared snapshot and commit them by group.
+
+    Changes with the same `group` form a dependency group and commit atomically; a change
+    with no group joins "default". A hard error, or a same-path conflict with no
+    registered aggregation rule, rejects the whole group; other groups still commit.
+    Returns (new_dynamic, adopted_changes, log). A repeated `commit_key` is a no-op.
+    """
+    if commit_key is not None and committed is not None and commit_key in committed:
+        return copy.deepcopy(dynamic), [], {**copy.deepcopy(committed[commit_key]), "replayed": True}
     if not isinstance(delta, dict) or not isinstance(delta.get("changes"), list):
         raise ValueError("delta requires a changes list")
-    visible_ids = set(visible_ids)
-    result = copy.deepcopy(dynamic)
-    flags = []
-    for change in delta["changes"]:
-        flags.append(check_change(change, visible_ids))
-        keys = _split(change["path"])
-        if _get(result, keys) != change["before"]:
-            raise ValueError(f"stale before value for {change['path']}")
-        _set(result, keys, copy.deepcopy(change["after"]))
-    validate_dynamic(result)
-    for change, flag in zip(delta["changes"], flags):
-        change["flag"] = flag
-    return result
+    changes, visible = delta["changes"], set(visible_ids)
+    snapshot = copy.deepcopy(dynamic)
+    groups = {}
+    for index, change in enumerate(changes):
+        group = change.get("group", "default") if isinstance(change, dict) else "default"
+        if not isinstance(group, str) or not group:
+            raise ValueError("group must be a non-empty string")
+        groups.setdefault(group, []).append(index)
+
+    rejected, flags = {}, {}
+    for group, indices in groups.items():
+        for index in indices:
+            try:
+                flags[index] = check_change(changes[index], visible, snapshot, status)
+            except (ValueError, TypeError, KeyError) as exc:
+                path = changes[index].get("path") if isinstance(changes[index], dict) else None
+                rejected.setdefault(group, f"{path}: {exc}" if path else str(exc))
+
+    by_path = {}
+    for group, indices in groups.items():
+        if group not in rejected:
+            for index in indices:
+                by_path.setdefault(changes[index]["path"], []).append(index)
+    dropped = set()
+    for path, indices in by_path.items():
+        if len(indices) < 2:
+            continue
+        if len({_signature(changes[i]) for i in indices}) == 1:
+            dropped.update(indices[1:])
+            continue
+        for i in indices:
+            rejected.setdefault(changes[i].get("group", "default"),
+                                f"{path}: unresolvable same-path conflict; no aggregation rule registered")
+
+    def apply(base, indices):
+        result = copy.deepcopy(base)
+        for index in indices:
+            if index not in dropped:
+                _set(result, _split(changes[index]["path"]), copy.deepcopy(changes[index]["after"]))
+        validate_dynamic(result, status)
+        return result
+
+    for group, indices in groups.items():
+        if group not in rejected:
+            try:
+                apply(snapshot, indices)
+            except ValueError as exc:
+                rejected[group] = str(exc)
+    accepted = [i for g, indices in groups.items() if g not in rejected for i in indices]
+    result = apply(snapshot, accepted)
+    adopted = [changes[i] for i in accepted if i not in dropped]
+    for i in accepted:
+        if i not in dropped:
+            changes[i]["flag"] = flags[i]
+    log = {"commit_key": commit_key, "trigger": delta.get("trigger"), "event_id": delta.get("event_id"),
+           "versions": dict(VERSIONS), "input_state_id": None, "output_state_id": None,
+           "candidates": [{"index": i, "group": c.get("group", "default") if isinstance(c, dict) else None,
+                           "path": c.get("path") if isinstance(c, dict) else None,
+                           "mechanism": c.get("mechanism") if isinstance(c, dict) else None}
+                          for i, c in enumerate(changes)],
+           "adopted": [{"group": g, "paths": [changes[i]["path"] for i in indices if i not in dropped]}
+                       for g, indices in groups.items() if g not in rejected],
+           "rejected": [{"group": g, "kind": "hard", "reason": reason} for g, reason in rejected.items()],
+           "duplicates_dropped": [changes[i]["path"] for i in sorted(dropped)],
+           "flags": [{"path": changes[i]["path"], "flag": flags[i]} for i in accepted if flags[i]]}
+    if commit_key is not None and committed is not None:
+        committed[commit_key] = copy.deepcopy(log)
+    return result, adopted, log

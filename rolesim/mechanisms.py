@@ -21,23 +21,26 @@ CARDS = [
 
 
 # Cards are scheduling units (which actions to favour); mechanisms are state-change
-# types from the psychology contract. This table records which state changes a card's
-# situation is expected to involve. Engineering hypothesis, pending psychology review.
+# operators (state-v1, eleven update operators). This table records which operators a
+# card's situation is expected to involve. Engineering hypothesis, pending psychology review.
 CARD_MECHANISMS = {
     "verify": ["belief_revision"],
-    "appraise": ["appraisal", "decay"],
+    "appraise": ["emotion_update", "decay_or_recovery"],
     "trust": ["relation_update"],
-    "repair": ["relation_update", "tom_inference"],
-    "boundary": ["self_commit"],
+    "repair": ["relation_update", "other_model_update"],
+    "boundary": ["commitment_update"],
 }
 
 
 def select_cards(persona, state, observation, allowed):
     s = persona["stable"]
     dynamic = state["dynamic"]
+    # An unknown (null) dynamic value contributes nothing; it is not replaced by a neutral guess.
+    tension = dynamic["affect_state"]["emotion"]["intensity"]
+    trust = dynamic["relation_state"]["partner"]["trust"]
     moderators = {"verification": s["cognition"]["verification_bias"],
-                  "threat": dynamic["emotion"]["intensity"],
-                  "distrust": 1 - dynamic["relations"]["partner"]["trust"],
+                  "threat": tension if tension is not None else 0,
+                  "distrust": 1 - trust if trust is not None else 0,
                   "cooperation": (s["personality"]["facets"]["agreeableness.compliance"] + 2) / 4,
                   "directness": s["communication"]["directness"]}
     candidates = []

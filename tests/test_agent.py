@@ -4,9 +4,11 @@ import unittest
 from pathlib import Path
 
 from rolesim.agent import Agent
+from rolesim.catalog import digest
 from rolesim.contract import (Event, PerceiveRequest, StepRequest, Visibility, to_dict)
 from rolesim.providers import MockBackend
 from rolesim.runtime import ScriptedEnvironment
+from rolesim.state import DOMAINS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -134,6 +136,26 @@ class AgentContractTests(unittest.TestCase):
         perceived = agent.perceive(PerceiveRequest("cautious", 1, outcomes, first.state["state_id"]))
         second = agent.step(StepRequest("cautious", 2, "g", [self.events[1]], perceived.state["state_id"]))
         self.assertEqual(second.actions[0].intent_note, "wait")
+
+    def test_snapshot_carries_versions_module_status_and_stable_id(self):
+        state = self.first().state
+        self.assertEqual(state["schema_version"], "state-v1")
+        self.assertEqual(set(state["versions"]), {"construct_definition_version", "state_schema_version",
+                                                  "update_rule_version", "evaluation_protocol_version"})
+        self.assertEqual(state["stable_snapshot_id"], digest(self.persona["stable"]))
+        self.assertEqual(state["module_status"]["dynamic.group_state"]["status"], "not_modeled")
+        self.assertEqual(tuple(state["dynamic"]), DOMAINS)
+
+    def test_mechanism_log_links_input_and_output_state_ids(self):
+        stepped = self.first()
+        _, outcomes = self.env.adjudicate(stepped.actions[0], 1)
+        perceived = self.agent.perceive(PerceiveRequest("cautious", 1, outcomes, stepped.state["state_id"]))
+        log = self.agent.mechanism_log
+        self.assertEqual([(e["trigger"], e["input_state_id"], e["output_state_id"]) for e in log],
+                         [("step", None, "cautious@t001"),
+                          ("perceive", "cautious@t001", perceived.state["state_id"])])
+        self.assertEqual([e["commit_key"] for e in log], ["cautious/e1/step", f"cautious/{outcomes[0].event_id}/perceive"])
+        self.assertTrue(all(e["rejected"] == [] for e in log))
 
     def test_stable_persona_cannot_be_swapped_mid_episode(self):
         stepped = self.first()

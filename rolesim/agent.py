@@ -5,24 +5,31 @@ own memory and state chain; the environment stores snapshots but never edits the
 """
 import copy
 
+from .catalog import digest
 from .contract import (PerceiveRequest, PerceiveResponse, ProposedAction, StepRequest,
                        StepResponse, Visibility, validate_event)
 from .mechanisms import CARDS, select_cards
 from .persona import compile_views, text, validate_persona
-from .state import (PSYCHOLOGY_VERSION, SCHEMA_VERSION, apply_delta, empty_dynamic,
-                    validate_dynamic)
+from .state import (PSYCHOLOGY_VERSION, SCHEMA_VERSION, VERSIONS, activate, commit_phase,
+                    new_dynamic, validate_dynamic)
 
 PARTNER = "partner"  # relation key for the single focal partner in this slice
 
 
 def initial_state():
-    dynamic = empty_dynamic()
-    # Prototype starting values, not measured baselines.
-    dynamic["emotion"].update(label="紧张", intensity=.15)
-    dynamic["relations"][PARTNER] = {"trust": .55, "closeness": None, "note": ""}
-    validate_dynamic(dynamic)
+    dynamic, status = new_dynamic([PARTNER])
+    log = []
+    # Prototype starting values, not measured baselines: marked origin "default" and
+    # written through the audited activation step. Everything else stays unknown/not_modeled.
+    base = "dynamic.affect_state.emotion"
+    for path, value in ((f"{base}.label", "紧张"), (f"{base}.intensity", .15),
+                        (f"dynamic.relation_state.{PARTNER}.trust", .55)):
+        activate(dynamic, status, log, path, value, "prototype starting value, not a measurement",
+                 ["engineering_default"])
+    validate_dynamic(dynamic, status)
     return {"schema_version": SCHEMA_VERSION, "psychology_version": PSYCHOLOGY_VERSION,
-            "dynamic": dynamic, "memory": [], "seen_ids": [], "updates": []}
+            "dynamic": dynamic, "module_status": status, "status_log": log, "memory": [],
+            "seen_ids": [], "updates": [], "mechanism_log": [], "commits": {}}
 
 
 def observation(event):
@@ -35,37 +42,50 @@ def observation(event):
     return item
 
 
-def observe(state, event, persona):
-    """Apply one visible contract Event to `state`; return the delta, or None if skipped."""
+def observe(state, event, persona, phase="perceive"):
+    """Apply one visible contract Event to `state`; return the delta, or None if skipped.
+
+    Candidate changes are committed by dependency group against one snapshot. A rejected
+    group is recorded in `mechanism_log` and in `delta["rejected"]`, never silently dropped.
+    """
     if persona["id"] not in event.visibility.audience or event.event_id in state["seen_ids"]:
         return None
     s = persona["stable"]
     dynamic = state["dynamic"]
     signals = event.signals or {}
-    tension = dynamic["emotion"]["intensity"]
-    trust = dynamic["relations"][PARTNER]["trust"]
+    tension = dynamic["affect_state"]["emotion"]["intensity"]
+    trust = dynamic["relation_state"][PARTNER]["trust"]
     pressure = signals.get("cues", {}).get("pressure", 0)
     # Someone's words are not evidence of fulfilment: only narrated facts and
     # adjudicated outcomes may move reliability.
     signal = signals.get("reliability_signal", 0) if event.type in {"narration", "outcome"} else 0
     sensitivity = s["emotion"]["threat_sensitivity"]
     recovery = s["emotion"]["recovery_rate"]
-    # Explicit prototype dynamics, not fitted psychological coefficients.
-    new_tension = round(min(1, max(0, tension * (1 - recovery) + .35 * pressure * sensitivity)), 4)
-    new_trust = round(min(1, max(0, trust + .15 * signal)), 4)
     changes = []
-    if new_tension != tension:
-        changes.append({"path": "dynamic.emotion.intensity", "before": tension, "after": new_tension,
-                        "evidence": [event.event_id], "mechanism": "appraisal" if pressure else "decay",
-                        "reason": "事件带有压力线索" if pressure else "无新压力，紧张按恢复速率回落"})
-    if new_trust != trust:
-        changes.append({"path": f"dynamic.relations.{PARTNER}.trust", "before": trust, "after": new_trust,
-                        "evidence": [event.event_id], "mechanism": "relation_update",
-                        "reason": "可核验的兑现/失约记录"})
-    delta = {"trigger": "perceive", "event_id": event.event_id, "changes": changes,
-             "rule_version": "engineering-v1"}
+    # Unknown (null) inputs skip their branch instead of being replaced by a neutral guess.
+    if tension is not None:
+        # Explicit prototype dynamics, not fitted psychological coefficients.
+        new_tension = round(min(1, max(0, tension * (1 - recovery) + .35 * pressure * sensitivity)), 4)
+        if new_tension != tension:
+            changes.append({"path": "dynamic.affect_state.emotion.intensity", "before": tension,
+                            "after": new_tension, "evidence": [event.event_id], "group": "affect",
+                            "mechanism": "emotion_update" if pressure else "decay_or_recovery",
+                            "reason": "事件带有压力线索" if pressure else "无新压力，紧张按恢复速率回落"})
+    if trust is not None:
+        new_trust = round(min(1, max(0, trust + .15 * signal)), 4)
+        if new_trust != trust:
+            changes.append({"path": f"dynamic.relation_state.{PARTNER}.trust", "before": trust,
+                            "after": new_trust, "evidence": [event.event_id], "group": "relation",
+                            "mechanism": "relation_update", "reason": "可核验的兑现/失约记录"})
+    delta = {"trigger": phase, "event_id": event.event_id, "changes": changes,
+             "rule_version": VERSIONS["update_rule_version"]}
     known = {item["id"] for item in state["memory"]} | {event.event_id}
-    state["dynamic"] = apply_delta(dynamic, delta, known)
+    key = f"{persona['id']}/{event.event_id}/{phase}"
+    state["dynamic"], adopted, log = commit_phase(dynamic, state["module_status"], delta, known,
+                                                  commit_key=key, committed=state["commits"])
+    delta["changes"] = adopted
+    delta["rejected"] = log["rejected"]
+    state["mechanism_log"].append(log)
     state["memory"].append(observation(event))
     state["seen_ids"].append(event.event_id)
     state["updates"].append(delta)
@@ -132,7 +152,7 @@ class Agent:
         if prev_state_id != self.state_id:
             raise ValueError("prev_state_id does not match the latest state")
 
-    def _ingest(self, state, events, role_id):
+    def _ingest(self, state, events, role_id, phase):
         changes, last = [], None
         for event in events:
             validate_event(event)
@@ -140,20 +160,25 @@ class Agent:
                 # Contract 3.3.1: the environment filters; we drop and warn as a second check.
                 self.warnings.append({"event_id": event.event_id, "warning": "audience excludes role; dropped"})
                 continue
-            delta = observe(state, event, self.persona)
+            delta = observe(state, event, self.persona, phase)
             if delta is not None:
                 changes.extend(delta["changes"])
                 last = observation(event)
         return changes, last
 
-    def _commit(self, state, turn, trigger, changes):
+    def _commit(self, state, turn, trigger, changes, log_start):
         same_turn = sum(1 for sid in self.snapshots if sid.split("@t")[1].split(".")[0] == f"{turn:03d}")
         state_id = f"{self.persona['id']}@t{turn:03d}" + (f".p{same_turn}" if same_turn else "")
         snapshot = {"state_id": state_id, "role_id": self.persona["id"], "turn": turn,
                     "prev_state_id": self.state_id, "schema_version": state["schema_version"],
                     "psychology_version": state["psychology_version"],
+                    "versions": dict(VERSIONS), "stable_snapshot_id": digest(self.persona["stable"]),
                     "stable": copy.deepcopy(self.persona["stable"]),
-                    "dynamic": copy.deepcopy(state["dynamic"]), "memory": list(state["seen_ids"])}
+                    "dynamic": copy.deepcopy(state["dynamic"]),
+                    "module_status": copy.deepcopy(state["module_status"]),
+                    "memory": list(state["seen_ids"])}
+        for entry in state["mechanism_log"][log_start:]:
+            entry.update(input_state_id=self.state_id, output_state_id=state_id)
         delta = {"from_state_id": self.state_id, "to_state_id": state_id, "trigger": trigger,
                  "changes": copy.deepcopy(changes)}
         self.state, self.state_id = state, state_id
@@ -166,6 +191,10 @@ class Agent:
                        and m["outcome"]["status"] == "success" for m in memory if "outcome" in m)
         return [a for a in self.allowed_actions if not (obtained and a == "request_evidence")]
 
+    @property
+    def mechanism_log(self):
+        return self.state["mechanism_log"] if self.state else []
+
     def latest_state(self):
         return copy.deepcopy(self.snapshots[self.state_id]) if self.state_id else None
 
@@ -176,7 +205,8 @@ class Agent:
             if "speech" not in req.allowed_kinds:
                 raise ValueError("this agent only proposes speech in v0")
             work = copy.deepcopy(self.state)
-            changes, trigger = self._ingest(work, req.new_events, req.role_id)
+            log_start = len(work["mechanism_log"])
+            changes, trigger = self._ingest(work, req.new_events, req.role_id, "step")
             payload = make_payload(self.persona, work, trigger, req.scene_context,
                                    self.partner, self._allowed(work["memory"]), self.mode)
             self.last_payload = payload
@@ -200,7 +230,7 @@ class Agent:
             work["memory"].append({"id": proposal_id, "type": "own_action", "actor": req.role_id,
                                    "content": speech, "cues": {}})
             self.intents[proposal_id] = decision["action"]
-            state, delta = self._commit(work, req.turn, "step", changes)
+            state, delta = self._commit(work, req.turn, "step", changes, log_start)
             return StepResponse(req.role_id, req.turn, [action], decision["brief_reason"], state, delta)
         except Exception as exc:
             self.last_error = exc
@@ -211,8 +241,9 @@ class Agent:
         try:
             self._check(req.role_id, req.prev_state_id, None)
             work = copy.deepcopy(self.state)
-            changes, _ = self._ingest(work, req.events, req.role_id)
-            state, delta = self._commit(work, req.turn, "perceive", changes)
+            log_start = len(work["mechanism_log"])
+            changes, _ = self._ingest(work, req.events, req.role_id, "perceive")
+            state, delta = self._commit(work, req.turn, "perceive", changes, log_start)
             return PerceiveResponse(req.role_id, req.turn, state, delta)
         except Exception as exc:
             self.last_error = exc

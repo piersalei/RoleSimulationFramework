@@ -77,8 +77,8 @@ class PipelineTests(unittest.TestCase):
         a, b = initial_state(), initial_state()
         observe(a, scheduled(self.scenario)[0], self.persona)
         observe(b, scheduled(self.scenario, "assertive")[0], load("assertive.json"))
-        self.assertGreater(a["dynamic"]["emotion"]["intensity"], b["dynamic"]["emotion"]["intensity"])
-        self.assertEqual(a["dynamic"]["relations"], b["dynamic"]["relations"])
+        self.assertGreater(a["dynamic"]["affect_state"]["emotion"]["intensity"], b["dynamic"]["affect_state"]["emotion"]["intensity"])
+        self.assertEqual(a["dynamic"]["relation_state"], b["dynamic"]["relation_state"])
 
     def test_promises_and_own_plans_do_not_count_as_fulfilment(self):
         events = scheduled(self.scenario)
@@ -87,9 +87,9 @@ class PipelineTests(unittest.TestCase):
         _, outcomes = ScriptedEnvironment(self.scenario, "cautious").adjudicate(propose("propose_plan"), 1)
         self.assertEqual(outcomes[0].outcome["status"], "partial")
         observe(state, outcomes[0], self.persona)
-        self.assertEqual(state["dynamic"]["relations"]["partner"]["trust"], .55)
+        self.assertEqual(state["dynamic"]["relation_state"]["partner"]["trust"], .55)
         observe(state, events[3], self.persona)
-        self.assertGreater(state["dynamic"]["relations"]["partner"]["trust"], .55)
+        self.assertGreater(state["dynamic"]["relation_state"]["partner"]["trust"], .55)
 
     def test_unavailable_record_is_not_revealed_by_request_action(self):
         self.scenario["evidence"]["readers"] = ["partner"]
