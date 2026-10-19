@@ -241,7 +241,8 @@ flowchart LR
 ## 11. 常用命令
 
 ```bash
-# 项目要求 Python 3.11+（CI 用 3.11）。本机目前只有 python3（3.10.12），测试在 3.10 下也通过，但那不等于 3.11 验证
+# 项目要求 Python 3.11+（CI 用 3.11）。本机用 ~/venvs/rolesim（Python 3.11.15，仅标准库）；
+# 在新会话里 Claude 的 PATH 由 .claude/settings.local.json 指向它，自己的终端可 source ~/venvs/rolesim/bin/activate
 python3.11 -m unittest discover -s tests -v
 python3.11 -m rolesim validate examples/cautious.json
 python3.11 -m rolesim run --mode profile_state --out runs/demo

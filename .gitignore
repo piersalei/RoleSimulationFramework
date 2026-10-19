@@ -14,3 +14,4 @@ dist/
 credentials*
 *.pem
 *.key
+.claude/settings.local.json
