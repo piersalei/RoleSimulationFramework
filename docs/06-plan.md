@@ -1,29 +1,60 @@
 # 模块划分与实现计划
 
-本文档回答两件事：整个系统分成哪几个模块、各自边界在哪；在两个组回复之前我们能先做什么。
+本文档回答两件事：整个系统分成哪几个模块、各自边界在哪；在规则数值到位之前我们能先做什么。
 
-状态：2026-10-15 起草。`data/sources/contracts/` 下的两份合同已发给心理学组和场景/环境组，尚无回复。本文档中的"默认假设"是工程侧为了不阻塞而自行采用的口径，对方回复后以合同为准。
+状态：2026-10-15 起草，2026-10-19 按心理学组回复修订。`data/sources/contracts/` 下的两份合同已发出；心理学组已回复（见第 1 节），场景/环境组尚无回复。
 
-## 1. 人格方案：选 P1
+**口径说明。**
+- 心理学组回复里的"拟改动方向"和问答答复，本文档一律采用为 **v1 目标口径**。
+- 回复给出的是结构、分类和流程；规则卡的触发条件、幅度区间、衰减时间尺度、人格调节参数尚未交付，仍是空缺。
+- 因此下文"现状"一栏描述的代码仍是按 v0 合同（`state-v0`、`psy-v0`）实现的，与 v1 目标有差距，差距集中列在第 5 节。
+- 工程侧自行采用的默认假设只保留给场景/环境组的未决项（第 6 节）。
+
+## 1. 心理学组回复的变更摘要
+
+下表只列对工程有影响的变化。原文见心理学组回复（"接口合同 v0 修改意见"与待确认问题答复）。
+
+| 项目 | v0（工程侧原口径） | v1 目标（回复结论） | 影响模块 |
+|---|---|---|---|
+| 主人格方案 | 选 P1，P2/P3 仅参考 | P1/P2/P3 互斥，**同一角色设定、三种主编码、独立运行、统一评测**后选一套；三者共用成人依恋层，输出同一个行为约束接口 | M2、M8 |
+| stable 结构 | `traits`/`values`/`core_goals` 为粗容器 | 改为可追溯结构化对象：`identity`、`traits`（personality / attachment / motivation_baseline / affective_capacities / social_cognition_71d / cognitive_style / developmental_position / personality_function）、`values`、`core_goals`、`speech_style` | M2 |
+| `values` | 自由文本或词表待定 | 固定构念词表 + 说明文本：施瓦兹 19 项，非负权重和为 1，另存总体价值投入度 | M2 |
+| `core_goals` | 数量待定 | 1–3 个主目标，各带 1–2 个支持子目标，保存来源、优先级、稳定度、上下位链接 | M2 |
+| stable 变更 | 待定 | 普通 StateDelta 永不写 stable；长期变化先记修订候选，经心理学组审核后版本迁移出新 `stable_snapshot`，保留旧快照 | M2、M7 |
+| dynamic 结构 | 五块：emotion / beliefs / goals_now / relations / other_models | 六个状态域：`affect_state`、`cognition_state`（含原 other_models）、`goal_state`、`relation_state`、`group_state`、`policy_state` | M3 |
+| 情绪 | label + valence/arousal/intensity | label、valence、arousal、intensity、duration_hint、confidence；dominance 默认 `not_modeled` | M3 |
+| 关系 | trust / closeness | trust、closeness、dependence、commitment（0–1）+ `harm_history`（事件列表、严重度、是否承认、是否修复、最后激活时间）；`power_asymmetry` 为条件字段，存客观方向与主观感知，无权力差时 `not_applicable`；repair_state 等 v1.1 再加 | M3 |
+| 心理理论 | 先做二阶 | 不固定阶数：记录 `tom_level`、适用对象、证据、置信度、允许任务；运行时受注意、记忆、情绪降级 | M3 |
+| 信念 | 置信度刻度待定 | `confidence` 0–1 为主观确信；未形成判断用 `unknown` + null，不默认 0.5；每条带 belief_id、对象、情境、来源、冲突组；冲突可并存、不强制平均 | M3 |
+| 更新机制 | 7 个（按五块设计的写回分类） | **11 个更新算子**，按"可写入的状态对象"划分：`emotion_update`、`belief_revision`、`other_model_update`、`self_state_update`、`relation_update`、`group_state_update`、`goal_update`、`commitment_update`、`strategy_learning`、`memory_update`、`decay_or_recovery`；决策机制库的 11 类过程通过 `decision_mechanisms` 映射，不另建平行分类 | M3、M4 |
+| 提交方式 | 整条 delta 一错全拒 | 同一 `event_id` + `event_phase` 用同一份已提交快照；候选先进 `mechanism_log`；按依赖组原子提交；组内硬错或同路径无法裁决则整组拒绝，其余独立组可提交；幂等重试；禁止同批读取未提交候选 | M3、M6、M7 |
+| 越界/软约束 | 拒绝；软约束标记 | 三级：硬错拒绝依赖组（范围越界、不可见证据、未登记算子、改 stable、无写权限、无法解析）；软错提交并标 `soft_violation`；重大事件可豁免规则卡明确允许的软边界，须记 `exception_approved`，**不能豁免硬错** | M3 |
+| 单步变化量 | 工程占位值 | 混合方案：程序规定范围、事件等级和硬上限，模型在区间内选值并给理由；人格系数须先声明影响的是敏感度、峰值、持续时间还是恢复速度，不得用单一系数统领 | M3、M4 |
+| 模块状态 | 无 | 每个子模块和机制配置记 status：`active` / `unknown`（null + 待补信息）/ `disabled` / `not_modeled` / `inactive` / `not_applicable`；真实的 0、中性值、空列表是有效观测，不能代替这些状态；默认先验须标 `default` 并留来源 | M2、M3 |
+| 材料与版本 | 一份合同 | 三份材料：心理构念登记表（语义主来源，`construct_id`）、角色状态说明（生成运行时 JSON Schema）、心理变化规则表；合同只列启用的 `construct_id` 与版本。四类版本号：`construct_definition_version`、`state_schema_version`、`update_rule_version`、`evaluation_protocol_version` | 全部 |
+| 评测 | 量表待定 | 四层数据（字段/变化/轨迹/对照）、9 个固定维度、0–3 级锚点；"自动审计 + 人工评分 + 复标"；样本包含事件前后状态、候选与最终 delta、拒绝原因、对方真实状态（仅供对照）；协议五阶段；真人基线非第一版前置 | M8 |
+| 测试样例 | 待定 | 心理学组交付 2–3 个角色完整 stable、1 个角色的合理行为轨迹（含合理分歧与反例），另附场景事件表、角色可见性表（observed/heard/inferred/not_visible）、状态变化验收表 | M2、M8 |
+
+回复里**没有**改变的约束：`stable` 轨迹内只读；`evidence` 只能引用角色可见的 event_id；越界不截断；世界私有数据和他人隐藏心理永不进入角色调用。
+
+## 2. 人格方案：三案比较，P1 暂为实现基线
 
 心智建模库 2.1 给出三套**互斥**的主人格编码方案：
 
-| 方案 | 内容 | 本项目 |
+| 方案 | 内容 | 状态 |
 |---|---|---|
-| P1 | 大五 / 五因素模型，五领域 + NEO 传统 30 分面 | **采用** |
-| P2 | 16PF 十六个初级因素 | 仅参考 |
-| P3 | 荣格认知功能 + HEXACO 六领域 | 仅参考 |
+| P1 | 大五 / 五因素模型，五领域 + NEO 传统 30 分面 | 已实现，当前基线 |
+| P2 | 16PF 十六个初级因素 | 待实现，参与比较 |
+| P3 | 荣格八功能（0–1 偏好权重，总和 1，位置由排序派生）+ HEXACO 六领域与分面 | 待实现，参与比较 |
 
-所以"用 P1 还是用大五"不是一个选择题：P1 就是库里大五方案的编号。真正要定的是**粒度和命名**：
+- **比较设计**：同一角色设定、三种主编码、独立运行、统一评测。比较维度为轨迹一致性、角色可区分性、跨场景稳定性、外显行为匹配度、评测者一致率。
+- **共用约束**：每个方案必须输出同一个行为约束接口——高/低水平对应的倾向、阈值、敏感度、表达与恢复差异，以及不能直接推出的行为。这是 M2 对 M5 的唯一出口，换方案不改下游。
+- **编码**：三套方案的分数都用 `-2—+2` 内部标准化连续分数，原量表分必须先转换，不能把该区间称为量表计分。依恋两轴独立于主编码保存。
+- **持久化**：`framework` 写 `"P1"` / `"P2"` / `"P3"`，不写 `"BigFive"` 之类的理论名。
+- **一个角色只从一套方案产生主人格变量**，避免同义维度叠加。
+- **尚未做**：`persona.py` 目前强制 `scheme == "P1"` 且 30 分面齐全。P2/P3 的 schema 与行为约束接口要等比较设计落地时再写；在此之前不得声称"已选定 P1"。
 
-- 主编码取**分面级**（30 个），领域分数是派生字段，不独立赋值。库 2.1.1 明确领域只是上位分类，分面可以反向，不能平均成"中等人格"。
-- 持久化时 `framework` 写 `"P1"`，不写 `"BigFive"`。前者能定位到库里的唯一一套定义和 `-2—+2` 内部编码，后者会让人误以为是某份原始量表分。
-- 成人依恋两轴是三套方案共用的关系取向层，独立于 P1 保存，不并入分面。
-- 心理学组合同 2.1 的 `traits` 一节据此修改：`{"framework": "P1", "grain": "facet", "scores": {30 facets}}`，并注明 `-2—+2` 是库内部编码，不是量表原始分。P2/P3 作为将来替换主编码的选项登记在 `deferred_modules`。
-
-代码现状与此一致（`rolesim/persona.py` 强制 `scheme == "P1"` 且 30 分面齐全），不需要改实现，只需要改合同措辞和文档。
-
-## 2. 模块划分
+## 3. 模块划分
 
 九个模块。划分依据是"谁拥有这份数据、谁有权改它"，不是代码文件边界。
 
@@ -50,32 +81,46 @@
 - 边界：原文只读。其中的指令性文字不获得执行权限（见 AGENTS.md）。索引里标 `reference_only` 的章节不等于已实现。
 - 现状：已完成，196 个带来源章节。
 - 归属：心理学组提供内容，工程侧维护索引。
+- v1 新增：心理构念登记表（`construct_id`）成为语义主来源，与原文目录分开存放；登记表如何落盘与哈希，待心理学组交付后定。
 
 ### M2 画像（persona）
 
 - 职责：稳定画像的字段契约、校验、三视图编译（系统真值 / 角色自知 / 他者可见）、条件化行为语句投影。
-- 持有数据：`stable`（P1 30 分面、依恋两轴、需要、价值、能力、情绪参数、认知、沟通、机制先验）、`self_view`、`public_description`、`provenance`、`deferred_modules`。
-- 硬规则：轨迹内 `stable` 只读，任何写入视为错误；每个模块必须有 `provenance`（来源、赋值方式、置信度）；71 维能力在定义缺失期间保持 `pending_source_definition`，不伪造分数。
-- 现状：校验与编译已完成；30 分面中只有 4 个参与条件化语句投影，其余仅存储。
+- v1 持有数据：`identity`、`traits`（见第 1 节八个子对象）、`values`（施瓦兹 19 项权重）、`core_goals`、`speech_style`、`self_view`、`public_description`、`provenance`、`deferred_modules`，以及每个子模块的 status。
+- 硬规则：
+  - 轨迹内 `stable` 只读，任何写入视为错误；长期变更只能走审核后的版本迁移，产出新 `stable_snapshot`。
+  - 每个模块必须有 `provenance`（来源、赋值方式、置信度）。
+  - 71 维能力在定义缺失期间保持 `pending_source_definition`，对应 status 为 `not_modeled`，不伪造分数。
+  - 推断出的 stable 字段按影响分层：档案明写的身份/年龄/职业可自动进入候选初始状态；会改变行为约束、评测结论或能力上限的高影响字段须心理学组审核或规则校验。
+- 现状：按 v0 实现。校验与编译已完成；30 分面中只有 4 个参与条件化语句投影，其余仅存储；`values` 仍是旧结构，无 `identity`、`core_goals`、`speech_style`，无模块 status。
 - 归属：心理学组定义字段含义，工程侧实现校验与投影。
 
 ### M3 动态状态（state）
 
 - 职责：逐轮心理状态、带证据的更新记录（StateDelta）、可见记忆。
-- 持有数据：情绪、信念、当前目标、关系判断、对他人的心智推断（other_models）、memory（event_id 列表）。
-- 硬规则（已实现或待实现见第 4 节）：
+- v1 持有数据：六个状态域（affect / cognition / goal / relation / group / policy）和 memory（event_id 列表，完整条目另存）。`dynamic` 只存会影响后续行为、需要回放的变量；决策过程、更新规则、机制日志不在 `dynamic` 里。
+- 硬规则（硬错则整个依赖组拒绝）：
   1. 每条变化的 `evidence` 只能引用本角色可见的 event_id 或自己的 proposal_id，不可为空。
   2. path 以 `stable.` 开头一律拒绝。
-  3. 每个 mechanism 只能改白名单内的字段块。
+  3. 每个更新算子只能改自己白名单内的路径，未登记算子拒绝。
   4. 数值越界直接拒绝，不截断。
-- 现状：`rolesim/state.py` 已按合同初稿落地 dynamic 五块结构、取值范围、`source` 必填，以及 `apply_delta` 的四条硬约束和 trust 单步软约束。实际运行中只有两条更新规则在写：`emotion.intensity`（原 tension，appraisal/decay）和 `relations.partner.trust`（原 reliability，relation_update）。beliefs、goals_now、other_models 有结构和校验，但还没有更新规则。
+  5. 无法解析、无写权限、同路径无法裁决，同样按硬错处理。
+- 软约束：典型区间外、衰减过慢、调节过强、跨字段变化不典型，提交并标 `soft_violation`；仅规则卡明确允许的软边界可被重大事件豁免，须记 `exception_approved`。
+- 同路径多条变化：先去重同一证据的重复贡献，再按规则卡指定的聚合方式、写权限和固定优先级裁决，不默认求和、平均或后写覆盖。动作竞争权重不能替代字段写权限。
+- 没有规则的字段不得默认衰减；时间推进须登记为可审计的时间事件。
+- 现状：`rolesim/state.py` 按 v0 合同实现五块结构、取值范围、`source` 必填、`apply_delta` 的四条硬约束和 trust 单步软约束。整条 delta 一错全拒，没有依赖组、`event_phase`、`mechanism_log`、模块 status、`exception_approved`。运行中只有两条更新规则在写：`emotion.intensity`（appraisal/decay）和 `relations.partner.trust`（relation_update）。其余块有结构和校验，没有更新规则。
 - 归属：心理学组定义字段与更新规则，工程侧实现与校验。
 
 ### M4 机制库（mechanisms）
 
 - 职责：可执行机制卡的注册表、触发筛选、竞争排序。
 - 边界：**与 M1 的机制目录分开**。目录保存原文；注册表只放已完成"输入—触发—候选行为—更新规则"定义的机制。
-- 现状：五张卡（verify / appraise / trust / repair / boundary），公式 `score = cue × (0.5 + 0.3×prior + 0.2×moderator)`，阈值 0.3。这些是未校准的工程假设，用于检验调度接口，不是实证规律。
+- v1 分层：
+  - **决策机制**（注意、记忆、归因、评价、推断、选择、表达、学习）通过 `decision_mechanisms` 映射到更新算子。
+  - **更新算子**是 11 个写回对象，每个须有一张机制卡，至少含：触发事件、输入状态、可修改路径、变化方向、幅度等级、时间尺度、优先级、正例、反例、证据格式、软约束、评测指标。
+- 动作选择顺序：先按规则卡声明的安全、能力、制度、承诺门槛筛选，再比较机制支持、目标价值、关系后果和执行成本；选中动作不等于动作成功。
+- 现状：五张调度卡（verify / appraise / trust / repair / boundary），公式 `score = cue × (0.5 + 0.3×prior + 0.2×moderator)`，阈值 0.3。这是未校准的工程假设，用于检验调度接口，不是实证规律。`CARD_MECHANISMS` 映射到的是旧的 7 个机制名，需要改指 11 个算子。
+- 后续版本才纳入的算子（先作为决策机制或日志标签；结果若要跨事件影响行为则须升为独立字段或算子）：emotion_regulation、learning_adaptation、memory_consolidation、self_evaluation_update、conflict_arbitration、reputation_update、norm_activation、repair_update。
 - 归属：心理学组定义卡片内容，工程侧实现调度。
 
 ### M5 角色控制器（controller）
@@ -83,6 +128,7 @@
 - 职责：把画像、状态、可见历史、机制卡组装成提示，调模型产出结构化行动意图，再产出台词。
 - 两阶段：决策（输出 action / evidence_ids / brief_reason）→ 表达（输出 speech）。表达阶段只拿到角色自知、风格约束、已选动作、可见历史。
 - 硬规则：世界私有数据和他人的隐藏心理字段永不进入任何一次调用；决策失败不回退成内心独白当台词。
+- v1 补充：模型在规则卡给出的区间内选具体变化量并提交理由；程序做范围、权限、证据、软约束校验。
 - 现状：mock 后端 + 兼容 `/chat/completions` 的真实后端，均已接通，真实模型未跑。
 - 归属：工程侧。
 
@@ -90,105 +136,153 @@
 
 - 职责：实现发给场景组的那份接口合同——`step` / `perceive`、Event / ProposedAction / AgentState / StateDelta 的序列化、可见性过滤的二次校验。
 - 边界：环境裁决"实际发生了什么、谁看见了"；我们只提交尝试。角色提出计划不等于计划被接受。
-- 现状：`rolesim/contract.py` 定义合同附录里的数据类（Event、ProposedAction、Step/Perceive 请求与响应）；`rolesim/agent.py` 的 `Agent.step` / `Agent.perceive` 按合同实现。AgentState、StateDelta 是可 JSON 序列化的 dict，按合同 2.4、2.5 的外层结构组织。`runtime.ScriptedEnvironment` 是其中一种裁决器：单焦点角色、四轮固定反馈，产出 `type=outcome` 事件并带 `of_proposal`。多角色调度器尚未实现。两处工程侧扩展待环境组确认：一是 `Event.signals` 携带脚本标注的线索，真实环境可以不给；二是脚本裁决器从 `ProposedAction.intent_note` 读取动作标签。
+- v1 补充：
+  - 行动反馈、新证据、权力变化或时间推进到达时，开启新的 `event_phase`，重新核定可见性并读取最新提交状态。
+  - 重试以角色、事件、阶段和提交编号保证幂等。
+  - `StateDelta` 的 `mechanism` 取值从 7 个改为 11 个算子，属于对环境组可见的变化，需要告知（见第 6 节）。
+- 现状：`rolesim/contract.py` 定义合同附录里的数据类；`rolesim/agent.py` 的 `Agent.step` / `Agent.perceive` 按 v0 合同实现。`runtime.ScriptedEnvironment` 是其中一种裁决器：单焦点角色、四轮固定反馈，产出 `type=outcome` 事件并带 `of_proposal`。多角色调度器尚未实现。两处工程侧扩展待环境组确认：`Event.signals` 携带脚本标注的线索；脚本裁决器从 `ProposedAction.intent_note` 读取动作标签。
 - 归属：场景组定义接口，工程侧实现适配器。
 
 ### M7 轨迹记录与回放（trace）
 
 - 职责：manifest、输入快照、views、audit、public、state 落盘；按 state_id 回放；配置哈希。
 - 边界：`inputs.json` 含世界私有数据，只能用于系统侧复现，不能进入任何评审包；`audit.jsonl` 是内部审计，不混入外显行为评分。
-- 现状：已落盘的产物新增 `states.jsonl`（每个 AgentState 快照，按 state_id 串链）和 `environment_events.json`（环境产生的全部 Event，含私有事件，只用于系统侧）。仍缺 git SHA 登记，也缺按 state_id 的回放工具。
+- v1 补充：
+  - 新增 `mechanism_log`：实际调用的机制、中间判断、候选与最终变化、采纳/拒绝原因、优先级、输入/输出 `state_id`、异常标记。
+  - 每条轨迹及回放日志记录四类版本号、启用配置和 `stable_snapshot` 标识。
+  - 所有状态转换（含 status 转换）留审计记录。
+- 现状：已落盘 `states.jsonl`（state_id 串链）和 `environment_events.json`（含私有事件，仅系统侧）。仍缺 git SHA 登记、按 state_id 的回放工具、`mechanism_log`、四类版本号。
 - 归属：工程侧。
 
 ### M8 评测（evaluation）
 
-- 职责：对照条件（消融）、盲评包导出、自动检查报告、标注工具。
-- 两类质量分开记：工程正确性（可见性、证据、字段稳定、可复现）与模拟有效性（跨情境倾向、条件性变化、行为可接受性）。前者通过不说明后者。
-- 现状：只有 `profile_only` / `mechanisms` 两个入口，后者同时加了状态和机制，差异不能全归因于机制。缺中间消融组、缺盲评包导出、缺自动检查报告。
+- 职责：对照条件（消融）、样本包导出、自动审计报告、标注工具。
+- 两类质量分开记：工程正确性（可见性、证据、字段稳定、可复现）与模拟有效性。前者通过不说明后者。
+- v1 口径：
+  - **四层数据**：字段层、变化层、轨迹层、对照层。
+  - **九个固定维度**：字段有效性、证据与可见性、机制与写回相容性、稳定一致性、动态合理性、角色可区分性、外显行为与隐状态匹配、错误推断的合理性、轨迹可追溯性。前两项由自动审计判定，其余人工评分。
+  - **0–3 级锚点**；存在硬错则相关维度记 0 并选硬错类型；被拒候选仍计入错误率。
+  - **样本包**：事件前状态、触发事件及角色可见信息、模型输出与 thought、事件后状态、全部候选与最终 StateDelta、拒绝原因、相关历史、对方真实状态。后者只供对照；判断推断是否合理仍限于该角色可见证据。
+  - **协议五阶段**：样本包 → 自动审计 → 人工评分 → 复标校准 → 报告回写。评测者不得临时改评分口径。
+  - 真人基线不是第一版前置条件。
+- 现状：只有 `profile_only` / `mechanisms` 两个入口，后者同时加了状态和机制，差异不能全归因于机制。缺中间消融组、样本包导出、自动审计报告。
 - 归属：心理学组定维度与量表，工程侧提供数据与工具。
 
 ### M9 工程基础（infra）
 
 - 职责：CLI、测试、CI、同步脚本、依赖与环境约束（标准库、Python 3.11+）。
-- 现状：40 项测试，CI 工作流已配置。本地跑测试时需要回环监听权限。`ChatBackend` 对 localhost / 127.0.0.1 / ::1 不走 `HTTP(S)_PROXY`，全局代理环境下 `tests.test_transport` 不再需要设置 `no_proxy`。
+- v1 补充：由登记表与状态说明生成运行时 JSON Schema，并在 CI 中检查三份材料的引用、范围与版本一致性。发现不一致时先冻结运行时发布。
+- 现状：40 项测试，CI 工作流已配置。本地跑测试时需要回环监听权限。`ChatBackend` 对 localhost / 127.0.0.1 / ::1 不走 `HTTP(S)_PROXY`。
 - 归属：工程侧。
+
+### 协作流程
+
+心理学组回复确定的流程：**登记 → 评审 → 投影 → 校验 → 发布 → 回放**。
+
+1. 心理学组登记或修订构念。
+2. 双方评审边界与可实现性。
+3. 工程侧生成状态说明与规则表的机器投影。
+4. 自动检查引用、范围、版本。
+5. 用小剧本回放。
+6. 发布带四类版本号的合同快照。
+
+三份材料只允许一个语义主来源；合同只做追溯入口，不复制正文。字段删除或改名属于不兼容变化，需升版本。
 
 ### 细分实现单元（U1–U13）
 
-上面九个模块按数据归属划分。落到代码和合同时再细分为 13 个实现单元，编号用 U 以免与 M 混淆。每个单元写明所属模块、对应合同和现有代码。
+九个模块按数据归属划分。落到代码和合同时再细分为 13 个实现单元，编号用 U 以免与 M 混淆。"现有代码"列均为 v0 实现；v1 差距见第 5 节。
 
 | # | 单元 | 所属模块 | 职责 | 主要输入/输出 | 对应合同 | 现有代码 |
 |---|---|---|---|---|---|---|
 | U1 | 来源目录 | M1 | 两份库的快照、章节索引、哈希 | 原文 → `catalog.json` | — | `catalog.py`，已完成 |
-| U2 | 人物档案 | M2 | 稳定画像 schema 与校验：P1 分面、依恋、需要、施瓦兹价值、情绪/认知基线、71 维能力（待定义）、来源与置信度 | 档案 JSON → 已校验 stable | 心理学组 2.1、4 | `persona.py`，部分 |
-| U3 | 视图编译 | M2 | 系统真值 / 角色自知 / 他者可见 / 控制器约束四种投影；条件化行为语句 | stable → views | 心理学组 2.1、环境组 1 | `compile_views`，部分 |
-| U4 | 状态存储 | M3 | AgentState（stable/dynamic/memory）、StateDelta、版本号、落盘与按 state_id 回放 | — | 环境组 2.4–2.5、心理学组 6 | `state.py` + `initial_state`；dynamic 五块已有，state_id 链已有（`Agent._commit`），回放工具未做 |
+| U2 | 人物档案 | M2 | stable schema 与校验：主人格（P1/P2/P3）、依恋、动机、施瓦兹价值、情绪/认知基线、71 维能力（待定义）、core_goals、来源与置信度、模块 status | 档案 JSON → 已校验 stable | 心理学组 2.1、4 | `persona.py`，部分（仅 P1） |
+| U3 | 视图编译 | M2 | 系统真值 / 角色自知 / 他者可见 / 控制器约束四种投影；条件化行为语句；三方案统一的行为约束接口 | stable → views | 心理学组 2.1、环境组 1 | `compile_views`，部分 |
+| U4 | 状态存储 | M3 | AgentState（stable/dynamic/memory）、StateDelta、版本号、落盘与按 state_id 回放 | — | 环境组 2.4–2.5、心理学组 6 | `state.py` + `initial_state`；五块、state_id 链已有，回放工具未做 |
 | U5 | 感知与记忆 | M3、M6 | 可见性二次校验、去重、记忆条目带来源与类型（观察/他人说法/反馈/自己行动） | Event → memory | 环境组 3.2、3.3 | `observe`，部分 |
-| U6 | 机制注册与调度 | M4 | 机制卡（触发、阈值、可行性门、候选动作、例外）、多卡竞争排序 | 事件 + 状态 + stable → 激活卡 | 心理学组 3；决策库 0.2、0.6 | `mechanisms.py`，五张卡 |
-| U7 | 状态更新器 | M3 | 按 mechanism 执行 appraisal / belief_revision / tom_inference / relation_update / goal_update / self_commit / decay；硬约束拒绝、软约束标记 | 激活卡 + 事件 → StateDelta | 心理学组 3.1–3.3 | `apply_delta` 校验已有；只有紧张、信任两条规则 |
-| U8 | 决策控制器 | M5 | 生成并筛选选项，选出 ProposedAction，产出私有 thought | 视图 + 状态 + 卡 → actions | 环境组 2.3、3.1 | `make_payload` + `decide`，部分 |
+| U6 | 机制注册与调度 | M4 | 机制卡（触发、阈值、可行性门、候选动作、例外）、多卡竞争排序、`decision_mechanisms` 映射 | 事件 + 状态 + stable → 激活卡 | 心理学组 3；决策库 0.2、0.6 | `mechanisms.py`，五张调度卡 |
+| U7 | 状态更新器 | M3 | 按 11 个算子生成候选 StateDelta；依赖组原子提交；硬错拒绝、软错标记、豁免记录 | 激活卡 + 事件 → StateDelta | 心理学组 3.1–3.3、7 | `apply_delta` 校验已有；只有紧张、信任两条规则 |
+| U8 | 决策控制器 | M5 | 生成并筛选选项，选出 ProposedAction，产出私有 thought，在规则区间内选变化量 | 视图 + 状态 + 卡 → actions | 环境组 2.3、3.1 | `make_payload` + `decide`，部分 |
 | U9 | 表达 | M5 | 按已选动作和风格生成台词，不泄露机制和分数 | action + 自知 + 风格 → speech | 环境组 2.3 | `express`，已有 |
-| U10 | 环境适配层 | M6 | 实现 `step` / `perceive` 接口，Event / ProposedAction 数据类；脚本环境作测试替身；多角色调度器 | 环境组请求 ⇄ Agent | 环境组 3、4 | `agent.py` + `contract.py` + `ScriptedEnvironment`；多角色调度未做 |
+| U10 | 环境适配层 | M6 | 实现 `step` / `perceive`，数据类；`event_phase` 与幂等；脚本环境作测试替身；多角色调度器 | 环境组请求 ⇄ Agent | 环境组 3、4 | `agent.py` + `contract.py` + `ScriptedEnvironment`；多角色调度未做 |
 | U11 | 模型后端 | M5 | 兼容接口调用、严格 JSON、失败不回退 mock；回环地址不走代理 | — | — | `providers.py`，已有 |
-| U12 | 运行记录 | M7 | manifest、inputs、audit、public、state 序列、prompt 与原始输出、Git SHA | — | 环境组 5 | `run_episode`，部分 |
-| U13 | 评测 | M8 | 自动检查（越界、无证据、stable 被改、引用不可见事件）、盲评导出、标注工具 | 运行目录 → 报告 | 心理学组 5 | 仅单元测试 |
+| U12 | 运行记录 | M7 | manifest、inputs、audit、public、state 序列、`mechanism_log`、prompt 与原始输出、四类版本号、Git SHA | — | 环境组 5 | `run_episode`，部分 |
+| U13 | 评测 | M8 | 自动审计（越界、无证据、stable 被改、引用不可见事件、规则覆盖）、样本包导出、标注工具 | 运行目录 → 报告 | 心理学组 5、第三部分 | 仅单元测试 |
 
 单元间依赖：U2→U3→U8/U9；U5→U4；U6→U7→U4；U10 调用 U5、U6、U7、U8、U9；U12、U13 读取全部产物。M9 工程基础不单列实现单元。
 
-## 3. 模块间的三条硬边界
+## 4. 模块间的三条硬边界
 
-1. **心理学组改 M2/M3/M4，不碰 M6。** `stable` / `dynamic` 的内部字段对环境组是不透明 JSON，改字段不需要环境组同步发版。
+1. **心理学组改 M2/M3/M4，不碰 M6。** `stable` / `dynamic` 的内部字段对环境组是不透明 JSON，改字段不需要环境组同步发版。例外：`StateDelta.mechanism` 的取值集合出现在跨组的数据里，变更须通知环境组。
 2. **环境组改 M6，不碰 M2/M3。** 环境只存状态快照和 state_id，不读也不改内部字段。
 3. **M5 是唯一接触模型的地方。** M2/M3/M4 必须能在没有模型的情况下完整跑校验，这样工程正确性可以独立于模型质量验证。
 
-## 4. 不等回复也能做的事
+## 5. 实现计划
 
-按优先级排，每项都不依赖对方的未定事项。
+### 已完成（按 v0 合同，2026-10-18）
 
-### 阶段 1：先把两条硬约束补成可执行的（2026-10-18 完成）
+阶段 1、2 按 `state-v0` / `psy-v0` 完成，是 v1 迁移的起点，不是终点。
 
-1. **M3 扩成合同里的状态结构。** 现在只有两个标量，合同承诺了情绪 / 信念 / 目标 / 关系 / other_models 五块。先把结构、取值范围、`source` 必填落地，更新规则留成可替换的参数表，等心理学组给值。字段名按合同初稿写，改名成本很低。**已完成**：`rolesim/state.py`。
-2. **M3 的四条硬约束写成独立校验器 + 测试。** 当前 `stable` 不可改只在 run_episode 末尾用哈希兜底，证据约束只在 decision 层检查。应抽成 `validate_delta(delta, visible_ids)`，对每条 change 逐一检查 path 白名单、evidence 可见、取值范围，并为每条约束各写一个反例测试。**已完成**：`apply_delta(dynamic, delta, visible_ids)`，反例见 `tests/test_state.py`；整条 delta 有一条违规即整体拒绝，`before` 与当前值不符也拒绝。
-3. **mechanism 取值统一。** 环境组合同示例用了 `belief_revision`，心理学组合同的机制表是 7 项（appraisal / belief_revision / tom_inference / relation_update / goal_update / self_commit / decay），而代码注册表是 5 张卡（verify / appraise / trust / repair / boundary）。这是两套命名：卡片是"调度单元"，mechanism 是"状态变化类型"。需要在代码里建立显式映射表，并在文档里说明两者不是一回事，否则后面日志无法对照。**已完成**：`mechanisms.CARD_MECHANISMS`，属于待审工程假设。
+- 五块 dynamic 结构、范围、`source` 必填、`apply_delta` 四条硬约束和反例测试（`state.py`、`tests/test_state.py`）。
+- 机制卡到 7 个旧机制名的映射 `CARD_MECHANISMS`。
+- `step` / `perceive` 数据类与 Agent 实现、可见性二次校验、`type=outcome` 事件回写、`prev_state_id` 校验（`contract.py`、`agent.py`、`runtime.ScriptedEnvironment`）。
 
-### 阶段 2：把环境接口先按我们的合同实现一遍（2026-10-18 完成，多角色调度除外）
+### 阶段 A：结构升级到 v1（不依赖规则数值，可立即做）
 
-4. **M6 按合同实现 `step` / `perceive`。** 定义 Event / ProposedAction / AgentState / StateDelta 的 dataclass，同进程调用，参数和返回值可 JSON 序列化。现有脚本环境改造成这套接口的一个**实现**（一个最简裁决器），而不是另一条路径。这样场景组回复后只需替换裁决器。**已完成**：`contract.py`、`agent.py`、`runtime.ScriptedEnvironment`；mock 公开轨迹与改造前逐字一致。
-5. **可见性过滤的二次校验。** 环境应该已经过滤过，我们再校验一次：收到 audience 不含自己的事件直接丢弃并告警。写测试。**已完成**：`Agent.warnings`，写入 manifest 的 `visibility_warnings`；测试见 `tests/test_agent.py`。
-6. **行动者自己也要收到裁决结果。** 现有 `execute` 返回的 feedback 只给行动者，形式上满足，但没有 `type=outcome` 和 `of_proposal` 字段。补上，否则"提案—裁决—写回"的因果链断在中间。**已完成**：裁决结果以 `type=outcome` 事件回到行动者，`perceive` 之后的下一次 `step` 读取的就是这个状态；`prev_state_id` 不匹配时返回 `status=error`。
+目标是把结构和流程换到 v1 口径，规则数值留成可替换的参数表，等心理学组交付后填入。顺序按依赖排列。
 
-### 阶段 3：补上实验基础设施（之后）
+1. **模块状态枚举。** 给 stable、dynamic 子模块和机制配置加 `status`、来源、原因、版本；区分 `unknown`（null）与真实的 0 / 中性值；默认先验标 `default`。现有 `intensity: 0`、`valence: None` 的混用要拆开。
+2. **dynamic 升为六个状态域，`state-v1`。** 先建骨架和合同里已定的字段（情绪六字段、关系四项 + `harm_history`、`power_asymmetry` 条件字段、信念结构、`tom_level`），其余字段 status 为 `not_modeled`。旧版本轨迹标为不兼容，不做静默转换。
+3. **11 个算子的注册表与写权限。** 每个算子声明可写路径；`MECHANISMS` 由旧 7 项换成 11 项；`CARD_MECHANISMS` 改映射。算子的机制卡先放空壳（只含已知的路径与理论依据），不填幅度。
+4. **候选 → 依赖组原子提交。** 引入 `event_phase`、同阶段共用快照、依赖组、同路径聚合与冲突整组拒绝、幂等重试。
+5. **三级错误策略。** 硬错 / 软错 / 豁免三类，豁免只认规则卡声明的软边界；所有拒绝与标记写入日志。
+6. **`mechanism_log` 与四类版本号**写入 manifest 和每条轨迹；git SHA 与模型版本一并补上。
+7. **stable 变更流程。** 只做数据结构：修订候选记录与 `stable_snapshot` 标识。审核流程本身由心理学组执行，不在代码里自动化。
 
-7. **消融入口拆开。** 现在 `profile_only` → `mechanisms` 跨了两步。拆成三档：`profile_only` / `profile_state` / `profile_state_mechanisms`，这样状态和机制的贡献能分开看。
-8. **盲评包导出。** 从 `public.jsonl` 和角色实际可见信息生成评审包，打乱方法标签，不含 audit 和世界真值。
-9. **自动检查报告。** 把越界、无证据变化、stable 被改、引用不可见事件、软约束违反汇总成一份可读报告，每次运行自动产出。
-10. **manifest 补 git SHA 和实际模型版本。**
+每一步需要：先写反例测试，再改实现；v0 的 40 项测试按新口径迁移，不得删除用来掩盖失败。
 
-### 阶段 4：等回复后才动的事
+### 阶段 B：实验基础设施
 
-- 30 分面中其余 26 个的行为投影规则（等心理学组给行为锚点）
-- 机制卡参数校准（等心理学组给触发条件和幅度规则）
-- 71 维能力适配（等原引用定义文件）
-- 真实多角色调度、轮转顺序（等场景组定依次还是同时行动）
-- 评测量表与标注流程（等心理学组定维度）
+8. **消融入口拆开。** `profile_only` / `profile_state` / `profile_state_mechanisms` 三档，状态与机制的贡献分开看。
+9. **样本包导出。** 按第 3 节 M8 的样本包内容导出；对方真实状态单独成区，标明只供对照；另导出一份不含世界私有数据和对方真实状态的角色可见版。
+10. **自动审计报告。** 汇总越界、无证据、stable 被改、引用不可见事件、软约束与豁免、被拒候选，每次运行自动产出；被拒候选计入错误率。
+11. **回放工具**：按 `state_id` 和四类版本号回放。
 
-## 5. 两个组的回复会影响什么
+### 阶段 C：等对方交付后才动
 
-| 对方待定项 | 影响模块 | 我们的默认假设 |
+| 事项 | 等什么 | 来自 |
+|---|---|---|
+| 三方案（P1/P2/P3）比较实现 | 比较设计与评测集，P2/P3 行为约束接口 | 心理学组 |
+| 其余 26 个分面的行为投影 | 行为锚点 | 心理学组 |
+| 11 个算子机制卡的数值 | 触发条件、幅度区间、时间尺度、优先级 | 心理学组 |
+| 人格调节系数标定 | 低/中/高敏感度标定样本 | 心理学组 |
+| 构念登记表落盘与 Schema 生成 | 登记表与角色状态说明 | 心理学组 |
+| 71 维能力适配 | 原引用定义文件 | 心理学组 |
+| 2–3 个角色 stable + 1 个标准轨迹 | 测试样例包，含事件表、可见性表、验收表 | 心理学组、场景组 |
+| 评测量表落地与复标流程 | 校准集与评分表单 | 心理学组 |
+| 真实多角色调度、轮转顺序 | 依次还是同时行动 | 场景组 |
+
+## 6. 仍待确认的事项
+
+心理学组的待定项已有答复，原先的工程侧默认假设随之失效。仍未决的只剩环境侧，以及回复引出的新问题。
+
+| 待定项 | 影响模块 | 我们的默认假设 |
 |---|---|---|
 | 一轮内依次还是同时行动 | M6 | 先做依次行动，同时行动作为裁决器的另一种实现 |
 | 历史传全量还是增量 | M6 | 按增量实现，收到全量按 event_id 去重，两种都能跑 |
 | 是否需要 `intent_note` | M6 | 先实现，默认不填 |
-| 情绪用离散还是维度 | M3 | 两者都存（label + valence/arousal/intensity），用不到的字段留空 |
-| 心智理论做到几阶 | M3 | 先做二阶（`inferred_goal` + `inferred_belief_about_me`） |
-| 越界时拒绝还是截断 | M3 | 拒绝，不截断。截断会掩盖模型错误 |
-| 软约束违反时拒绝还是标记 | M3 | 标记 `flag: "soft_violation"` 后写入 |
-| 关系维度用哪些 | M3 | 先 trust / closeness 两维 |
+| `StateDelta.mechanism` 枚举改为 11 个算子是否影响环境组 | M6 | 视为对环境组可见的变更，需通知；环境组示例用到 `belief_revision`，该名称在 v1 保留 |
+| `event_phase` 是否由环境组下发 | M6 | 由工程侧在 Agent 内推导，环境组不感知；若环境组需要显式阶段再协商 |
+| 登记表等三份材料何时交付、以何种格式 | M1、M3、M9 | 在交付前，阶段 A 的字段名按回复原文拼写，改名成本低 |
+| 规则卡幅度区间交付前，模型自选变化量的校验上限 | M3 | 沿用 v0 占位上限（trust 单步 0.3），标 `engineering_placeholder`，不得当校准值 |
 
-## 6. 不做的事
+## 7. 不做的事
 
 - 不把 30 分面、71 维、价值、发展阶段一次性铺成一张任意赋值的大表。每个新增字段都要有对照情境才上线。
 - 不把 mock 后端的输出差异当心理有效性证据。
 - 不在 71 维定义到位前用零向量或虚构维度冒充"已启用能力模型"。
+- 不把 `unknown`、`not_modeled` 的字段填成 0 或中性值来通过校验。
+- 不用单一人格系数乘以变化量；系数须先声明影响敏感度、峰值、持续时间还是恢复速度。
+- 不为了与 11 个算子一一对应而另写一套平行的理论分类。
+- 不在规则卡幅度区间到位前，把工程占位数值说成校准结果。
 - 不把工程测试通过说成"角色像人"。
 - 不改 `profile_only` 的名字去对应上游任何方法，它不是 PersonaForge 或 Character-LLM 的复现。
