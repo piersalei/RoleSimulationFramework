@@ -4,9 +4,9 @@
 
 ## 1. 一句话概括
 
-把心理学组整理的两份库和回复，落成一条**可审计的数据通道**：人物包（稳定档案 + skill 绑定）+ 场景包（事件 + 角色简报）→ 角色可见事件与记忆 → 带证据的状态更新 → 决策与表达 → 环境裁决 → 全程落盘 → 自动审计 → 盲化评审包。
+把心理学组整理的两份库和回复，落成一条**可审计的数据通道**：角色文件（稳定档案 + skills + 开场设定）+ 剧情文件（背景 + 事件）→ 角色可见事件与记忆 → 带证据的状态更新 → 决策与表达 → 环境裁决 → 全程落盘 → 自动审计 → 盲化评审包。
 
-通道已经打通，并有 126 项工程测试。2026-10-20 新增人格 skills、角色简报（交互目标、想透露 / 想隐瞒、前情提要）和记忆召回，均不改动与两组约定的合同。**心理内容大多仍是空壳**：11 个更新算子只有写权限、没有幅度规则；机制卡数值是未校准的工程假设；真实模型还没跑过。所有验证都是工程层面的，没有心理有效性证据，mock 的输出差异也不能当证据。
+通道已经打通，并有 138 项工程测试。2026-10-20 新增人格 skills、角色开场设定（交互目标、想透露 / 想隐瞒、前情提要）和记忆召回；输入整理成"一个角色一个文件、一个剧情一个文件"，用编号命名、可任意搭配。均不改动与两组约定的合同。**心理内容大多仍是空壳**：11 个更新算子只有写权限、没有幅度规则；机制卡数值是未校准的工程假设；真实模型还没跑过。所有验证都是工程层面的，没有心理有效性证据，mock 的输出差异也不能当证据。
 
 ## 2. 总体结构
 
@@ -14,9 +14,9 @@
 flowchart TB
   subgraph IN["输入层（只读、有来源）"]
     SRC["两份心理学库<br/>data/sources + catalog.json"]
-    PER["人物包 examples/personas/<br/>档案 persona 2.0 + skill 绑定"]
+    PER["角色文件 roles/role1.json …<br/>档案 persona 2.0 + skills + 开场设定"]
     SKL["skill 库<br/>library/skills/*/SKILL.md"]
-    SCN["场景包 examples/scenes/<br/>事件 + 世界私有数据 + 角色简报"]
+    SCN["剧情文件 scenes/test1.json …<br/>背景 + 事件 + 世界私有数据（不指导角色）"]
   end
 
   subgraph CORE["角色核心 rolesim/"]
@@ -26,7 +26,7 @@ flowchart TB
     MECH["机制卡 mechanisms.py<br/>5 张调度卡"]
     SK["人格 skills skills.py<br/>三级加载 · 不写状态"]
     MEM["记忆 memory.py<br/>只增 · 前情固定 · 相似度召回"]
-    BR["简报 briefing.py<br/>目标 · 想透露 · 想隐瞒 · 前情"]
+    BR["开场设定 briefing.py<br/>目标 · 想透露 · 想隐瞒 · 前情"]
     BK["模型后端 providers.py<br/>mock / 兼容 chat-completions"]
   end
 
@@ -46,7 +46,7 @@ flowchart TB
   PER --> SK
   SKL --> SK
   SCN --> SE
-  SCN --> BR
+  PER --> BR
   BR --> AG
   BR -- "前情提要" --> MEM
   SE -- "角色可见 Event" --> AG
@@ -78,8 +78,8 @@ flowchart TB
 | 模块状态 | `modules.py` | 六种状态、状态与值一致性检查、转换审计；稳定与动态共用 | 完成 |
 | 动态状态 | `state.py` | 六个状态域、11 个算子写权限、`commit_phase`、三级错误、四类版本号 | 结构完成，规则很少 |
 | 机制 | `mechanisms.py` | 5 张调度卡、打分、取前 3 | 未校准 |
-| 人格 skills | `skills.py`、`library/skills/` | SKILL.md 解析校验（兼容 Agent Skills 规范）、人物绑定、按线索 / 简报激活取前 3、表达要点分发 | 9 个 skill，内容待审定 |
-| 角色简报 | `briefing.py` | 场景 1.1 的 `briefings` 校验；决策视图 / 表达视图分开；泄露关键词检测 | 完成 |
+| 人格 skills | `skills.py`、`library/skills/` | SKILL.md 解析校验（兼容 Agent Skills 规范）、人物绑定、按线索 / 开场设定激活取前 3、表达要点分发 | 9 个 skill，内容待审定 |
+| 开场设定 | `briefing.py` | 角色文件 `setup` 的校验；决策视图 / 表达视图分开；泄露关键词检测 | 完成 |
 | 记忆 | `memory.py` | 只增；前情固定在前；较早条目按字符二元组相似度 + 显著性召回；最近 12 条完整保留 | 完成，未接 Mem0 服务 |
 | 接口合同 | `contract.py` | Event / ProposedAction / AgentState / StateDelta 数据类与校验 | 完成（按环境组合同 v0） |
 | 角色 | `agent.py` | `step` / `perceive`、可见性二次校验、决策与表达编排、状态链 | 完成 |
@@ -87,8 +87,9 @@ flowchart TB
 | 环境与运行 | `runtime.py` | 脚本环境、`run_episode`、落盘、git SHA | 单焦点角色 + 四轮 |
 | 审计 | `audit.py` | 从落盘产物重新推导五项自动检查 | 完成 |
 | 评审包 | `package.py` | 盲化评审包导出 | 完成 |
-| 入口 | `__main__.py` | `catalog` `validate` `compile` `run` `audit` `package` | 完成 |
-| 示例与重建 | `examples/personas/`、`examples/scenes/`、`scripts/bootstrap_examples.py` | 两个虚构人物（各带 skill 绑定）+ 一个带简报的场景 | 虚构设定 |
+| 角色与剧情文件 | `roles.py`、`roles/`、`scenes/` | 角色文件与剧情文件的读取校验、`fit` 搭配检查、`seat` 组装 Agent、`run` | 完成；只支持一个模型驱动的角色 |
+| 入口 | `__main__.py` | `catalog` `list` `validate` `compile` `skills` `run` `audit` `package` | 完成 |
+| 示例与重建 | `roles/`、`scenes/`、`scripts/bootstrap_examples.py` | 两个虚构角色 role1（林澄）、role2（周越）+ 两个剧情 test1（4 轮）、test2（5 轮追问版） | 虚构设定 |
 
 ## 4. 一个事件怎么被处理
 
@@ -104,7 +105,7 @@ sequenceDiagram
   A->>S: 候选变化（紧张、信任）+ 证据 event_id
   S-->>A: 采纳 / 拒绝，写 mechanism_log
   A->>A: 召回记忆（前情 + 相关旧条目 + 最近 12 条），激活 skill
-  A->>A: 按消融档位组装决策提示（简报、skill 各档都有；可含 current_state、机制卡）
+  A->>A: 按消融档位组装决策提示（开场设定、skill 各档都有；可含 current_state、机制卡）
   A->>M: decide
   M-->>A: action + evidence_ids + brief_reason
   A->>A: 校验：动作可行、证据可见
@@ -204,8 +205,8 @@ flowchart TB
 | 机制卡与控制器提示 | 仅 `profile_state_mechanisms` | 否 | 否（提示不导出，避免暴露档位） | 否 |
 | 模型输出与推理摘要 | — | — | 是 | 否 |
 | 世界私有数据、角色不可见事件 | 否 | 否 | 仅在单独的对照文件 | 否 |
-| 简报：交互目标、想让对方知道的信息 | 是 | 是 | 是（`role_setup.json`） | 否 |
-| 简报：不想让对方知道的信息 | 是（`keep_private`） | **否** | 是（`role_setup.json`） | 否 |
+| 开场设定：交互目标、想让对方知道的信息 | 是 | 是 | 是（`role_setup.json`） | 否 |
+| 开场设定：不想让对方知道的信息 | 是（`keep_private`） | **否** | 是（`role_setup.json`） | 否 |
 | 前情提要 | 是（记忆首条，可作证据） | 是 | 是（`role_setup.json`） | 否 |
 | skill 名称与描述、决策要点、反模式 | 是 | 否 | 否（只列已绑定 skill 名，不写是否启用） | 否 |
 | skill 表达要点 | 否 | 是（仅已激活的） | 否 | 否 |
@@ -248,7 +249,7 @@ flowchart LR
 5. skill 只影响提示内容，不产生状态变化；记忆只增不改。
 6. 他人的口头承诺不算"已兑现"的证据，只有叙述事实和环境裁决的结果可以改变可靠性判断。
 7. 模型调用失败就停下并记录，**不静默回退 mock**。
-8. 旧 schema 的档案和轨迹被拒绝，不做静默转换（场景 1.0 / 1.1 都是显式版本，1.0 不带简报）。
+8. 旧 schema 的档案和轨迹被拒绝，不做静默转换（剧情只接受 scene schema 1.2，带 `goal` / `briefings` 的旧格式被拒绝）。
 
 ## 10. 完成度与未做
 
@@ -256,7 +257,7 @@ flowchart LR
 |---|---|---|
 | 画像 | schema 2.0，20 个稳定模块带状态，P1 30 分面，施瓦兹 19 项，核心目标 | P2/P3 及三方案比较；分面级 unknown；其余 26 个分面的行为投影；71 维；stable 变更的版本迁移结构 |
 | 人格 skills | 9 个 SKILL.md、人物绑定、三级加载、`--no-skills` 对照 | 心理学组审定内容；从语料蒸馏 skill；纠正层与 skill 版本；由模型读描述自主激活的档位 |
-| 简报与记忆 | 场景 1.1 简报（目标、透露、隐瞒、前情）；只增记忆与召回；隐瞒泄露审计 | 接入 Mem0 服务；换说法的泄露检测；记忆更新人格（需与心理学组对齐） |
+| 开场设定与记忆 | 角色文件的开场设定（目标、透露、隐瞒、前情）；只增记忆与召回；隐瞒泄露审计 | 接入 Mem0 服务；换说法的泄露检测；记忆更新人格（需与心理学组对齐） |
 | 动态状态 | 六域骨架，原子提交，三级错误，日志与版本 | 11 个算子的机制卡数值；信念、目标、他人模型的更新规则；时间事件与衰减规则 |
 | 环境 | 单焦点角色 + 四轮脚本；合同 v0 已与环境组对接 | 多角色调度；真实场景；时间轴与打断（设计见 [09](09-timeline-and-interruption.md)） |
 | 模型 | 两阶段接口、严格 JSON、本机回环不走代理 | 真实模型运行（需要可用的服务） |
@@ -268,14 +269,14 @@ flowchart LR
 # 项目要求 Python 3.11+（CI 用 3.11）。本机用 ~/venvs/rolesim（Python 3.11.15，仅标准库）；
 # 在新会话里 Claude 的 PATH 由 .claude/settings.local.json 指向它，自己的终端可 source ~/venvs/rolesim/bin/activate
 python3.11 -m unittest discover -s tests -v
-python3.11 -m rolesim validate examples/personas/cautious.json
-python3.11 -m rolesim skills examples/personas/cautious.skills.json --persona examples/personas/cautious.json
-python3.11 -m rolesim run --mode profile_state --out runs/demo
-python3.11 -m rolesim run --skills examples/personas/cautious.skills.json --out runs/skills
-python3.11 -m rolesim run --skills examples/personas/cautious.skills.json --no-skills --out runs/no-skills
+python3.11 -m rolesim list
+python3.11 -m rolesim validate role1
+python3.11 -m rolesim run --role role1 --scene test1 --mode profile_state --out runs/demo
+python3.11 -m rolesim run --role role2 --scene test2 --out runs/role2-test2
+python3.11 -m rolesim run --role role1 --scene test1 --no-skills --out runs/no-skills
 python3.11 -m rolesim audit runs/demo
 python3.11 -m rolesim package runs/a runs/b --out outputs/review --seed 1
-PYTHONPATH=. python3.11 scripts/bootstrap_examples.py   # 重建示例档案
+PYTHONPATH=. python3.11 scripts/bootstrap_examples.py   # 重建 roles/ 与 scenes/ 示例
 ```
 
 ## 12. 证据边界

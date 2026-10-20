@@ -9,13 +9,12 @@ from rolesim.contract import (Event, PerceiveRequest, StepRequest, Visibility, t
 from rolesim.providers import MockBackend
 from rolesim.runtime import ScriptedEnvironment
 from rolesim.state import DOMAINS
+from fixtures import load, setup
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def load(name):
-    folder = "scenes" if name == "cooperation_conflict.json" else "personas"
-    return json.loads((ROOT / "examples" / folder / name).read_text())
 
 
 class Capture(MockBackend):
@@ -33,15 +32,15 @@ class Capture(MockBackend):
 
 class AgentContractTests(unittest.TestCase):
     def setUp(self):
-        self.persona = load("cautious.json")
-        self.scenario = load("cooperation_conflict.json")
-        self.env = ScriptedEnvironment(self.scenario, "cautious")
+        self.persona = load("role1")
+        self.scenario = load("test1")
+        self.env = ScriptedEnvironment(self.scenario, "role1")
         self.events = [event for _, event in self.env.scheduled()]
         self.backend = Capture()
         self.agent = Agent(self.backend, self.scenario["allowed_actions"], self.scenario["partner"])
 
     def step(self, turn, events, prev=None, profile=None, **extra):
-        return self.agent.step(StepRequest("cautious", turn, self.scenario["goal"], events, prev,
+        return self.agent.step(StepRequest("role1", turn, self.scenario["background"], events, prev,
                                            profile, **extra))
 
     def first(self):
@@ -51,8 +50,8 @@ class AgentContractTests(unittest.TestCase):
         response = self.first()
         self.assertEqual(response.status, "ok")
         self.assertEqual(len(response.actions), 1)
-        self.assertEqual(response.actions[0].proposal_id, "cautious@t001#1")
-        self.assertEqual(response.state["state_id"], "cautious@t001")
+        self.assertEqual(response.actions[0].proposal_id, "role1@t001#1")
+        self.assertEqual(response.state["state_id"], "role1@t001")
         self.assertIsNone(response.state["prev_state_id"])
         self.assertEqual(response.state["memory"], ["e1"])
         self.assertEqual(response.delta["trigger"], "step")
@@ -76,19 +75,19 @@ class AgentContractTests(unittest.TestCase):
     def test_next_step_reads_the_state_after_perceive(self):
         stepped = self.first()
         _, outcomes = self.env.adjudicate(stepped.actions[0], 1)
-        perceived = self.agent.perceive(PerceiveRequest("cautious", 1, outcomes, stepped.state["state_id"]))
-        self.assertEqual(perceived.state["state_id"], "cautious@t001.p1")
-        self.assertEqual(perceived.state["prev_state_id"], "cautious@t001")
+        perceived = self.agent.perceive(PerceiveRequest("role1", 1, outcomes, stepped.state["state_id"]))
+        self.assertEqual(perceived.state["state_id"], "role1@t001.p1")
+        self.assertEqual(perceived.state["prev_state_id"], "role1@t001")
         self.assertIn(outcomes[0].event_id, perceived.state["memory"])
         second = self.step(2, [self.events[1]], perceived.state["state_id"])
-        self.assertEqual(second.state["prev_state_id"], "cautious@t001.p1")
+        self.assertEqual(second.state["prev_state_id"], "role1@t001.p1")
         history = self.backend.payloads[-2]["visible_history"]
         self.assertIn(outcomes[0].event_id, [item["id"] for item in history])
 
     def test_stale_prev_state_id_is_rejected_without_advancing(self):
         stepped = self.first()
         before = self.agent.latest_state()
-        response = self.step(2, [self.events[1]], prev="cautious@t000")
+        response = self.step(2, [self.events[1]], prev="role1@t000")
         self.assertEqual(response.status, "error")
         self.assertEqual(response.actions, [])
         self.assertEqual(self.agent.latest_state(), before)
@@ -99,7 +98,7 @@ class AgentContractTests(unittest.TestCase):
             def decide(self, payload):
                 return {"action": "wait", "evidence_ids": ["not_seen"], "brief_reason": "SECRET_REASON"}
         agent = Agent(Broken(), self.scenario["allowed_actions"], self.scenario["partner"])
-        response = agent.step(StepRequest("cautious", 1, self.scenario["goal"], [self.events[0]], None,
+        response = agent.step(StepRequest("role1", 1, self.scenario["background"], [self.events[0]], None,
                                           self.persona))
         self.assertEqual(response.status, "error")
         self.assertEqual((response.actions, response.thought), ([], ""))
@@ -123,7 +122,7 @@ class AgentContractTests(unittest.TestCase):
         self.assertIn("partner", speech.visibility.audience)
         for event in outcomes:
             self.assertEqual(event.type, "outcome")
-            self.assertIn("cautious", event.visibility.audience)
+            self.assertIn("role1", event.visibility.audience)
             self.assertEqual(event.outcome["of_proposal"], stepped.actions[0].proposal_id)
         produced = json.dumps([to_dict(e) for e in self.env.log], ensure_ascii=False)
         self.assertNotIn(stepped.thought, produced)
@@ -131,11 +130,11 @@ class AgentContractTests(unittest.TestCase):
 
     def test_obtained_evidence_is_not_requested_again(self):
         agent = Agent(MockBackend(), ["request_evidence", "wait"], self.scenario["partner"])
-        first = agent.step(StepRequest("cautious", 1, "g", [self.events[0]], None, self.persona))
+        first = agent.step(StepRequest("role1", 1, "g", [self.events[0]], None, self.persona))
         self.assertEqual(first.actions[0].intent_note, "request_evidence")
         _, outcomes = self.env.adjudicate(first.actions[0], 1)
-        perceived = agent.perceive(PerceiveRequest("cautious", 1, outcomes, first.state["state_id"]))
-        second = agent.step(StepRequest("cautious", 2, "g", [self.events[1]], perceived.state["state_id"]))
+        perceived = agent.perceive(PerceiveRequest("role1", 1, outcomes, first.state["state_id"]))
+        second = agent.step(StepRequest("role1", 2, "g", [self.events[1]], perceived.state["state_id"]))
         self.assertEqual(second.actions[0].intent_note, "wait")
 
     def test_situational_speech_rule_reaches_only_the_expression_prompt_as_style(self):
@@ -160,18 +159,18 @@ class AgentContractTests(unittest.TestCase):
     def test_mechanism_log_links_input_and_output_state_ids(self):
         stepped = self.first()
         _, outcomes = self.env.adjudicate(stepped.actions[0], 1)
-        perceived = self.agent.perceive(PerceiveRequest("cautious", 1, outcomes, stepped.state["state_id"]))
+        perceived = self.agent.perceive(PerceiveRequest("role1", 1, outcomes, stepped.state["state_id"]))
         log = self.agent.mechanism_log
         self.assertEqual([(e["trigger"], e["input_state_id"], e["output_state_id"]) for e in log],
-                         [("step", None, "cautious@t001"),
-                          ("perceive", "cautious@t001", perceived.state["state_id"])])
-        self.assertEqual([e["commit_key"] for e in log], ["cautious/e1/step", f"cautious/{outcomes[0].event_id}/perceive"])
+                         [("step", None, "role1@t001"),
+                          ("perceive", "role1@t001", perceived.state["state_id"])])
+        self.assertEqual([e["commit_key"] for e in log], ["role1/e1/step", f"role1/{outcomes[0].event_id}/perceive"])
         self.assertTrue(all(e["rejected"] == [] for e in log))
 
     def test_stable_persona_cannot_be_swapped_mid_episode(self):
         stepped = self.first()
-        other = load("assertive.json")
-        other["id"] = "cautious"
+        other = load("role2")
+        other["id"] = "role1"
         response = self.step(2, [self.events[1]], stepped.state["state_id"], other)
         self.assertEqual(response.status, "error")
 

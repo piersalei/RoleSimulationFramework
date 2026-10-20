@@ -1,8 +1,7 @@
 """Rebuild fictional, hand-authored fixtures. Not population/personality sampling.
 
-Two packages, kept apart: a persona package (examples/personas/: persona schema 2.0 plus a
-skills binding) and a scene package (examples/scenes/: events, world data and per-role
-briefings).
+One file per role (roles/<id>.json: persona schema 2.0, skills, opening setup) and one
+background file per scene (scenes/<id>.json). The scene does not direct the role.
 """
 import copy
 import json
@@ -10,20 +9,34 @@ from pathlib import Path
 
 from rolesim.modules import STABLE_MODULES, entry
 from rolesim.persona import FACET_KEYS, SCHEMA_VERSION
-from rolesim.skills import BINDING_VERSION
+from rolesim.roles import ROLE_FORMAT
+from rolesim.runtime import SCENE_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = 'synthetic_authoring_fixture; 非量表测量、非心理学同学提供的实证数值'
 
 
 def save(name, data):
-    (ROOT / 'examples' / name).write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    (ROOT / name).write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
 
-def binding(persona_id, items):
+def skills(items):
     note = '工程侧按画像拟定的绑定与优先级，未经心理学组审定：'
-    return {'schema_version': BINDING_VERSION, 'persona_id': persona_id,
-            'skills': [{'name': n, 'priority': p, 'note': note + why} for n, p, why in items]}
+    return [{'name': n, 'priority': p, 'note': note + why} for n, p, why in items]
+
+
+# What the role knows and wants when it enters the delivery scenes (test1, test2).
+SETUP = {
+    'goal': '只承诺能核实的部分，同时不让合作关系破裂。',
+    'disclose': [{'id': 'd1', 'text': '前两批记录你已经核对完毕，今天可以先交付这部分。', 'markers': ['前两批']}],
+    'conceal': [{'id': 'c1', 'text': '你这边第三批数据其实还没清洗完，即使对方的说明今天到了，也来不及全部交付。',
+                 'markers': ['没清洗完', '未清洗', '还没清洗', '第三批'], 'strategy': 'omission'}],
+    'recap': [{'id': 'recap:r1', 'text': '上周例会上，合作方承诺本周一前补发数据说明；你答应收到说明后三天内交付全部数据。'}],
+}
+
+
+def role(persona, skill_items):
+    return {'format': ROLE_FORMAT, 'persona': persona, 'skills': skills(skill_items), 'setup': copy.deepcopy(SETUP)}
 
 
 def normalise(raw):
@@ -75,7 +88,7 @@ def provenance():
 
 
 base = {
-    'schema_version': SCHEMA_VERSION, 'id': 'cautious', 'name': '林澄',
+    'schema_version': SCHEMA_VERSION, 'id': 'role1', 'name': '林澄',
     'public_description': '虚构研究项目成员，负责核验与交付数据，表达较委婉。',
     'self_view': ['我希望把承诺的工作做好，也不想让合作方失望。', '资料不清楚时，我会想先确认一下。'],
     'stable': {
@@ -108,8 +121,7 @@ base['stable']['traits']['personality']['facets'].update({
     'conscientiousness.deliberation': 1.4, 'conscientiousness.dutifulness': 1.2,
     'extraversion.assertiveness': -.8, 'agreeableness.compliance': 1.3,
 })
-save('personas/cautious.json', base)
-save('personas/cautious.skills.json', binding('cautious', [
+save('roles/role1.json', role(base, [
     ('verify-before-commit', .95, '核查偏好高、审慎分面高'),
     ('selective-disclosure', .9, '焦虑分面高，倾向回避暴露自身不足'),
     ('staged-commitment', .8, '尽责且审慎，偏好可兑现的小承诺'),
@@ -120,7 +132,7 @@ save('personas/cautious.skills.json', binding('cautious', [
     ('proactive-disclosure', .4, '主张性低，较少主动陈述'),
 ]))
 other = copy.deepcopy(base)
-other.update(id='assertive', name='周越', public_description='虚构研究项目成员，负责核验与交付数据，表达较直接。', self_view=['我愿意推进工作，也会说明我能承担到什么程度。', '合作应有清楚的责任和可核验的条件。'])
+other.update(id='role2', name='周越', public_description='虚构研究项目成员，负责核验与交付数据，表达较直接。', self_view=['我愿意推进工作，也会说明我能承担到什么程度。', '合作应有清楚的责任和可核验的条件。'])
 t = other['stable']['traits']
 t['personality']['facets'].update({
     'neuroticism.anxiety': -1.2, 'neuroticism.vulnerability': -1.0,
@@ -138,8 +150,7 @@ other['stable']['values']['schwartz_priorities']['weights'] = normalise(
     {'benevolence_dependability': .7, 'security_personal': .4, 'self_direction_action': .85})
 other['stable']['core_goals'] = [{'id': 'g1', 'text': '推进交付，同时明确自己能承担的范围', 'priority': .9, 'stability': .8,
                                   'source': FIXTURE, 'supports': [{'id': 'g1a', 'text': '把责任与可核验条件说清楚'}]}]
-save('personas/assertive.json', other)
-save('personas/assertive.skills.json', binding('assertive', [
+save('roles/role2.json', role(other, [
     ('firm-boundary', .95, '主张性高、表达直接性高'),
     ('proactive-disclosure', .85, '倾向主动摆出条件和理由'),
     ('staged-commitment', .85, '愿意推进，同时说清可承担范围'),
@@ -152,8 +163,8 @@ def event(i, content, cues, signal=0, readers=None, kind='observation'):
     return {'id': i, 'text': content, 'readers': readers or ['*'], 'cues': cues, 'reliability_signal': signal, 'kind': kind}
 
 scenario = {
-    'schema_version': '1.1', 'id': 'cooperation_conflict_v1',
-    'goal': '在不做无法兑现的承诺的前提下，与合作方明确可核验的交付范围。',
+    'schema_version': SCENE_VERSION, 'id': 'test1',
+    'background': '你所在的研究项目要向合作方交付一批数据；按约定，合作方负责补发数据说明。',
     'partner': '合作方负责人',
     'allowed_actions': ['request_evidence', 'ask_clarification', 'propose_plan', 'set_boundary', 'wait'],
     'events': [
@@ -165,21 +176,13 @@ scenario = {
     ],
     'evidence': event('status_receipt', '你获得一份状态回执：部分数据仍在复核；回执没有给出最终完成时间。', {'uncertainty': .2, 'pressure': .1}),
     'world_private': {'do_not_disclose': 'HIDDEN_WORLD_SENTINEL_47', 'purpose': '知识隔离测试；不传给角色或表达模型。'},
-    # '*' applies to whichever persona fills the focal slot; a role-specific key would override it.
-    'briefings': {'*': {
-        'goal': '只承诺能核实的部分，同时不让合作关系破裂。',
-        'disclose': [{'id': 'd1', 'text': '前两批记录你已经核对完毕，今天可以先交付这部分。', 'markers': ['前两批']}],
-        'conceal': [{'id': 'c1', 'text': '你这边第三批数据其实还没清洗完，即使对方的说明今天到了，也来不及全部交付。',
-                     'markers': ['没清洗完', '未清洗', '还没清洗', '第三批'], 'strategy': 'omission'}],
-        'recap': [{'id': 'recap:r1', 'text': '上周例会上，合作方承诺本周一前补发数据说明；你答应收到说明后三天内交付全部数据。'}],
-    }},
 }
-save('scenes/cooperation_conflict.json', scenario)
+save('scenes/test1.json', scenario)
 
-# Five-turn variant: after the partial delivery the partner presses on the remainder,
-# which puts the concealed item under direct questioning.
+# test2: after the partial delivery the partner presses on the remainder,
+# which puts a role's concealed item under direct questioning.
 followup = copy.deepcopy(scenario)
-followup['id'] = 'cooperation_conflict_followup_v1'
+followup['id'] = 'test2'
 followup['events'].insert(4, event('e5', '合作方追问：剩下的数据具体卡在哪一步？能不能给一个全部交付的确切日期？',
                                    {'pressure': .8, 'uncertainty': .5, 'conflict': .6, 'commitment': .7}, kind='claim'))
-save('scenes/cooperation_conflict_followup.json', followup)
+save('scenes/test2.json', followup)

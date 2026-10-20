@@ -11,14 +11,13 @@ from rolesim.providers import MockBackend
 from rolesim.runtime import ScriptedEnvironment, run_episode
 from rolesim.skills import (ACTIONS, BINDING_VERSION, CUES, LIBRARY, bind, load_library, parse_skill,
                             select)
+from fixtures import load, setup
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_IDS = {s["id"] for s in json.loads((ROOT / "data" / "catalog.json").read_text())["sections"]}
 
 
-def load(name):
-    folder = "scenes" if name == "cooperation_conflict.json" else "personas"
-    return json.loads((ROOT / "examples" / folder / name).read_text())
 
 
 VALID = """---
@@ -104,13 +103,13 @@ class LibraryTests(unittest.TestCase):
 class BindingTests(unittest.TestCase):
     def setUp(self):
         self.library = load_library()
-        self.binding = load("cautious.skills.json")
+        self.binding = load("role1.skills")
 
     def test_examples_bind_and_sort_by_priority(self):
-        bound = bind(self.binding, "cautious", self.library)
+        bound = bind(self.binding, "role1", self.library)
         self.assertEqual(bound[0]["name"], "verify-before-commit")
         self.assertEqual([s["priority"] for s in bound], sorted((s["priority"] for s in bound), reverse=True))
-        bind(load("assertive.skills.json"), "assertive", self.library)
+        bind(load("role2.skills"), "role2", self.library)
 
     def test_invalid_bindings_are_rejected(self):
         def patched(fn):
@@ -118,13 +117,13 @@ class BindingTests(unittest.TestCase):
             fn(data)
             return data
         cases = [
-            (patched(lambda b: b.update(schema_version="skills-binding-0.9")), "cautious"),
-            (self.binding, "assertive"),
-            (patched(lambda b: b["skills"].append({"name": "telepathy", "priority": .5, "note": "x"})), "cautious"),
-            (patched(lambda b: b["skills"].append(dict(b["skills"][0]))), "cautious"),
-            (patched(lambda b: b["skills"][0].update(priority=1.5)), "cautious"),
-            (patched(lambda b: b["skills"][0].pop("note")), "cautious"),
-            (patched(lambda b: b.update(skills=[])), "cautious"),
+            (patched(lambda b: b.update(schema_version="skills-binding-0.9")), "role1"),
+            (self.binding, "role2"),
+            (patched(lambda b: b["skills"].append({"name": "telepathy", "priority": .5, "note": "x"})), "role1"),
+            (patched(lambda b: b["skills"].append(dict(b["skills"][0]))), "role1"),
+            (patched(lambda b: b["skills"][0].update(priority=1.5)), "role1"),
+            (patched(lambda b: b["skills"][0].pop("note")), "role1"),
+            (patched(lambda b: b.update(skills=[])), "role1"),
         ]
         for data, persona_id in cases:
             with self.subTest(binding=data["schema_version"], persona=persona_id), self.assertRaises(ValueError):
@@ -134,10 +133,10 @@ class BindingTests(unittest.TestCase):
 
 class SelectionTests(unittest.TestCase):
     def setUp(self):
-        self.bound = bind(load("cautious.skills.json"), "cautious", load_library())
-        self.scenario = load("cooperation_conflict.json")
+        self.bound = bind(load("role1.skills"), "role1", load_library())
+        self.scenario = load("test1")
         self.allowed = self.scenario["allowed_actions"]
-        self.briefing = self.scenario["briefings"]["*"]
+        self.briefing = setup("role1")
 
     def obs(self, **cues):
         return {"id": "e", "cues": cues}
@@ -162,9 +161,9 @@ class SelectionTests(unittest.TestCase):
 
 class SkillRunTests(unittest.TestCase):
     def setUp(self):
-        self.persona = load("cautious.json")
-        self.scenario = load("cooperation_conflict.json")
-        self.binding = load("cautious.skills.json")
+        self.persona = load("role1")
+        self.scenario = load("test1")
+        self.binding = load("role1.skills")
 
     def run_capture(self, mode="profile_state_mechanisms", use_skills=True, binding="default"):
         backend = Capture()
@@ -214,10 +213,10 @@ class SkillRunTests(unittest.TestCase):
         self.assertEqual(first(without)["action"], "propose_plan")
 
     def test_agent_rejects_nothing_when_no_skills_are_given(self):
-        env = ScriptedEnvironment(self.scenario, "cautious")
+        env = ScriptedEnvironment(self.scenario, "role1")
         event = next(env.scheduled())[1]
         agent = Agent(MockBackend(), self.scenario["allowed_actions"], self.scenario["partner"])
-        response = agent.step(StepRequest("cautious", 1, self.scenario["goal"], [event], None, self.persona))
+        response = agent.step(StepRequest("role1", 1, self.scenario["background"], [event], None, self.persona))
         self.assertEqual(response.status, "ok")
         self.assertNotIn("skill_catalog", agent.last_payload)
 

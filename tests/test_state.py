@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from fixtures import load
 from rolesim.agent import initial_state, observe
 from rolesim.mechanisms import CARD_MECHANISMS, CARDS
 from rolesim.modules import STATUSES, transition
@@ -296,8 +297,8 @@ class HarmHistoryTests(unittest.TestCase):
 
 class RuntimeStateTests(unittest.TestCase):
     def test_every_perceive_writes_an_evidenced_delta(self):
-        persona = json.loads((ROOT / "examples" / "personas" / "cautious.json").read_text())
-        scenario = json.loads((ROOT / "examples" / "scenes" / "cooperation_conflict.json").read_text())
+        persona = load("role1")
+        scenario = load("test1")
         state = initial_state()
         for _, event in ScriptedEnvironment(scenario, persona["id"]).scheduled():
             observe(state, event, persona)
@@ -311,8 +312,8 @@ class RuntimeStateTests(unittest.TestCase):
         self.assertEqual(len(state["mechanism_log"]), len(state["updates"]))
 
     def test_unknown_inputs_skip_their_branch_instead_of_guessing(self):
-        persona = json.loads((ROOT / "examples" / "personas" / "cautious.json").read_text())
-        scenario = json.loads((ROOT / "examples" / "scenes" / "cooperation_conflict.json").read_text())
+        persona = load("role1")
+        scenario = load("test1")
         state = initial_state()
         state["dynamic"]["relation_state"]["partner"]["trust"] = None
         state["module_status"][TRUST]["status"] = "unknown"

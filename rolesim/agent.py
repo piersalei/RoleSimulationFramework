@@ -105,7 +105,7 @@ def make_payload(persona, state, trigger, scene_context, partner, allowed, mode,
         raise ValueError("no feasible action remains")
     query = " ".join(filter(None, [(trigger or {}).get("content"), (briefing or {}).get("goal")]))
     data = {"role": views["role_self"], "behavioral_constraints": views["controller_only"],
-            "goal": scene_context, "partner": partner,
+            "scene_background": scene_context, "partner": partner,
             "visible_history": mem.recall(state["memory"], query),
             "allowed_actions": list(allowed)}
     if briefing:

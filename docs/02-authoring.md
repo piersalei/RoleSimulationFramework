@@ -4,7 +4,7 @@
 
 ## 人物制作
 
-复制 `examples/personas/cautious.json`（persona schema 2.0），修改人物身份、公开描述、自我理解、相关分面、动机基线、价值权重和核心目标。`stable.module_status` 必须列出全部登记模块：有值的写 `active` 并在 `provenance` 里给来源；没有资料的写 `unknown` 且值为 `null`，不要写成 0 或中性值；本版没有建模的写 `not_modeled` 并说明原因。运行 `validate` 后再 `compile` 检查视图。模板内的数值是虚构示例，应逐项审定，不是默认人群常模。示例由 `PYTHONPATH=. python3.11 scripts/bootstrap_examples.py` 重建。
+复制 `roles/role1.json`，改名为新编号（如 `roles/role3.json`，文件名必须等于 `persona.id`），在其中的 `persona`（persona schema 2.0）里修改人物身份、公开描述、自我理解、相关分面、动机基线、价值权重和核心目标。`stable.module_status` 必须列出全部登记模块：有值的写 `active` 并在 `provenance` 里给来源；没有资料的写 `unknown` 且值为 `null`，不要写成 0 或中性值；本版没有建模的写 `not_modeled` 并说明原因。运行 `validate` 后再 `compile` 检查视图。模板内的数值是虚构示例，应逐项审定，不是默认人群常模。示例由 `PYTHONPATH=. python3.11 scripts/bootstrap_examples.py` 重建。
 
 字段规则：
 
@@ -27,32 +27,63 @@
 
 未知数值保留缺失理由。P1 的 30 分面仍要求全部赋值；示例未重点设定项为显式合成中性 `0`，与 71 维的“定义缺失、未赋值”不同。模块级的缺失已能用 `unknown`（null）表达，但分面级还不能；未来材料抽取模式需扩展分面级的 nullable 与缺失策略，不能将缺失测量静默写成中性。
 
-### 人物包：档案 + skill 绑定
+### 角色文件：一个角色一个文件
 
-人物包由两个文件组成，放在 `examples/personas/`：
-
-- `<id>.json`：上面的人物档案（schema 2.0，合同约定的格式，不因 skill 改动）。
-- `<id>.skills.json`：这个人物会用哪些 skill、优先级多少（0–1）、为什么（`note`）。skill 本身在 `library/skills/<name>/SKILL.md`，格式见 [08-persona-skills-survey.md](08-persona-skills-survey.md) 第 4 节。
+角色放在 `roles/`，用编号命名（`role1`、`role2`……），具体是谁打开文件看。文件名必须等于 `persona.id`。
 
 ```json
-{"schema_version": "skills-binding-1.0", "persona_id": "cautious",
- "skills": [{"name": "verify-before-commit", "priority": 0.95, "note": "核查偏好高、审慎分面高"}]}
+{"format": "role-1.0",
+ "persona": { "...": "persona schema 2.0，原样嵌入，与心理学组约定的格式一致" },
+ "skills": [{"name": "verify-before-commit", "priority": 0.95, "note": "核查偏好高、审慎分面高"}],
+ "setup": {"goal": "…", "disclose": [], "conceal": [], "recap": []}}
 ```
 
-用 `python3.11 -m rolesim skills examples/personas/cautious.skills.json --persona examples/personas/cautious.json` 检查绑定。新写一个 skill：在 `library/skills/` 下建同名目录和 `SKILL.md`，`rolesim-source` 必须引用 `data/catalog.json` 里存在的章节，正文必须有"决策要点 / 表达要点 / 不会做的事 / 边界"四节（纯表达类可省略决策要点）。
+- `persona`：上面的人物档案，校验规则不变。
+- `skills`：这个人物会用哪些 skill、优先级（0–1）、为什么（`note`）；可以为空列表。skill 本身在 `library/skills/<name>/SKILL.md`，格式见 [08-persona-skills-survey.md](08-persona-skills-survey.md) 第 4 节。skill 是工程侧拟定的，`note` 里写明未经心理学组审定。
+- `setup`：角色进入剧情时的开场设定，见下节；可以为 `null`。
 
-## 场景包与角色简报
+用 `python3.11 -m rolesim validate role1` 校验整个角色文件，`python3.11 -m rolesim skills role1` 只看 skill。新写一个 skill：在 `library/skills/` 下建同名目录和 `SKILL.md`，`rolesim-source` 必须引用 `data/catalog.json` 里存在的章节，正文必须有"决策要点 / 表达要点 / 不会做的事 / 边界"四节（纯表达类可省略决策要点）。
 
-场景放在 `examples/scenes/`，和人物包分开。schema 1.1 在原有事件、私有数据之外增加 `briefings`：按角色 id 给每个角色一份开场简报，`"*"` 表示适用于任何填入焦点位置的角色。
+### 开场设定（setup）
+
+开场设定是角色自己知道和想要的东西，所以跟着角色走，不写在剧情里。
 
 | 字段 | 含义 | 去向 |
 |---|---|---|
-| `goal` | 本角色在这场互动里的目标 | 决策提示；表达提示 |
+| `goal` | 角色在这场互动里的目标 | 决策提示；表达提示 |
 | `disclose` | 想让对方知道的信息（`id`、`text`、`markers`） | 决策提示（`want_known`）；表达提示（`may_share`） |
 | `conceal` | 角色知道、但不想让对方知道的信息；`strategy` 只能是 `omission`（遗漏）或 `strategic_ambiguity`（战略模糊），不支持直接说谎 | **只进决策提示**（`keep_private`），表达提示拿不到原文 |
 | `recap` | 前情提要，id 以 `recap:` 开头 | 作为记忆的第一批条目，可被决策引用为证据 |
 
 `markers` 是自动审计用来检测"说出来了"的关键词（至少两个字）。前情提要里不能出现隐瞒条目的关键词，因为前情会进入表达提示。审计项 `concealed_info_withheld` 检查隐瞒内容没有进入表达提示、没有被说出；`disclose` 条目被说出只统计不判错。关键词检测抓不到换了说法的泄露，这部分仍需人工评分。
+
+开场设定的内容要和角色放进的剧情对得上（例如 role1 的设定讲的是数据交付，适用于 test1、test2）。程序只能检查 id 是否与剧情事件冲突，内容是否相符要作者自己保证。
+
+## 场景文件：背景，不指导角色
+
+场景放在 `scenes/`，同样用编号命名（`test1`、`test2`……），文件名必须等于场景 `id`。场景只描述世界：发生什么、谁能看到、世界自己保留什么，**不给角色下指令**。正式格式以后按场景组的背景文件接口替换；目前用 scene schema 1.2 作为替身：
+
+| 字段 | 含义 |
+|---|---|
+| `background` | 角色知道的场景背景，作为合同里的 `scene_context` 传给角色；写事实，不写"你要……" |
+| `partner` | 脚本扮演的对方 |
+| `allowed_actions` | 脚本裁决器能处理的动作 |
+| `events` / `evidence` | 按顺序投递的事件，`readers` 决定谁能看到；`cues` 是给机制和 skill 用的线索标注（待环境组确认的扩展） |
+| `world_private` | 世界私有数据，永不进入角色调用 |
+
+旧的 1.0 / 1.1 场景（带 `goal`、`briefings`）会被拒绝。
+
+## 换角色、换剧情
+
+```bash
+python3.11 -m rolesim list                                   # 列出全部角色、剧情和两两能否搭配
+python3.11 -m rolesim list --role role2 --scene test2        # 查一组搭配
+python3.11 -m rolesim run --role role2 --scene test2 --out runs/x
+```
+
+`--role`、`--scene` 写编号或文件路径。新增角色或剧情只需要放一个新文件，不用改代码。搭配检查（`fit`）里，错误会阻止运行（例如机制先验与启用的机制卡不一致、开场设定的 id 与剧情事件冲突）；提示只报告，例如"这个 skill 在该剧情里永远不会被激活"。运行记录 `manifest.json` 的 `origin` 字段记下用了哪个角色文件和剧情文件及其哈希。
+
+给环境组接入用的是 `rolesim.roles.seat(role, scene, backend)`：返回配置好的 Agent（剧情的可选动作和对方、角色的 skill 和开场设定），以及首轮 `step` 要带的 `role_profile`。之后环境按合同 v0 调 `step` / `perceive`，接口不变。当前只支持一个模型驱动的角色，对方是脚本。
 
 ## 机制卡审定模板
 

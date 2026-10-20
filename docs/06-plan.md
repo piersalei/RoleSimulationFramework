@@ -280,8 +280,8 @@
 
 | 会议 / 分工项 | 做了什么 | 位置 |
 |---|---|---|
-| 初始化：场景输入、交互目标、想让 / 不想让别人知道的信息 | 场景 schema 1.1 的 `briefings`：`goal`、`disclose`、`conceal`、`recap` | `rolesim/briefing.py`，`docs/02-authoring.md` |
-| 两个数据包，场景和人物分开 | `examples/personas/`（档案 + skill 绑定）与 `examples/scenes/` | `scripts/bootstrap_examples.py` |
+| 初始化：场景输入、交互目标、想让 / 不想让别人知道的信息 | 角色文件里的开场设定 `setup`：`goal`、`disclose`、`conceal`、`recap`（跟着角色走，剧情不指导角色） | `rolesim/briefing.py`，`docs/02-authoring.md` |
+| 两个数据包，场景和人物分开 | `roles/role1.json`（一个角色一个文件：档案 + skills + 开场设定）与 `scenes/test1.json`（一个剧情一个背景文件），编号命名 | `scripts/bootstrap_examples.py` |
 | 记忆用简单的 Mem0 式 | 只增记忆 + 召回视图（前情固定、相似旧条目、最近 12 条）；未接 Mem0 服务 | `rolesim/memory.py` |
 | 前情提要放进记忆 | `recap` 作为记忆首批条目，可被决策引用为证据，审计承认 | `briefing.recap_entries`、`audit.py` |
 | 人格 skills 的 GitHub 调研 | 四类项目对比、可借鉴与不可照搬之处 | `docs/08-persona-skills-survey.md` |
@@ -293,6 +293,8 @@
 | 和情景的交互接口 | 合同 v0 已对接；本阶段没有改合同字段，简报和 skill 都在 Agent 构造时传入 | — |
 
 验证：126 项测试通过（新增 skill 解析与绑定、激活、表达隔离、简报校验、隐瞒审计、记忆召回、评审包盲化）。四个 mock 运行（有 / 无 skill、两个人物、无绑定）审计全部通过。这些只说明数据通道和隔离成立。
+
+补充：输入整理为一个角色一个文件（`roles/role1.json`、`role2.json`）、一个剧情一个背景文件（`scenes/test1.json`、`test2.json`），用编号命名；`rolesim/roles.py` 负责读取、搭配检查（`fit`）和组装（`seat`），换角色或剧情只改 `--role` / `--scene`。剧情格式是替身，后续按场景组的背景文件接口替换。用本地 Qwen3-8B 跑通了 5 轮（审计全过，但表达层台词复读，待修）。共 138 项测试。
 
 本阶段没做、要注意的：
 

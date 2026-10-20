@@ -7,13 +7,12 @@ from pathlib import Path
 from rolesim.audit import audit_run, write_report
 from rolesim.providers import MockBackend
 from rolesim.runtime import run_episode
+from fixtures import load, setup
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def load(name):
-    folder = "scenes" if name == "cooperation_conflict.json" else "personas"
-    return json.loads((ROOT / "examples" / folder / name).read_text())
 
 
 def read_lines(path):
@@ -29,7 +28,7 @@ class AuditTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.run_dir = Path(self.tmp.name) / "run"
-        self.manifest = run_episode(load("cautious.json"), load("cooperation_conflict.json"),
+        self.manifest = run_episode(load("role1"), load("test1"),
                                     MockBackend(), self.run_dir)
 
     def failed(self):
@@ -90,7 +89,7 @@ class AuditTests(unittest.TestCase):
 
     def test_detects_hidden_event_content_in_controller_input(self):
         events = json.loads((self.run_dir / "environment_events.json").read_text())
-        hidden = [e for e in events if "cautious" not in e["visibility"]["audience"]]
+        hidden = [e for e in events if "role1" not in e["visibility"]["audience"]]
         if not hidden:
             self.skipTest("example scenario has no role-invisible event")
         self.edit_audit(lambda r: r["controller_input"].update(leak=hidden[0]["content"]))
@@ -98,7 +97,7 @@ class AuditTests(unittest.TestCase):
 
     def test_detects_broken_state_chain_and_missing_versions(self):
         rows = read_lines(self.run_dir / "states.jsonl")
-        rows[2]["prev_state_id"] = "cautious@t000"
+        rows[2]["prev_state_id"] = "role1@t000"
         del rows[1]["versions"]["update_rule_version"]
         write_lines(self.run_dir / "states.jsonl", rows)
         self.assertIn("trajectory_traceable", self.failed())

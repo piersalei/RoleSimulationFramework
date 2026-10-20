@@ -5,16 +5,11 @@ import unittest
 from pathlib import Path
 
 from rolesim.audit import audit_run
-from rolesim.briefing import briefing_for, mentions, validate_briefing
+from rolesim.briefing import mentions, validate_briefing
 from rolesim.providers import MockBackend
-from rolesim.runtime import run_episode, validate_scenario
+from rolesim.runtime import make_agent, run_episode, validate_scenario
+from fixtures import load, setup
 
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def load(name):
-    folder = "scenes" if name == "cooperation_conflict.json" else "personas"
-    return json.loads((ROOT / "examples" / folder / name).read_text())
 
 
 class Capture(MockBackend):
@@ -35,8 +30,8 @@ class Capture(MockBackend):
 
 class BriefingValidationTests(unittest.TestCase):
     def setUp(self):
-        self.scenario = load("cooperation_conflict.json")
-        self.briefing = self.scenario["briefings"]["*"]
+        self.scenario = load("test1")
+        self.briefing = setup("role1")
 
     def test_example_scene_is_valid(self):
         validate_scenario(self.scenario)
@@ -62,23 +57,18 @@ class BriefingValidationTests(unittest.TestCase):
             with self.subTest(case=label), self.assertRaises(ValueError):
                 validate_briefing(data, {"e1"})
 
-    def test_scene_versions_are_explicit(self):
-        old = copy.deepcopy(self.scenario)
-        old["schema_version"] = "1.0"
-        del old["briefings"]
-        validate_scenario(old)
-        for broken in (dict(old, briefings=self.scenario["briefings"]),
-                       {k: v for k, v in self.scenario.items() if k != "briefings"},
-                       dict(self.scenario, briefings={})):
+    def test_scene_is_background_only(self):
+        for broken in (dict(self.scenario, schema_version="1.1"),
+                       dict(self.scenario, briefings={"*": self.briefing}),
+                       dict(self.scenario, goal="指导角色的目标")):
             with self.assertRaises(ValueError):
                 validate_scenario(broken)
 
-    def test_role_specific_briefing_overrides_default(self):
-        scene = copy.deepcopy(self.scenario)
-        scene["briefings"]["assertive"] = dict(self.briefing, goal="推进交付")
-        self.assertEqual(briefing_for(scene, "assertive")["goal"], "推进交付")
-        self.assertEqual(briefing_for(scene, "cautious"), self.briefing)
-        self.assertIsNone(briefing_for({"briefings": {"x": self.briefing}}, "cautious"))
+    def test_setup_ids_must_not_collide_with_scene_events(self):
+        clash = copy.deepcopy(self.briefing)
+        clash["disclose"][0]["id"] = "e2"
+        with self.assertRaisesRegex(ValueError, "e2"):
+            make_agent(load("role1"), self.scenario, MockBackend(), briefing=clash)
 
     def test_mentions_use_markers(self):
         self.assertEqual(mentions("第三批还在处理", self.briefing["conceal"]), ["c1"])
@@ -88,15 +78,15 @@ class BriefingValidationTests(unittest.TestCase):
 
 class BriefingRunTests(unittest.TestCase):
     def setUp(self):
-        self.persona = load("cautious.json")
-        self.scenario = load("cooperation_conflict.json")
-        self.briefing = self.scenario["briefings"]["*"]
+        self.persona = load("role1")
+        self.scenario = load("test1")
+        self.briefing = setup("role1")
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
 
     def run_with(self, backend, name="run"):
         out = Path(self.tmp.name) / name
-        manifest = run_episode(self.persona, self.scenario, backend, out)
+        manifest = run_episode(self.persona, self.scenario, backend, out, briefing=self.briefing)
         return manifest, out
 
     def test_recap_is_seeded_into_memory_and_citable(self):

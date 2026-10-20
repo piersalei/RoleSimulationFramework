@@ -9,7 +9,7 @@ report says nothing about whether the simulated role is psychologically plausibl
 import json
 from pathlib import Path
 
-from .briefing import briefing_for, mentions, recap_entries
+from .briefing import mentions, recap_entries
 from .catalog import digest, write_json
 from .state import OPERATORS, VERSIONS, may_write, validate_dynamic
 from .modules import governing
@@ -40,7 +40,7 @@ def audit_run(run_dir):
     records = _lines(run / "audit.jsonl")
     mech_log = _lines(run / "mechanism_log.jsonl")
     role = inputs["persona"]["id"]
-    briefing = briefing_for(inputs["scenario"], role)
+    briefing = inputs.get("briefing")
     visible = {e["event_id"] for e in events if role in e["visibility"]["audience"]}
     # The recap is the role's own memory of earlier history, seeded before the first event.
     visible |= {e["id"] for e in recap_entries(briefing)}
@@ -124,7 +124,7 @@ def audit_run(run_dir):
     write_check = _check("operator_write_compatible", "机制与写回相容性（权限层）", write_fail, changes_seen,
                          "operator registry, path permission and module status only; theory fit needs human scoring")
 
-    # -- concealed information (scene briefing) ------------------------------
+    # -- concealed information (role setup) ----------------------------------
     secrets = briefing["conceal"] if briefing else []
     conceal_fail, disclosed = [], []
     for rec in records:

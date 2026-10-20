@@ -6,19 +6,18 @@ from pathlib import Path
 from rolesim.catalog import digest
 from rolesim.modules import STABLE_MODULES
 from rolesim.persona import SCHWARTZ_VALUES, compile_views, conditional_rules, validate_persona
+from fixtures import load, setup
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMOGRAPHICS = "stable.identity.demographics"
 
 
-def load(name="cautious.json"):
-    folder = "scenes" if name == "cooperation_conflict.json" else "personas"
-    return json.loads((ROOT / "examples" / folder / name).read_text())
 
 
 class PersonaV2Tests(unittest.TestCase):
     def setUp(self):
-        self.persona = load()
+        self.persona = load("role1")
 
     def bad(self, edit, message=None):
         persona = copy.deepcopy(self.persona)
@@ -27,7 +26,7 @@ class PersonaV2Tests(unittest.TestCase):
             validate_persona(persona)
 
     def test_examples_validate_and_cover_every_registered_module(self):
-        for name in ("cautious.json", "assertive.json"):
+        for name in ("role1", "role2"):
             persona = load(name)
             validate_persona(persona)
             self.assertEqual(set(persona["stable"]["module_status"]), set(STABLE_MODULES))

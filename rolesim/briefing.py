@@ -1,9 +1,10 @@
-"""Per-role briefing carried by the scene package (scene schema 1.1).
+"""A role's opening setup (`setup` in the role file).
 
-A briefing initialises one role for one scene: its interaction goal, what it wants
+The setup initialises the role as it enters a scene: its interaction goal, what it wants
 the counterpart to know (`disclose`), what it knows but does not want to reveal
-(`conceal`), and a recap of what happened before the scene (`recap`, seeded into the
-role's memory). It is scene data, not persona data: the persona schema is unchanged.
+(`conceal`), and a recap of what happened before (`recap`, seeded into the role's
+memory). It travels with the role, not the scene: a scene is background and does not
+direct the role. The persona schema is unchanged.
 
 Information isolation: concealed text reaches the decision controller (the role knows
 it) but never the expression prompt, so the spoken line cannot quote it. `markers`
@@ -58,12 +59,6 @@ def validate_briefing(briefing, reserved_ids=()):
                 raise ValueError(f"recap {item['id']} repeats concealed item {secret['id']}; "
                                  "recap reaches the expression prompt")
     return briefing
-
-
-def briefing_for(scenario, role_id):
-    """The role's own briefing, else the scene's default ("*"), else None."""
-    briefings = scenario.get("briefings") or {}
-    return briefings.get(role_id, briefings.get("*"))
 
 
 def recap_entries(briefing):

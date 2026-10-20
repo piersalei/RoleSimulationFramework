@@ -10,20 +10,19 @@ from rolesim.providers import MockBackend, strict_json
 from rolesim.agent import Agent, MODES, initial_state, make_payload, observe, observation, validate_decision
 from rolesim.contract import ProposedAction, Visibility
 from rolesim.runtime import ScriptedEnvironment, code_version, run_episode, validate_scenario
+from fixtures import load, setup
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def load(name):
-    folder = "scenes" if name == "cooperation_conflict.json" else "personas"
-    return json.loads((ROOT / "examples" / folder / name).read_text())
 
 
-def scheduled(scenario, role_id="cautious"):
+def scheduled(scenario, role_id="role1"):
     return [event for _, event in ScriptedEnvironment(scenario, role_id).scheduled()]
 
 
-def propose(action, role_id="cautious", turn=1):
+def propose(action, role_id="role1", turn=1):
     return ProposedAction(f"{role_id}@t{turn:03d}#1", "speech", "……", Visibility("public", [role_id, "partner"]),
                           ["partner"], action)
 
@@ -43,8 +42,8 @@ class CaptureBackend(MockBackend):
 
 class PipelineTests(unittest.TestCase):
     def setUp(self):
-        self.persona = load("cautious.json")
-        self.scenario = load("cooperation_conflict.json")
+        self.persona = load("role1")
+        self.scenario = load("test1")
 
     def test_hidden_world_and_partner_information_never_reaches_either_call(self):
         backend = CaptureBackend()
@@ -77,7 +76,7 @@ class PipelineTests(unittest.TestCase):
     def test_same_observation_has_persona_conditioned_state_response(self):
         a, b = initial_state(), initial_state()
         observe(a, scheduled(self.scenario)[0], self.persona)
-        observe(b, scheduled(self.scenario, "assertive")[0], load("assertive.json"))
+        observe(b, scheduled(self.scenario, "role2")[0], load("role2"))
         self.assertGreater(a["dynamic"]["affect_state"]["emotion"]["intensity"], b["dynamic"]["affect_state"]["emotion"]["intensity"])
         self.assertEqual(a["dynamic"]["relation_state"], b["dynamic"]["relation_state"])
 
@@ -85,7 +84,7 @@ class PipelineTests(unittest.TestCase):
         events = scheduled(self.scenario)
         state = initial_state()
         observe(state, events[2], self.persona)
-        _, outcomes = ScriptedEnvironment(self.scenario, "cautious").adjudicate(propose("propose_plan"), 1)
+        _, outcomes = ScriptedEnvironment(self.scenario, "role1").adjudicate(propose("propose_plan"), 1)
         self.assertEqual(outcomes[0].outcome["status"], "partial")
         observe(state, outcomes[0], self.persona)
         self.assertEqual(state["dynamic"]["relation_state"]["partner"]["trust"], .55)
@@ -94,7 +93,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_unavailable_record_is_not_revealed_by_request_action(self):
         self.scenario["evidence"]["readers"] = ["partner"]
-        _, outcomes = ScriptedEnvironment(self.scenario, "cautious").adjudicate(propose("request_evidence"), 1)
+        _, outcomes = ScriptedEnvironment(self.scenario, "role1").adjudicate(propose("request_evidence"), 1)
         self.assertNotEqual(outcomes[0].event_id, "status_receipt")
         self.assertEqual(outcomes[0].outcome["status"], "failed")
         self.assertNotIn("部分数据仍在复核", outcomes[0].content)
@@ -103,7 +102,7 @@ class PipelineTests(unittest.TestCase):
         state = initial_state()
         event = scheduled(self.scenario)[0]
         observe(state, event, self.persona)
-        payload = make_payload(self.persona, state, observation(event), self.scenario["goal"],
+        payload = make_payload(self.persona, state, observation(event), self.scenario["background"],
                                self.scenario["partner"], self.scenario["allowed_actions"], "profile_state_mechanisms")
         valid = {"action": "wait", "evidence_ids": ["e1"], "brief_reason": "需要核对"}
         validate_decision(valid, payload)
@@ -140,7 +139,7 @@ class PipelineTests(unittest.TestCase):
         state = initial_state()
         event = scheduled(self.scenario)[0]
         observe(state, event, self.persona)
-        args = (observation(event), self.scenario["goal"], self.scenario["partner"], self.scenario["allowed_actions"])
+        args = (observation(event), self.scenario["background"], self.scenario["partner"], self.scenario["allowed_actions"])
         a = make_payload(self.persona, state, *args, "profile_state_mechanisms")
         b = make_payload(self.persona, state, *args, "profile_only")
         self.assertEqual(a["visible_history"], b["visible_history"])
@@ -151,7 +150,7 @@ class PipelineTests(unittest.TestCase):
         state = initial_state()
         event = scheduled(self.scenario)[0]
         observe(state, event, self.persona)
-        args = (observation(event), self.scenario["goal"], self.scenario["partner"], self.scenario["allowed_actions"])
+        args = (observation(event), self.scenario["background"], self.scenario["partner"], self.scenario["allowed_actions"])
         payloads = {m: make_payload(self.persona, state, *args, m) for m in MODES}
         self.assertEqual(set(payloads["profile_only"]) & {"current_state", "active_mechanisms"}, set())
         self.assertIn("current_state", payloads["profile_state"])
