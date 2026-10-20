@@ -102,7 +102,7 @@ class PackageTests(unittest.TestCase):
     def test_trace_names_speakers_by_seat(self):
         for folder in self.folders():
             speakers = {item["speaker"] for item in rows(folder / "role_visible_trace.jsonl")}
-            self.assertEqual(speakers, {"env", "项目组数据负责人", "合作方负责人"})
+            self.assertEqual(speakers, {"旁白", "项目组数据负责人", "合作方负责人"})
 
     def test_refuses_overwrite_empty_input_and_unfinished_runs(self):
         with self.assertRaises(FileExistsError):

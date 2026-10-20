@@ -1,8 +1,9 @@
 """Rebuild fictional, hand-authored fixtures. Not population/personality sampling.
 
 One file per role (roles/<id>.json: persona schema 2.0, skills, opening setup) and one
-background file per scene (scenes/<id>.json: shared background and two seats). The scene
-does not direct the roles; role1 is written for the project seat, role2 for the partner seat.
+background file per scene (scenes/<id>.json: shared background and the agents present).
+The scene does not direct the roles; role1 is written for the project seat, role2 for the
+partner seat, role3 for the PI seat of the three-party scene test3.
 """
 import copy
 import json
@@ -40,6 +41,15 @@ PARTNER_SETUP = {
     'conceal': [{'id': 'c1', 'text': '你方承诺补发的数据说明其实还没发出，因为负责的同事这周请假了。',
                  'markers': ['请假', '还没发出', '没发出'], 'strategy': 'strategic_ambiguity'}],
     'recap': [{'id': 'recap:r1', 'text': '上周例会上，你方承诺本周一前补发数据说明；项目组答应收到说明后三天内交付全部数据。'}],
+}
+
+
+PI_SETUP = {
+    'goal': '让双方都能接受一个确定、可兑现的交付日期，别让合作关系僵掉。',
+    'disclose': [{'id': 'd1', 'text': '项目组这边可以加派一名同学协助清洗，最快本周内到位。', 'markers': ['加派', '协助清洗']}],
+    'conceal': [{'id': 'c1', 'text': '你下个月的结项材料需要合作方负责人签字，所以你不想在这次会上和对方闹僵。',
+                 'markers': ['结项', '签字'], 'strategy': 'omission'}],
+    'recap': [{'id': 'recap:r1', 'text': '上周例会上，合作方承诺本周一前补发数据说明；项目组答应收到说明后三天内交付全部数据。'}],
 }
 
 
@@ -169,17 +179,67 @@ save('roles/role2.json', role(other, [
     ('verify-before-commit', .4, '核查偏好低'),
 ], PARTNER_SETUP))
 
+pi = copy.deepcopy(base)
+pi.update(id='role3', name='王岚', public_description='虚构项目负责人，统筹项目进度与对外合作，表达平和。',
+          self_view=['我要让项目按计划推进，也要维护和合作方的长期关系。', '分歧摆到桌面上谈，比各自憋着好。'])
+pi['stable']['identity']['social_roles'] = ['项目负责人，统筹进度与合作关系']
+t = pi['stable']['traits']
+t['personality']['facets'].update({
+    'neuroticism.anxiety': -.4, 'neuroticism.vulnerability': -.6,
+    'conscientiousness.deliberation': 1.0, 'conscientiousness.dutifulness': 1.0,
+    'extraversion.assertiveness': .8, 'agreeableness.compliance': .6,
+})
+t.update(attachment={'anxiety': -.2, 'avoidance': -.2},
+         affective_capacities={'threat_sensitivity': .4, 'recovery_rate': .4},
+         cognitive_style={'verification_bias': .6},
+         motivation_baseline={'competence': .7, 'relatedness': .8, 'autonomy': .6})
+pi['stable']['speech_style'] = {'baseline': {'directness': .6},
+                                'situational_rules': [{'when': '双方僵持时', 'style': '先归纳双方的关切，再提出折中方案'}]}
+pi['stable']['mechanism_priors'] = {'verify': .6, 'appraise': .4, 'trust': .6, 'repair': .9, 'boundary': .5}
+pi['stable']['values']['schwartz_priorities']['weights'] = normalise(
+    {'benevolence_dependability': .9, 'security_personal': .5, 'self_direction_action': .6})
+pi['stable']['core_goals'] = [{'id': 'g1', 'text': '项目按期推进，合作关系稳定', 'priority': .9, 'stability': .8,
+                               'source': FIXTURE, 'supports': [{'id': 'g1a', 'text': '促成双方都认可的交付安排'}]}]
+save('roles/role3.json', role(pi, [
+    ('staged-commitment', .9, '尽责且偏好可兑现的安排'),
+    ('accept-verified-repair', .85, '修复机制先验高'),
+    ('acknowledge-first', .8, '僵持时先归纳双方关切'),
+    ('proactive-disclosure', .7, '主张性中等偏高，愿意主动摆出资源'),
+    ('selective-disclosure', .6, '有不便明说的顾虑'),
+    ('verify-before-commit', .5, '核查偏好中等'),
+], PI_SETUP))
+
 SEATS = [{'id': 'project', 'title': '项目组数据负责人'}, {'id': 'partner', 'title': '合作方负责人'}]
+PI_SEAT = {'id': 'pi', 'title': '项目负责人'}
 ACTIONS = ['request_evidence', 'ask_clarification', 'propose_plan', 'set_boundary', 'wait', 'agree', 'close']
 WORLD_PRIVATE = {'do_not_disclose': 'HIDDEN_WORLD_SENTINEL_47', 'purpose': '知识隔离测试；不传给任何角色的模型调用。'}
 
 
-def scene(scene_id, background, max_turns=8):
-    return {'schema_version': SCENE_VERSION, 'id': scene_id, 'background': background, 'seats': copy.deepcopy(SEATS),
+def scene(scene_id, background, max_turns=8, seats=SEATS, environment=None):
+    agents = [{**seat, 'kind': 'role'} for seat in seats] + ([environment] if environment else [])
+    return {'schema_version': SCENE_VERSION, 'id': scene_id, 'background': background,
+            'agents': [{'id': a['id'], 'kind': a['kind'], **{k: v for k, v in a.items() if k not in ('id', 'kind')}}
+                       for a in copy.deepcopy(agents)],
             'max_turns': max_turns, 'allowed_actions': list(ACTIONS), 'world_private': copy.deepcopy(WORLD_PRIVATE)}
+
+
+# A rule-driven environment agent: no psychology, it only moves the clock and the world.
+MEETING_ROOM = {
+    'id': 'env', 'kind': 'environment', 'title': '会议室',
+    'world': {'time': '15:00', 'place': '项目组会议室', 'weather': '阴'},
+    'rules': {'minutes_per_round': 10, 'announce_time': True, 'events': [
+        {'round': 2, 'text': '窗外开始下雨，雨点打在玻璃上。', 'set': {'weather': '小雨'}},
+        {'round': 3, 'text': '你的手机收到同事消息：第三批数据今晚能清洗完，明天上午可以核验。',
+         'audience': ['project'], 'cues': {'repair': .4}},
+        {'round': 4, 'text': '前台来敲门：这间会议室16:00有下一场预约，还剩十分钟。', 'cues': {'pressure': .5}},
+    ]},
+}
 
 
 save('scenes/test1.json', scene('test1', '某研究项目组要向合作方交付一批数据。上周例会约定：合作方本周一前补发数据说明，'
                                          '项目组收到说明后三天内交付全部数据。今天双方负责人当面沟通交付安排。'))
 save('scenes/test2.json', scene('test2', '前两批数据已经交付并核验通过，剩余数据还没有交付。'
                                          '合作方负责人约项目组数据负责人见面，确认剩余数据的进度和交付日期。'))
+save('scenes/test3.json', scene('test3', '某研究项目组要向合作方交付一批数据。上周例会约定：合作方本周一前补发数据说明，'
+                                         '项目组收到说明后三天内交付全部数据。今天项目负责人召集三方在会议室当面商量交付安排。',
+                                max_turns=12, seats=[*SEATS, PI_SEAT], environment=MEETING_ROOM))

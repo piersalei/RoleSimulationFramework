@@ -7,7 +7,7 @@ from rolesim.audit import audit_run, write_report
 from fixtures import run_scene, setup
 
 CHECKS = ["dynamic_fields_valid", "evidence_visible", "operator_write_compatible", "stable_unchanged",
-          "trajectory_traceable", "concealed_info_withheld", "cross_role_isolation"]
+          "trajectory_traceable", "concealed_info_withheld", "cross_role_isolation", "state_change_attribution"]
 
 
 def read_lines(path):
@@ -56,11 +56,11 @@ class AuditTests(unittest.TestCase):
         self.assertFalse(audit_run(self.run_dir)["passed"])
 
     def test_detects_out_of_range_and_inconsistent_status(self):
-        self.edit("states.jsonl", lambda s: s["dynamic"]["relation_state"]["partner"].update(trust=1.7))
+        self.edit("states.jsonl", lambda s: s["dynamic"]["relation_state"]["role2"].update(trust=1.7))
         self.assertIn("dynamic_fields_valid", self.failed())
 
     def test_detects_unknown_module_holding_a_value(self):
-        self.edit("states.jsonl", lambda s: s["dynamic"]["relation_state"]["partner"].update(closeness=0))
+        self.edit("states.jsonl", lambda s: s["dynamic"]["relation_state"]["role2"].update(closeness=0))
         self.assertIn("dynamic_fields_valid", self.failed())
 
     def test_detects_change_without_or_with_invisible_evidence(self):
@@ -102,12 +102,49 @@ class AuditTests(unittest.TestCase):
     def test_rejected_groups_and_soft_flags_are_reported_not_hidden(self):
         log = read_lines(self.role_dir / "mechanism_log.jsonl")
         log[0]["rejected"] = [{"group": "relation", "kind": "hard", "reason": "stale"}]
-        log[0]["flags"] = [{"path": "dynamic.relation_state.partner.trust", "flag": "soft_violation"}]
+        log[0]["flags"] = [{"path": "dynamic.relation_state.role2.trust", "flag": "soft_violation"}]
         write_lines(self.role_dir / "mechanism_log.jsonl", log)
         report = audit_run(self.run_dir)["roles"]["role1"]
         self.assertEqual(len(report["rejected_groups"]), 1)
         self.assertEqual(len(report["soft_violations"]), 1)
         self.assertGreater(report["error_rate"]["rejected_groups"], 0)
+
+    def tamper_changes(self, patch):
+        def edit(row):
+            for key in ("step_delta", "perceive_delta"):
+                for change in row[key]["changes"]:
+                    patch(change)
+        self.edit("audit.jsonl", edit)
+        return self.failed()
+
+    def test_attribution_detects_values_the_rule_does_not_derive(self):
+        failed = self.tamper_changes(lambda c: c.update(after=round(min(1, c["after"] + .2), 4)))
+        self.assertIn("state_change_attribution", failed)
+        self.assertNotIn("dynamic_fields_valid", failed, "the tampered value is still in range")
+
+    def test_attribution_detects_inputs_that_disagree_with_the_profile_or_cues(self):
+        failed = self.tamper_changes(lambda c: c["inputs"].update(threat_sensitivity=.1)
+                                     if "threat_sensitivity" in c["inputs"] else None)
+        self.assertIn("rule inputs disagree", failed["state_change_attribution"]["details"][0]["error"])
+
+    def test_attribution_detects_changes_without_a_card_or_from_the_wrong_card(self):
+        self.assertIn("state_change_attribution", self.tamper_changes(lambda c: c.update(card="verify")))
+        self.assertIn("state_change_attribution", self.tamper_changes(lambda c: c.pop("card")))
+
+    def test_attribution_detects_a_shown_card_whose_trigger_did_not_hold(self):
+        def inflate(row):
+            for card in row["controller_input"].get("active_mechanisms", []):
+                for cond in card["matched"]:
+                    cond["observed"] = 1
+        self.edit("audit.jsonl", inflate)
+        details = self.failed()["state_change_attribution"]["details"]
+        self.assertIn("did not hold", details[0]["error"])
+
+    def test_attribution_needs_the_card_snapshot(self):
+        inputs = json.loads((self.role_dir / "inputs.json").read_text())
+        inputs["mechanisms"] = inputs["mechanisms"]["cards"]
+        (self.role_dir / "inputs.json").write_text(json.dumps(inputs, ensure_ascii=False))
+        self.assertIn("predates", self.failed()["state_change_attribution"]["details"][0]["error"])
 
     def test_write_report_can_be_rerun(self):
         self.assertTrue(write_report(self.run_dir)["passed"])

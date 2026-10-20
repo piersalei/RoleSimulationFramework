@@ -17,7 +17,7 @@ PSYCHOLOGY_VERSION = "psy-v1"
 # registry and the evaluation protocol are not frozen yet, so they say so explicitly.
 VERSIONS = {"construct_definition_version": "unregistered",
             "state_schema_version": SCHEMA_VERSION,
-            "update_rule_version": "engineering-v1",
+            "update_rule_version": "engineering-v2",
             "evaluation_protocol_version": "unfrozen"}
 
 DOMAINS = ("affect_state", "cognition_state", "goal_state", "relation_state", "group_state", "policy_state")
@@ -50,7 +50,8 @@ RANGES = {"valence": (-1, 1), "arousal": (0, 1), "intensity": (0, 1), "confidenc
 SOFT_RULES = {"trust_step": {"field": "trust", "limit": .3, "exceptionable": False}}
 
 CHANGE_FIELDS = {"path", "before", "after", "evidence", "mechanism", "reason"}
-OPTIONAL_FIELDS = {"flag", "group", "exception"}
+# card / rule / when / inputs attribute a change to the mechanism card that produced it.
+OPTIONAL_FIELDS = {"flag", "group", "exception", "card", "rule", "when", "inputs"}
 EXCEPTION_FIELDS = {"soft_rule", "evidence", "approved_by", "review"}
 HARM_FIELDS = {"event_id", "severity", "acknowledged", "repaired", "last_activated"}
 
@@ -302,7 +303,9 @@ def commit_phase(dynamic, status, delta, visible_ids, commit_key=None, committed
            "versions": dict(VERSIONS), "input_state_id": None, "output_state_id": None,
            "candidates": [{"index": i, "group": c.get("group", "default") if isinstance(c, dict) else None,
                            "path": c.get("path") if isinstance(c, dict) else None,
-                           "mechanism": c.get("mechanism") if isinstance(c, dict) else None}
+                           "mechanism": c.get("mechanism") if isinstance(c, dict) else None,
+                           "card": c.get("card") if isinstance(c, dict) else None,
+                           "when": c.get("when") if isinstance(c, dict) else None}
                           for i, c in enumerate(changes)],
            "adopted": [{"group": g, "paths": [changes[i]["path"] for i in indices if i not in dropped]}
                        for g, indices in groups.items() if g not in rejected],

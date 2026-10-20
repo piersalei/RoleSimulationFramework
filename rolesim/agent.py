@@ -5,7 +5,8 @@ own memory and state chain; the environment stores snapshots but never edits the
 
 An event that arrives without environment cues (another role's speech) is first
 appraised from this role's standpoint: the model reports which cues the role perceives
-and how strongly (0-1), and the program alone turns those cues into state changes.
+and how strongly (0-1). The mechanism cards alone turn those cues into state changes
+(mechanisms.py), and the role reads its state back as level words (stateview.py).
 """
 import copy
 
@@ -15,26 +16,28 @@ from .briefing import controller_view, expression_view, recap_entries
 from .catalog import digest
 from .contract import (PerceiveRequest, PerceiveResponse, ProposedAction, StepRequest,
                        StepResponse, Visibility, validate_event)
-from .mechanisms import CARDS, select_cards
+from .mechanisms import CARDS, candidate_changes, context, select_cards, triggered
 from .persona import bounded, compile_views, text, validate_persona
 from .state import (PSYCHOLOGY_VERSION, SCHEMA_VERSION, VERSIONS, activate, commit_phase,
                     new_dynamic, validate_dynamic)
+from .stateview import state_view
 from .vocab import ACTION_TEXT, CUE_TEXT, CUES
 
-PARTNER = "partner"  # relation key for the single focal partner in this slice
-# Ablation levels. State is computed and logged in every mode; the mode only decides
-# what the controller prompt may contain.
+# Ablation levels. State is computed and logged in every mode; the mode decides what the
+# prompts may contain: profile_only shows no state anywhere, profile_state shows the state
+# view in all three prompts, profile_state_mechanisms adds the mechanism cards.
 MODES = ("profile_only", "profile_state", "profile_state_mechanisms")
 
 
-def initial_state(briefing=None):
-    dynamic, status = new_dynamic([PARTNER])
+def initial_state(briefing=None, others=()):
+    dynamic, status = new_dynamic(list(others))
     log = []
     # Prototype starting values, not measured baselines: marked origin "default" and
     # written through the audited activation step. Everything else stays unknown/not_modeled.
     base = "dynamic.affect_state.emotion"
-    for path, value in ((f"{base}.label", "紧张"), (f"{base}.intensity", .15),
-                        (f"dynamic.relation_state.{PARTNER}.trust", .55)):
+    starts = [(f"{base}.label", "紧张"), (f"{base}.intensity", .15)]
+    starts += [(f"dynamic.relation_state.{other}.trust", .55) for other in others]
+    for path, value in starts:
         activate(dynamic, status, log, path, value, "prototype starting value, not a measurement",
                  ["engineering_default"])
     validate_dynamic(dynamic, status)
@@ -46,7 +49,7 @@ def initial_state(briefing=None):
 def observation(event, cues=None, names=None):
     """Only what the role perceives: no audience list, no environment-side annotations
     beyond cues. `cues` are the role's own appraisal when the event carried none;
-    `names` shows speakers as the role knows them (itself as 我, the other by title)."""
+    `names` shows speakers as the role knows them (itself as 我, others by title)."""
     item = {"id": event.event_id, "type": event.type, "actor": (names or {}).get(event.actor, event.actor),
             "content": event.content,
             "cues": copy.deepcopy(cues if cues is not None else (event.signals or {}).get("cues", {}))}
@@ -55,49 +58,28 @@ def observation(event, cues=None, names=None):
     return item
 
 
-def observe(state, event, persona, phase="perceive", cues=None, names=None):
+def observe(state, event, persona, phase="perceive", cues=None, names=None, since=()):
     """Apply one visible contract Event to `state`; return the delta, or None if skipped.
 
-    Candidate changes are committed by dependency group against one snapshot. A rejected
-    group is recorded in `mechanism_log` and in `delta["rejected"]`, never silently dropped.
+    The mechanism cards produce the candidate changes; they are committed by dependency
+    group against one snapshot. A rejected group is recorded in `mechanism_log` and in
+    `delta["rejected"]`, never silently dropped.
     """
     if persona["id"] not in event.visibility.audience or event.event_id in state["seen_ids"]:
         return None
-    s = persona["stable"]
     dynamic = state["dynamic"]
-    signals = event.signals or {}
-    perceived = cues if cues is not None else signals.get("cues", {})
-    tension = dynamic["affect_state"]["emotion"]["intensity"]
-    trust = dynamic["relation_state"][PARTNER]["trust"]
-    pressure = perceived.get("pressure", 0)
-    # Someone's words are not evidence of fulfilment: only narrated facts and
-    # adjudicated outcomes may move reliability.
-    signal = signals.get("reliability_signal", 0) if event.type in {"narration", "outcome"} else 0
-    sensitivity = s["traits"]["affective_capacities"]["threat_sensitivity"]
-    recovery = s["traits"]["affective_capacities"]["recovery_rate"]
-    changes = []
-    # Unknown (null) inputs skip their branch instead of being replaced by a neutral guess.
-    if tension is not None:
-        # Explicit prototype dynamics, not fitted psychological coefficients.
-        new_tension = round(min(1, max(0, tension * (1 - recovery) + .35 * pressure * sensitivity)), 4)
-        if new_tension != tension:
-            changes.append({"path": "dynamic.affect_state.emotion.intensity", "before": tension,
-                            "after": new_tension, "evidence": [event.event_id], "group": "affect",
-                            "mechanism": "emotion_update" if pressure else "decay_or_recovery",
-                            "reason": ("角色感受到压力" if cues is not None else "事件带有压力线索")
-                            if pressure else "无新压力，紧张按恢复速率回落"})
-    if trust is not None:
-        new_trust = round(min(1, max(0, trust + .15 * signal)), 4)
-        if new_trust != trust:
-            changes.append({"path": f"dynamic.relation_state.{PARTNER}.trust", "before": trust,
-                            "after": new_trust, "evidence": [event.event_id], "group": "relation",
-                            "mechanism": "relation_update", "reason": "可核验的兑现/失约记录"})
-    delta = {"trigger": phase, "event_id": event.event_id, "changes": changes,
+    perceived = cues if cues is not None else (event.signals or {}).get("cues", {})
+    others = list(dynamic["relation_state"])
+    ctx = context(persona, dynamic, perceived, others, event.actor if event.actor in others else None,
+                  since, event, appraised=cues is not None)
+    fired = triggered(ctx)
+    delta = {"trigger": phase, "event_id": event.event_id, "changes": candidate_changes(ctx, event.event_id),
              "rule_version": VERSIONS["update_rule_version"]}
     known = {item["id"] for item in state["memory"]} | {event.event_id}
     key = f"{persona['id']}/{event.event_id}/{phase}"
     state["dynamic"], adopted, log = commit_phase(dynamic, state["module_status"], delta, known,
                                                   commit_key=key, committed=state["commits"])
+    log["cards"] = fired
     delta["changes"] = adopted
     delta["rejected"] = log["rejected"]
     state["mechanism_log"].append(log)
@@ -111,15 +93,17 @@ def _query(trigger, briefing):
     return " ".join(filter(None, [(trigger or {}).get("content"), (briefing or {}).get("goal")]))
 
 
-def appraisal_payload(persona, state, event_view, scene_context, partner, seat=None, briefing=None):
-    """Appraisal prompt: the same in every ablation mode, because it feeds the state that
-    every mode computes."""
+def appraisal_payload(persona, state, event_view, scene_context, others, seat=None, briefing=None, view=None):
+    """Appraisal prompt. `view` is the role's state as level words, or None when the mode or
+    the --appraise-state switch keeps state out of appraisal."""
     views = compile_views(persona)
     data = {"role": views["role_self"], "behavioral_constraints": views["controller_only"],
-            "scene_background": scene_context, "self_seat": seat, "partner": partner,
+            "scene_background": scene_context, "self_seat": seat, "others_present": list(others),
             "visible_history": mem.recall(state["memory"], _query(event_view, briefing)),
             "event": {k: event_view[k] for k in ("id", "type", "actor", "content")},
             "cue_definitions": dict(CUE_TEXT)}
+    if view is not None:
+        data["current_state"] = view
     if briefing:
         data["briefing"] = controller_view(briefing)
     return data
@@ -138,14 +122,17 @@ def validate_appraisal(result):
         raise ValueError("appraisal reason too long")
 
 
-def make_payload(persona, state, trigger, scene_context, partner, allowed, mode, skills=None, briefing=None,
-                 seat=None, previous_actions=()):
-    """Decision prompt. Skills and briefing belong to the profile, so they appear in every mode."""
+def make_payload(persona, state, trigger, scene_context, others, allowed, mode, skills=None, briefing=None,
+                 seat=None, previous_actions=(), view=None, cards=None):
+    """Decision prompt. Skills and briefing belong to the profile, so they appear in every mode;
+    `view` (state with numbers) and `cards` (selected mechanism cards) follow the mode."""
     views = compile_views(persona)
     if not allowed:
         raise ValueError("no feasible action remains")
+    if mode not in MODES:
+        raise ValueError(f"unknown mode: {mode}")
     data = {"role": views["role_self"], "behavioral_constraints": views["controller_only"],
-            "scene_background": scene_context, "self_seat": seat, "partner": partner,
+            "scene_background": scene_context, "self_seat": seat, "others_present": list(others),
             "visible_history": mem.recall(state["memory"], _query(trigger, briefing)),
             "respond_to": copy.deepcopy(trigger),
             "my_previous_actions": list(previous_actions)[-3:],
@@ -156,12 +143,10 @@ def make_payload(persona, state, trigger, scene_context, partner, allowed, mode,
     if skills:
         data["skill_catalog"] = sk.catalog(skills)
         data["active_skills"] = sk.select(skills, trigger, allowed, briefing)
-    if mode not in MODES:
-        raise ValueError(f"unknown mode: {mode}")
-    if mode != "profile_only":
-        data["current_state"] = copy.deepcopy(state["dynamic"])
+    if mode != "profile_only" and view is not None:
+        data["current_state"] = view
     if mode == "profile_state_mechanisms":
-        data["active_mechanisms"] = select_cards(persona, state, trigger, allowed) if trigger else []
+        data["active_mechanisms"] = list(cards or [])
     return data
 
 
@@ -180,16 +165,20 @@ def validate_decision(decision, payload):
 
 
 class Agent:
-    def __init__(self, backend, allowed_actions, partner, partner_id=PARTNER, mode="profile_state_mechanisms",
-                 skills=None, briefing=None, seat=None):
-        """`partner` is the counterpart as this role knows it (a seat title); `seat` is this role's
-        own seat title. `skills` is a bound skill list (skills.bind); `briefing` is this role's
-        validated opening setup."""
+    def __init__(self, backend, allowed_actions, others, mode="profile_state_mechanisms",
+                 skills=None, briefing=None, seat=None, appraise_state=True):
+        """`others` maps every other role present to its seat title, in seat order; `seat` is
+        this role's own seat title. `skills` is a bound skill list (skills.bind); `briefing`
+        is this role's validated opening setup. `appraise_state=False` keeps the state out of
+        the appraisal prompt in every mode, as a clean control."""
         if mode not in MODES:
             raise ValueError(f"unknown mode: {mode}")
+        if not isinstance(others, dict) or not others:
+            raise ValueError("others: map each other role id to its seat title")
         self.backend = backend
         self.allowed_actions = list(allowed_actions)
-        self.partner, self.partner_id, self.mode, self.seat = partner, partner_id, mode, seat
+        self.others, self.mode, self.seat = dict(others), mode, seat
+        self.appraise_state = bool(appraise_state)
         self.skills = copy.deepcopy(skills) or None
         self.briefing = copy.deepcopy(briefing) or None
         self.scene_context = None
@@ -198,6 +187,7 @@ class Agent:
         self.state_id = None
         self.snapshots = {}     # state_id -> AgentState, for replay
         self.actions = []       # moves this role has made, in order
+        self.since = []         # committed changes since this role last decided
         self.warnings = []
         self.last_payload = self.last_decision = self.last_express = self.last_error = None
         self.last_appraisals, self.last_reasoning = [], {}
@@ -210,8 +200,10 @@ class Agent:
             validate_persona(profile)
             if set(profile["stable"]["mechanism_priors"]) != {c["id"] for c in CARDS}:
                 raise ValueError("mechanism priors must match the enabled card registry")
+            if profile["id"] in self.others:
+                raise ValueError("a role cannot be among its own others")
             self.persona = copy.deepcopy(profile)
-            self.state = initial_state(self.briefing)
+            self.state = initial_state(self.briefing, list(self.others))
         elif profile is not None and profile != self.persona:
             raise ValueError("stable persona cannot change within an episode")
         if role_id != self.persona["id"]:
@@ -221,7 +213,18 @@ class Agent:
 
     @property
     def names(self):
-        return {self.persona["id"]: "我", self.partner_id: self.partner, "env": "旁白"}
+        return {self.persona["id"]: "我", **self.others, "env": "旁白"}
+
+    @property
+    def titles(self):
+        return list(self.others.values())
+
+    @property
+    def shows_state(self):
+        return self.mode != "profile_only"
+
+    def _view(self, state, since=(), numbers=False):
+        return state_view(state, self.others, since, numbers=numbers, mechanisms=numbers)
 
     def _model(self, stage, call, payload):
         result = call(copy.deepcopy(payload))
@@ -231,15 +234,16 @@ class Agent:
         return result
 
     def _appraise(self, state, event):
+        view = self._view(state) if self.shows_state and self.appraise_state else None
         payload = appraisal_payload(self.persona, state, observation(event, {}, self.names), self.scene_context,
-                                    self.partner, self.seat, self.briefing)
+                                    self.titles, self.seat, self.briefing, view)
         result = self._model("appraise", self.backend.appraise, payload)
         self.last_appraisals.append({"event_id": event.event_id, "input": payload, "output": result})
         validate_appraisal(result)
         return copy.deepcopy(result["cues"])
 
     def _ingest(self, state, events, role_id, phase):
-        changes, last = [], None
+        changes, last, last_actor = [], None, None
         for event in events:
             validate_event(event)
             if role_id not in event.visibility.audience:
@@ -251,12 +255,12 @@ class Agent:
             cues = None
             if event.actor != role_id and not (event.signals or {}).get("cues"):
                 cues = self._appraise(state, event)
-            delta = observe(state, event, self.persona, phase, cues, self.names)
+            delta = observe(state, event, self.persona, phase, cues, self.names, self.since + changes)
             if delta is not None:
                 changes.extend(delta["changes"])
                 if event.actor != role_id:
-                    last = observation(event, cues, self.names)
-        return changes, last
+                    last, last_actor = observation(event, cues, self.names), event.actor
+        return changes, last, last_actor
 
     def _commit(self, state, turn, trigger, changes, log_start):
         same_turn = sum(1 for sid in self.snapshots if sid.split("@t")[1].split(".")[0] == f"{turn:03d}")
@@ -277,19 +281,22 @@ class Agent:
         self.snapshots[state_id] = snapshot
         return copy.deepcopy(snapshot), delta
 
-    def _express_payload(self, work, trigger, decision, payload):
+    def _express_payload(self, work, trigger, decision, payload, since):
         views = compile_views(self.persona)
         own = [m["content"] for m in work["memory"] if m["type"] == "speech" and m["actor"] == "我"]
-        # Need-to-know: no concealed text, decision guidance or skill names reach this prompt.
+        # Need-to-know: no concealed text, decision guidance, skill names, mechanism names or
+        # state numbers reach this prompt.
         express = {"role": views["role_self"],
                    "style_constraints": [r for r in views["controller_only"]["conditional_rules"]
                                          if r["source_field"].startswith("speech_style.")],
-                   "self_seat": self.seat, "partner": self.partner,
+                   "self_seat": self.seat, "others_present": self.titles,
                    "respond_to": None if trigger is None else {"speaker": trigger["actor"],
                                                                "content": trigger["content"]},
                    "action": decision["action"], "action_meaning": ACTION_TEXT[decision["action"]],
                    "my_previous_lines": own[-3:],
                    "visible_history": copy.deepcopy(payload["visible_history"])}
+        if self.shows_state:
+            express["current_feeling"] = self._view(work, since)
         if self.skills:
             express["skill_style"] = sk.expression_hints(self.skills, payload["active_skills"])
         if self.briefing:
@@ -314,27 +321,32 @@ class Agent:
             self.scene_context = req.scene_context
             work = copy.deepcopy(self.state)
             log_start = len(work["mechanism_log"])
-            changes, trigger = self._ingest(work, req.new_events, req.role_id, "step")
-            payload = make_payload(self.persona, work, trigger, req.scene_context, self.partner,
+            changes, trigger, actor = self._ingest(work, req.new_events, req.role_id, "step")
+            since = self.since + changes
+            ctx = context(self.persona, work["dynamic"], (trigger or {}).get("cues", {}), list(self.others),
+                          actor if actor in self.others else None, since)
+            cards = select_cards(self.persona, ctx, self.allowed_actions) if self.mode == MODES[2] else None
+            view = self._view(work, since, numbers=True) if self.shows_state else None
+            payload = make_payload(self.persona, work, trigger, req.scene_context, self.titles,
                                    self.allowed_actions, self.mode, self.skills, self.briefing, self.seat,
-                                   self.actions)
+                                   self.actions, view, cards)
             self.last_payload = payload
             decision = self._model("decide", self.backend.decide, payload)
             self.last_decision = decision
             validate_decision(decision, payload)
-            express = self.last_express = self._express_payload(work, trigger, decision, payload)
+            express = self.last_express = self._express_payload(work, trigger, decision, payload, since)
             speech = self._model("express", self.backend.express, express)
             text(speech, "speech")
             if len(speech) > 600:
                 raise ValueError("speech too long")
             proposal_id = f"{req.role_id}@t{req.turn:03d}#1"
-            audience = [req.role_id, self.partner_id]
             action = ProposedAction(proposal_id=proposal_id, kind="speech", content=speech,
-                                    proposed_visibility=Visibility("public", audience),
-                                    target=[self.partner_id], intent_note=decision["action"])
+                                    proposed_visibility=Visibility("public", [req.role_id, *self.others]),
+                                    target=list(self.others), intent_note=decision["action"])
             # The line enters memory when the environment reports it as said (perceive).
             state, delta = self._commit(work, req.turn, "step", changes, log_start)
             self.actions.append(decision["action"])
+            self.since = []
             return StepResponse(req.role_id, req.turn, [action], decision["brief_reason"], state, delta)
         except Exception as exc:
             self.last_error = exc
@@ -346,12 +358,11 @@ class Agent:
             self._check(req.role_id, req.prev_state_id, None)
             work = copy.deepcopy(self.state)
             log_start = len(work["mechanism_log"])
-            changes, _ = self._ingest(work, req.events, req.role_id, "perceive")
+            changes, _, _ = self._ingest(work, req.events, req.role_id, "perceive")
             state, delta = self._commit(work, req.turn, "perceive", changes, log_start)
+            self.since += changes
             return PerceiveResponse(req.role_id, req.turn, state, delta)
         except Exception as exc:
             self.last_error = exc
             return PerceiveResponse(req.role_id, req.turn, self.latest_state() or {}, {},
                                     status="error", error=f"{type(exc).__name__}: {exc}")
-
-

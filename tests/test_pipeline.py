@@ -10,6 +10,7 @@ from rolesim.providers import MockBackend, strict_json
 from rolesim.agent import Agent, MODES, initial_state, make_payload, observe, observation, validate_decision
 from rolesim.contract import Event, ProposedAction, Visibility
 from rolesim.runtime import DialogueEnvironment, code_version, validate_scenario
+from rolesim.stateview import state_view
 from fixtures import cued_events, load, run_scene, setup
 
 
@@ -67,7 +68,7 @@ class PipelineTests(unittest.TestCase):
         events = cued_events()
         hidden = copy.deepcopy(events[0])
         hidden.event_id, hidden.visibility = "partner_private", Visibility("private", ["role2"])
-        state = initial_state()
+        state = initial_state(others=["partner"])
         observe(state, events[0], self.persona)
         prior = copy.deepcopy(state)
         self.assertIsNone(observe(state, events[0], self.persona))
@@ -75,7 +76,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(state, prior)
 
     def test_same_observation_has_persona_conditioned_state_response(self):
-        a, b = initial_state(), initial_state()
+        a, b = initial_state(others=["partner"]), initial_state(others=["partner"])
         observe(a, cued_events()[0], self.persona)
         observe(b, cued_events("role2", "role1")[0], load("role2"))
         self.assertGreater(a["dynamic"]["affect_state"]["emotion"]["intensity"], b["dynamic"]["affect_state"]["emotion"]["intensity"])
@@ -83,7 +84,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_words_do_not_count_as_fulfilment(self):
         events = cued_events()
-        state = initial_state()
+        state = initial_state(others=["partner"])
         claim = copy.deepcopy(events[2])
         claim.signals["reliability_signal"] = .9
         observe(state, claim, self.persona)
@@ -93,7 +94,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_appraised_cues_move_tension_but_never_trust(self):
         line = Event("speech:2", 2, "speech", "role2", "今天必须交！", Visibility("public", ["role1", "role2"]))
-        state = initial_state()
+        state = initial_state(others=["partner"])
         delta = observe(state, line, self.persona, cues={"pressure": 1, "commitment": 1})
         self.assertEqual([c["path"] for c in delta["changes"]], ["dynamic.affect_state.emotion.intensity"])
         self.assertEqual(state["memory"][-1]["cues"], {"pressure": 1, "commitment": 1})
@@ -119,11 +120,11 @@ class PipelineTests(unittest.TestCase):
                 DialogueEnvironment(self.scenario, cast)
 
     def test_action_and_evidence_validation_rejects_fabrication(self):
-        state = initial_state()
+        state = initial_state(others=["partner"])
         event = cued_events()[0]
         observe(state, event, self.persona)
         payload = make_payload(self.persona, state, observation(event), self.scenario["background"],
-                               PARTNER, self.scenario["allowed_actions"], "profile_state_mechanisms")
+                               [PARTNER], self.scenario["allowed_actions"], "profile_state_mechanisms")
         valid = {"action": "wait", "evidence_ids": ["e1"], "brief_reason": "需要核对"}
         validate_decision(valid, payload)
         for patch in ({"action": "declare_success"}, {"evidence_ids": ["partner_private"]},
@@ -173,22 +174,24 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(records[0]["controller_input"]["self_seat"], PARTNER)
 
     def test_profile_only_uses_same_observation_without_mechanism_or_state_prompt(self):
-        state = initial_state()
+        state = initial_state(others=["partner"])
         event = cued_events()[0]
         observe(state, event, self.persona)
-        args = (observation(event), self.scenario["background"], PARTNER, self.scenario["allowed_actions"])
-        a = make_payload(self.persona, state, *args, "profile_state_mechanisms")
-        b = make_payload(self.persona, state, *args, "profile_only")
+        args = (observation(event), self.scenario["background"], [PARTNER], self.scenario["allowed_actions"])
+        view = state_view(state, {"partner": PARTNER}, numbers=True, mechanisms=True)
+        a = make_payload(self.persona, state, *args, "profile_state_mechanisms", view=view, cards=[])
+        b = make_payload(self.persona, state, *args, "profile_only", view=view, cards=[])
         self.assertEqual(a["visible_history"], b["visible_history"])
         self.assertNotIn("active_mechanisms", b)
         self.assertNotIn("current_state", b)
 
     def test_ablation_levels_add_state_then_mechanisms(self):
-        state = initial_state()
+        state = initial_state(others=["partner"])
         event = cued_events()[0]
         observe(state, event, self.persona)
-        args = (observation(event), self.scenario["background"], PARTNER, self.scenario["allowed_actions"])
-        payloads = {m: make_payload(self.persona, state, *args, m) for m in MODES}
+        args = (observation(event), self.scenario["background"], [PARTNER], self.scenario["allowed_actions"])
+        view = state_view(state, {"partner": PARTNER}, numbers=True, mechanisms=True)
+        payloads = {m: make_payload(self.persona, state, *args, m, view=view, cards=[]) for m in MODES}
         self.assertEqual(set(payloads["profile_only"]) & {"current_state", "active_mechanisms"}, set())
         self.assertIn("current_state", payloads["profile_state"])
         self.assertNotIn("active_mechanisms", payloads["profile_state"])
@@ -200,7 +203,7 @@ class PipelineTests(unittest.TestCase):
             with self.subTest(mode=old), self.assertRaises(ValueError):
                 make_payload(self.persona, state, *args, old)
             with self.assertRaises(ValueError):
-                Agent(MockBackend(), ["wait"], "p", mode=old)
+                Agent(MockBackend(), ["wait"], {"role2": "p"}, mode=old)
 
     def test_manifest_records_code_version_and_served_model(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -224,8 +227,8 @@ class PipelineTests(unittest.TestCase):
                 manifest = run_scene(out, mode=mode)
                 finals[mode] = json.loads((out / "roles" / "role1" / "state.json").read_text())["dynamic"]
                 self.assertEqual(manifest["mode"], mode)
-        # The mock reads the active cards but not current_state, so adding state to the
-        # prompt must not change the trajectory; adding cards may (it picks by card order).
+        # The mock's appraisal and decision ignore the state view, so adding state to the
+        # prompts must not change the trajectory; adding cards may (it picks by card order).
         self.assertEqual(finals["profile_only"], finals["profile_state"])
 
     def test_invalid_profiles_rejected(self):
@@ -242,7 +245,8 @@ class PipelineTests(unittest.TestCase):
     def test_scene_is_background_and_seats_only(self):
         validate_scenario(self.scenario)
         for patch in ({"events": []}, {"schema_version": "1.2"}, {"max_turns": 1}, {"max_turns": True},
-                      {"seats": self.scenario["seats"][:1]}, {"allowed_actions": ["declare_success"]}):
+                      {"agents": self.scenario["agents"][:1]}, {"allowed_actions": ["declare_success"]},
+                      {"agents": [{**a, "kind": "observer"} for a in self.scenario["agents"]]}):
             with self.subTest(patch=patch), self.assertRaises(ValueError):
                 validate_scenario({**self.scenario, **patch})
 

@@ -16,7 +16,7 @@ KEYS = {"goal", "disclose", "conceal", "recap"}
 # Concealment strategies from decision library 6.7 that do not assert falsehoods.
 STRATEGIES = {"omission", "strategic_ambiguity"}
 RECAP_PREFIX = "recap:"
-EVENT_PREFIXES = ("speech:",)   # ids the environment gives to events
+EVENT_PREFIXES = ("speech:", "world:")   # ids the environment gives to events
 
 
 def _markers(value, label):

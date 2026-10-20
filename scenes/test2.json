@@ -1,14 +1,16 @@
 {
-  "schema_version": "2.0",
+  "schema_version": "3.0",
   "id": "test2",
   "background": "前两批数据已经交付并核验通过，剩余数据还没有交付。合作方负责人约项目组数据负责人见面，确认剩余数据的进度和交付日期。",
-  "seats": [
+  "agents": [
     {
       "id": "project",
+      "kind": "role",
       "title": "项目组数据负责人"
     },
     {
       "id": "partner",
+      "kind": "role",
       "title": "合作方负责人"
     }
   ],

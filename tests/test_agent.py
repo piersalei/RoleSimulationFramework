@@ -44,7 +44,7 @@ class AgentContractTests(unittest.TestCase):
         self.agent = self.make(self.backend)
 
     def make(self, backend, allowed=None):
-        return Agent(backend, allowed or self.scenario["allowed_actions"], PARTNER, "role2", seat=SEAT)
+        return Agent(backend, allowed or self.scenario["allowed_actions"], {"role2": PARTNER}, seat=SEAT)
 
     def step(self, turn, events, prev=None, profile=None, **extra):
         return self.agent.step(StepRequest("role1", turn, self.scenario["background"], events, prev,

@@ -28,12 +28,12 @@ class Scratch:
 
 class RoleFileTests(unittest.TestCase):
     def test_shipped_roles_and_scenes_load_and_the_cast_fits(self):
-        self.assertEqual(available(ROLES_DIR), ["role1", "role2"])
-        self.assertEqual(available(SCENES_DIR), ["test1", "test2"])
+        self.assertEqual(available(ROLES_DIR), ["role1", "role2", "role3"])
+        self.assertEqual(available(SCENES_DIR), ["test1", "test2", "test3"])
         roles = [load_role(r) for r in available(ROLES_DIR)]
-        self.assertEqual([r["id"] for r in roles], ["role1", "role2"])
-        for scene_id in available(SCENES_DIR):
-            result = fit_cast(roles, load_scene(scene_id))
+        self.assertEqual([r["id"] for r in roles], ["role1", "role2", "role3"])
+        for scene_id, cast in (("test1", roles[:2]), ("test2", roles[:2]), ("test3", roles)):
+            result = fit_cast(cast, load_scene(scene_id))
             self.assertTrue(result["ok"])
             self.assertEqual(result["notes"], [])
 
@@ -111,8 +111,8 @@ class SeatAndRunTests(unittest.TestCase):
         self.assertEqual([s.title for s in seated], ["项目组数据负责人", "合作方负责人"])
         first, second = seated
         self.assertIsInstance(first.agent, Agent)
-        self.assertEqual((first.agent.partner, first.agent.partner_id), ("合作方负责人", "role2"))
-        self.assertEqual((second.agent.partner, second.agent.partner_id), ("项目组数据负责人", "role1"))
+        self.assertEqual(first.agent.others, {"role2": "合作方负责人"})
+        self.assertEqual(second.agent.others, {"role1": "项目组数据负责人"})
         self.assertEqual(first.agent.allowed_actions, scene["scenario"]["allowed_actions"])
         self.assertEqual(second.agent.briefing, roles[1]["setup"])
         self.assertEqual(first.scene_context, scene["scenario"]["background"])

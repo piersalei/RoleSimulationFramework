@@ -1,14 +1,16 @@
 {
-  "schema_version": "2.0",
+  "schema_version": "3.0",
   "id": "test1",
   "background": "某研究项目组要向合作方交付一批数据。上周例会约定：合作方本周一前补发数据说明，项目组收到说明后三天内交付全部数据。今天双方负责人当面沟通交付安排。",
-  "seats": [
+  "agents": [
     {
       "id": "project",
+      "kind": "role",
       "title": "项目组数据负责人"
     },
     {
       "id": "partner",
+      "kind": "role",
       "title": "合作方负责人"
     }
   ],

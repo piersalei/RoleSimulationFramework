@@ -11,7 +11,7 @@ from .audit import write_report
 from .package import export_package
 from .readable import FILENAME, write_readable
 from .roles import ROLES_DIR, SCENES_DIR, available, fit_cast, load_role, load_scene, run
-from .runtime import run_name
+from .runtime import environment_agent, role_seats, run_name
 from .skills import load_library
 
 DEFAULT_ROLES = ["role1", "role2"]
@@ -41,13 +41,15 @@ def main():
     package.add_argument("run_dirs", nargs="+")
     package.add_argument("--out", required=True)
     package.add_argument("--seed", type=int, default=0)
-    demo = sub.add_parser("run", help="two roles talking in a background-only scene")
+    demo = sub.add_parser("run", help="two to six roles talking in a background-only scene")
     demo.add_argument("--roles", nargs="+", default=DEFAULT_ROLES,
                       help="one role id (roles/<id>.json) or path per seat, in seat order")
     demo.add_argument("--scene", default=DEFAULT_SCENE, help="scene id (scenes/<id>.json) or path")
     demo.add_argument("--no-skills", action="store_true", help="keep the roles' skills on record but out of the prompts")
     demo.add_argument("--backend", choices=["mock", "chat"], default="mock")
     demo.add_argument("--mode", choices=list(MODES), default="profile_state_mechanisms")
+    demo.add_argument("--appraise-state", choices=["on", "off"], default="on",
+                      help="off keeps the role's state out of the appraisal prompt (control)")
     demo.add_argument("--out", default=None,
                       help="run directory; default runs/<YYYYMMDD-HHMMSS>_<scene>_<model>")
     readable = sub.add_parser("readable", help="(re)write transcript.md for finished run directories")
@@ -86,7 +88,7 @@ def main():
             backend = MockBackend() if args.backend == "mock" else ChatBackend()
             output = args.out or str(RUNS_DIR / run_name(scene["id"], backend.model))
             print(f"run directory: {output}", file=sys.stderr, flush=True)
-            result = run(roles, scene, backend, output, args.mode, not args.no_skills)
+            result = run(roles, scene, backend, output, args.mode, not args.no_skills, args.appraise_state == "on")
             print(json.dumps({"output": output, "transcript": str(Path(output) / FILENAME), **result},
                              ensure_ascii=False, indent=2))
     except (ValueError, OSError, RuntimeError, KeyError, TypeError) as exc:
@@ -112,8 +114,10 @@ def _list(args):
     print("Scenes:")
     for i in available(SCENES_DIR):
         s = load_scene(i)["scenario"]
-        seats = " / ".join(seat["title"] for seat in s["seats"])
-        print(f"  {i}: seats {seats}; up to {s['max_turns']} turns")
+        seats = " / ".join(seat["title"] for seat in role_seats(s))
+        world = environment_agent(s)
+        extra = f"; environment {world['title']}" if world else ""
+        print(f"  {i}: seats {seats}{extra}; up to {s['max_turns']} turns")
 
 
 if __name__ == "__main__":

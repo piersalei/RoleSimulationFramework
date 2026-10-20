@@ -9,7 +9,8 @@ from .vocab import ACTION_TEXT
 
 FILENAME = "transcript.md"
 TENSION = "dynamic.affect_state.emotion.intensity"
-TRUST = "dynamic.relation_state.partner.trust"
+RELATIONS = "dynamic.relation_state"
+WORLD_TEXT = {"time": "时间", "weather": "天气", "place": "地点", "noise": "环境声音"}
 CUE_NAME = {"uncertainty": "不确定", "pressure": "压力", "commitment": "承诺", "repair": "修复", "conflict": "冲突"}
 MODE_TEXT = {"profile_only": "只给画像", "profile_state": "画像 + 动态状态",
              "profile_state_mechanisms": "画像 + 动态状态 + 机制卡"}
@@ -17,8 +18,9 @@ STRATEGY_TEXT = {"omission": "不提", "strategic_ambiguity": "说得模糊"}
 STAGE_TEXT = {"appraise": "感知评价", "decide": "决策", "express": "表达"}
 FILES = [
     ("transcript.md", "本文件"),
-    ("public.jsonl", "双方台词（每行一句）"),
-    ("environment_events.json", "环境记录的全部事件"),
+    ("public.jsonl", "全部台词与公开旁白（每行一条）"),
+    ("environment_events.json", "环境记录的全部事件（含只给部分角色的旁白）"),
+    ("world.jsonl", "环境 agent 每轮的世界状态（场景有环境 agent 时）"),
     ("manifest.json", "运行配置、版本、调用数、审计结论"),
     ("audit_report.md", "自动审计报告"),
     ("roles/<id>/inputs.json", "该角色的画像、场景、skill、开场设定"),
@@ -61,6 +63,8 @@ def _evidence(ids, names):
             out.append("开场旁白")
         elif item.startswith("speech:"):
             out.append(f"第 {item.split(':', 1)[1]} 句")
+        elif item.startswith("world:"):
+            out.append(f"第 {item.split(':')[1]} 轮旁白")
         elif item.startswith("recap:"):
             out.append(f"前情 {item.split(':', 1)[1]}")
         else:
@@ -73,6 +77,22 @@ def _cues(cues):
     return "、".join(f"{CUE_NAME.get(k, k)} {v:.2f}" for k, v in ranked) or "无"
 
 
+def _trust(snapshot):
+    relations = _get(snapshot, RELATIONS) or {}
+    return {other: rel.get("trust") for other, rel in relations.items() if isinstance(rel, dict)}
+
+
+def _trust_text(names, start, end=None):
+    keys = list(start) or list(end or {})
+    if end is None:
+        return "，".join(f"对{names.get(k, k)} {_num(start.get(k))}" for k in keys) or "—"
+    return "，".join(f"对{names.get(k, k)} {_num(start.get(k))} → {_num(end.get(k))}" for k in keys) or "—"
+
+
+def _world(world):
+    return "；".join(f"{WORLD_TEXT.get(k, k)} {v}" for k, v in world.items())
+
+
 def _change(delta, path):
     for change in (delta or {}).get("changes", []):
         if change["path"] == path:
@@ -80,7 +100,7 @@ def _change(delta, path):
     return None
 
 
-def _role_section(role_id, seat, inputs, info, first):
+def _role_section(role_id, seat, inputs, info, first, names):
     persona = inputs.get("persona", {})
     stable = persona.get("stable", {})
     name = persona.get("name", role_id)
@@ -104,7 +124,7 @@ def _role_section(role_id, seat, inputs, info, first):
     if skills:
         state = "已注入提示" if skills.get("enabled") else "只记录、未注入提示（对照组）"
         out.append(f"- 绑定的 skill（{state}）：{'、'.join(skills['names'])}")
-    out.append(f"- 开始时状态：紧张 {_num(first[0])}，对对方的信任 {_num(first[1])}")
+    out.append(f"- 开始时状态：紧张 {_num(first[0])}；信任：{_trust_text(names, first[1])}")
     briefing = inputs.get("briefing")
     if briefing:
         out += ["", f"**开场设定**（只有{name}自己知道；设定原文里的\"你\"指{name}一方）", ""]
@@ -141,9 +161,9 @@ def _turn_section(record, role_id, name, title, names, states, previous):
     before, heard, said = previous[0], states.get(f"{role_id}@t{record['turn']:03d}"), \
         states.get(f"{role_id}@t{record['turn']:03d}.p1")
     tension = [_get(heard, TENSION), _get(said, TENSION)]
-    trust = [_get(heard, TRUST), _get(said, TRUST)]
+    trust = _trust(said) if said else previous[1]
     out.append(f"- 状态：紧张 {_num(before)} → {_num(tension[0])}（听完）→ {_num(tension[1])}（说完）；"
-               f"信任 {_num(previous[1])} → {_num(trust[1])}")
+               f"信任：{_trust_text(names, previous[1], trust)}")
     thinking = []
     for stage, texts in (record.get("reasoning") or {}).items():
         for text in [t for t in (texts if isinstance(texts, list) else [texts]) if t]:
@@ -151,19 +171,21 @@ def _turn_section(record, role_id, name, title, names, states, previous):
     if thinking:
         out += ["", "<details><summary>模型思考过程（只存在运行记录里，不进入任何提示）</summary>", ""]
         out += thinking + ["</details>"]
-    previous[:] = [tension[1], trust[1]]
+    previous[:] = [tension[1], trust]
     return out + [""]
 
 
 def render(run_dir):
     run = Path(run_dir)
     manifest = _load(run / "manifest.json")
-    if not manifest or manifest.get("schema_version") != "2.0" or "cast" not in manifest:
-        raise ValueError(f"{run} is not a two-role run directory (manifest schema 2.0)")
+    if not manifest or manifest.get("schema_version") not in ("2.0", "3.0") or "cast" not in manifest:
+        raise ValueError(f"{run} is not a role-dialogue run directory (manifest schema 2.0 or 3.0)")
     cast = manifest["cast"]
     inputs = {c["role_id"]: _load(run / "roles" / c["role_id"] / "inputs.json", {}) for c in cast}
     names = {c["role_id"]: inputs[c["role_id"]].get("persona", {}).get("name", c["role_id"]) for c in cast}
     names["env"] = "旁白"
+    if len(cast) == 2:
+        names["partner"] = "对方"   # relation key of schema-2.0 runs
     scenario = next(iter(inputs.values()), {}).get("scenario", {})
     records = {c["role_id"]: _lines(run / "roles" / c["role_id"] / "audit.jsonl") for c in cast}
     states = {c["role_id"]: {s["state_id"]: s for s in _lines(run / "roles" / c["role_id"] / "states.jsonl")}
@@ -176,12 +198,17 @@ def render(run_dir):
         role, opening = c["role_id"], records[c["role_id"]][:1]
         delta = opening[0].get("step_delta") if opening else None
         snapshot = next(iter(states[role].values()), None)
-        start = [(_change(delta, path) or {}).get("before", _get(snapshot, path)) for path in (TENSION, TRUST)]
-        first[role] = start
+        trust = _trust(snapshot)
+        for change in (delta or {}).get("changes", []):
+            parts = change["path"].split(".")
+            if change["path"].startswith(RELATIONS) and parts[-1] == "trust":
+                trust[parts[-2]] = change["before"]
+        first[role] = [(_change(delta, TENSION) or {}).get("before", _get(snapshot, TENSION)), trust]
 
     title = f"{manifest.get('scene_id', '')} · {' × '.join(names[c['role_id']] for c in cast)}"
     out = [f"# {title}", "", f"运行目录：`{run.name}`", "",
-           "> 工程运行记录，不是心理有效性证据。场景只提供背景，对话由两个角色的模型自主完成。", "", "## 概况", ""]
+           f"> 工程运行记录，不是心理有效性证据。场景只提供背景，对话由 {len(cast)} 个角色的模型自主完成。",
+           "", "## 概况", ""]
     status = manifest.get("status")
     turns = manifest.get("turns") or sum(len(r) for r in records.values())
     if status == "completed":
@@ -200,7 +227,8 @@ def render(run_dir):
     out.append(f"- 模型：{manifest.get('model')}" + (f"（{knobs}）" if knobs else ""))
     if sampling.get("thinking"):
         out.append(f"- 思考模式：{sampling['thinking']}")
-    out.append(f"- 档位：{MODE_TEXT.get(manifest.get('mode'), manifest.get('mode'))}")
+    out.append(f"- 档位：{MODE_TEXT.get(manifest.get('mode'), manifest.get('mode'))}"
+               + ("；感知评价不看状态（对照）" if manifest.get("appraise_state") is False else ""))
     out.append(f"- 模型调用：{manifest.get('api_calls', '—')} 次")
     if report:
         verdict = "通过" if report["passed"] else "未通过"
@@ -213,25 +241,47 @@ def render(run_dir):
     out += ["", "## 场景背景", "", scenario.get("background", "（无）"), ""]
     for c in cast:
         out.append(f"- {c['title']}：{names[c['role_id']]}（{c['role_id']}）")
+    env = next((a for a in scenario.get("agents", []) if a.get("kind") == "environment"), None)
+    if env:
+        rules = env["rules"]
+        out += ["", f"**环境：{env['title']}**（按规则改变世界，没有心理状态，不替角色说话）", "",
+                f"- 开始时：{_world(env['world'])}"]
+        if rules.get("minutes_per_round"):
+            out.append(f"- 每轮过去 {rules['minutes_per_round']} 分钟" + ("，并报时" if rules.get("announce_time") else ""))
+        seat_names = {c["seat"]: names[c["role_id"]] for c in cast}
+        for item in rules.get("events", []):
+            who = "、".join(seat_names.get(a, a) for a in item.get("audience") or [])
+            out.append(f"- 第 {item['round']} 轮开始：{item['text']}" + (f"（只有{who}知道）" if who else ""))
+        history = _lines(run / "world.jsonl")
+        if history:
+            out.append(f"- 结束时：{_world(history[-1]['world'])}")
     allowed = scenario.get("allowed_actions") or []
     if allowed:
-        out += ["", "角色每次发言前从下面的交流动作里选一个（对方只听到台词，看不到动作）：", ""]
+        out += ["", "角色每次发言前从下面的交流动作里选一个（别人只听到台词，看不到动作）：", ""]
         out += [f"- {ACTION_TEXT.get(a, a)}（{a}）" for a in allowed]
 
     out += ["", "## 角色", ""]
     for c in cast:
         out += _role_section(c["role_id"], c, inputs[c["role_id"]], (manifest.get("roles") or {}).get(c["role_id"]),
-                             first[c["role_id"]])
+                             first[c["role_id"]], names)
 
     out += ["## 对话过程", ""]
-    for event in events:
-        if event.get("type") == "narration":
-            out += [f"**旁白**（第 {event['turn']} 句前）：{event['content']}", ""]
     titles = {c["role_id"]: c["title"] for c in cast}
     previous = {role: list(start) for role, start in first.items()}
     ordered = sorted(((r["turn"], role, r) for role, rs in records.items() for r in rs), key=lambda x: x[0])
-    for _, role, record in ordered:
+    narrations = [e for e in events if e.get("type") == "narration"]
+
+    def narrate(upto):
+        while narrations and narrations[0]["turn"] <= upto:
+            event = narrations.pop(0)
+            audience = event["visibility"]["audience"]
+            who = "" if set(audience) == set(titles) else f"，只有{'、'.join(names.get(a, a) for a in audience)}知道"
+            out.extend([f"**旁白**（第 {event['turn']} 句前{who}）：{event['content']}", ""])
+
+    for turn, role, record in ordered:
+        narrate(turn)
         out += _turn_section(record, role, names[role], titles[role], names, states[role], previous[role])
+    narrate(10 ** 6)
     if not ordered:
         out += ["（没有发言记录）", ""]
 
@@ -241,7 +291,7 @@ def render(run_dir):
         role = c["role_id"]
         values = [_get(s, TENSION) for s in states[role].values()]
         values = [v for v in [first[role][0], *values] if v is not None]
-        trust_end = _get(list(states[role].values())[-1], TRUST) if states[role] else None
+        trust_end = _trust(list(states[role].values())[-1]) if states[role] else {}
         moves = {}
         for r in records[role]:
             act = (r.get("decision") or {}).get("action")
@@ -253,9 +303,9 @@ def render(run_dir):
         kept = next((c2["status"] for c2 in rep.get("checks", []) if c2["id"] == "concealed_info_withheld"), None)
         kept_text = {"pass": "守住（只按关键词查）", None: "—"}.get(kept, "关键词出现在台词里")
         tension = f"{_num(values[0])} → {_num(max(values))} → {_num(values[-1])}" if values else "—"
-        out.append(f"| {names[role]} | {tension} | {_num(first[role][1])} → {_num(trust_end)} | {moves_text} "
+        out.append(f"| {names[role]} | {tension} | {_trust_text(names, first[role][1], trust_end)} | {moves_text} "
                    f"| {disclosed} 次 | {kept_text} |")
-    out += ["", "信任只在有兑现证据时变化；纯对话里对方的口头承诺不算证据，所以通常保持不变。", "",
+    out += ["", "信任只在有兑现证据（旁白或裁定结果）时变化；口头承诺不算证据，所以纯对话里通常保持不变。", "",
             "## 文件说明", ""]
     out += [f"- `{path}`：{text}" for path, text in FILES]
     return "\n".join(out) + "\n"

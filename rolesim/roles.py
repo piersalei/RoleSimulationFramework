@@ -2,10 +2,11 @@
 
     roles/<id>.json    one file per role: persona (schema 2.0, embedded unchanged),
                        skills (name / priority / note) and the opening setup
-    scenes/<id>.json   one background file per scene (scene schema 2.0): shared
-                       background, two seats, turn limit, allowed moves
+    scenes/<id>.json   one background file per scene (scene schema 3.0): shared
+                       background, the agents present (2-6 role seats, at most one
+                       environment agent), turn limit, allowed moves
 
-The file name is the id. A run seats one role per seat, in order; what happens is then
+The file name is the id. A run seats one role per role seat, in order; what happens is then
 up to the roles. The scene format is a stand-in until the environment group's
 background format lands; it does not direct the roles.
 """
@@ -18,7 +19,7 @@ from .catalog import digest
 from .mechanisms import CARDS as MECHANISM_CARDS
 from .persona import validate_persona
 from .providers import strict_json
-from .runtime import RESERVED_IDS, make_agent, run_dialogue, validate_scenario
+from .runtime import RESERVED_IDS, make_agent, role_seats, run_dialogue, validate_scenario
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLES_DIR = ROOT / "roles"
@@ -116,7 +117,7 @@ def fit(role, scene):
 
 def fit_cast(roles, scene):
     """One distinct role per seat, each fitting the scene."""
-    seats = scene["scenario"]["seats"]
+    seats = role_seats(scene["scenario"])
     errors, notes = [], []
     if len(roles) != len(seats):
         errors.append(f"scene {scene['id']} has {len(seats)} seats; got {len(roles)} roles")
@@ -135,14 +136,16 @@ def _check(roles, scene):
         raise ValueError(f"cast does not fit scene {scene['id']}: " + "; ".join(result["errors"]))
 
 
-def seat(roles, scene, backend, mode="profile_state_mechanisms", use_skills=True):
+def seat(roles, scene, backend, mode="profile_state_mechanisms", use_skills=True, appraise_state=True):
     """Seat the cast. An environment drives each returned Agent through `step`/`perceive`,
     sending `role_profile` on the first step as the contract requires."""
     _check(roles, scene)
     ids = [r["id"] for r in roles]
     scenario = scene["scenario"]
-    return [Seated(make_agent(r["persona"], scenario, backend, i, ids[1 - i], mode, r["bound"], use_skills, r["setup"]),
-                   r["id"], r["persona"], scenario["background"], scenario["seats"][i]["title"])
+    seats = role_seats(scenario)
+    return [Seated(make_agent(r["persona"], scenario, backend, i, ids, mode, r["bound"], use_skills, r["setup"],
+                              appraise_state),
+                   r["id"], r["persona"], scenario["background"], seats[i]["title"])
             for i, r in enumerate(roles)]
 
 
@@ -151,10 +154,11 @@ def origin(roles, scene):
             "scene": {"id": scene["id"], "file_hash": digest(scene["scenario"])}}
 
 
-def run(roles, scene, backend, output, mode="profile_state_mechanisms", use_skills=True):
+def run(roles, scene, backend, output, mode="profile_state_mechanisms", use_skills=True, appraise_state=True):
     """Run a scene with one role file per seat."""
     _check(roles, scene)
     if not use_skills and all(r["binding"] is None for r in roles):
         raise ValueError("--no-skills needs at least one role that lists skills")
     cast = [{"persona": r["persona"], "skills": r["binding"], "briefing": r["setup"]} for r in roles]
-    return run_dialogue(cast, scene["scenario"], backend, output, mode, use_skills, origin(roles, scene))
+    return run_dialogue(cast, scene["scenario"], backend, output, mode, use_skills, origin(roles, scene),
+                        appraise_state)

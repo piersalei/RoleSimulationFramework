@@ -6,8 +6,8 @@ Each role of each run is one blinded unit. For each unit the export writes:
     candidate and its fate);
   - role_visible_trace.jsonl: only what the role itself could see and do, for judging
     outward behaviour without access to internal states or world truth;
-  - counterpart_truth.json: world-private data, role-invisible events, and the other
-    role's opening setup and final state, for comparison only. Whether the role's inference was reasonable is judged from role-visible
+  - counterpart_truth.json: world-private data, role-invisible events, and every
+    other role's opening setup and final state, for comparison only. Whether the role's inference was reasonable is judged from role-visible
     evidence, never from agreement with this file.
 Method labels (mode, backend, model, code version) live only in blind_key.json at the
 package root, so the per-run folders can be handed to raters on their own.
@@ -133,7 +133,7 @@ def export_package(run_dirs, out_dir, seed=0):
     key, files = {}, []
     for rank, (run, manifest, role) in enumerate(units, 1):
         blind = f"R{rank:02d}"
-        titles = {s["role_id"]: s["title"] for s in manifest["cast"]}
+        titles = {"env": "旁白", **{s["role_id"]: s["title"] for s in manifest["cast"]}}
         samples, events, inputs, role, visible = _samples(run, role, blind)
         folder = out / blind
         folder.mkdir()
@@ -161,6 +161,7 @@ def export_package(run_dirs, out_dir, seed=0):
             "exceptions_approved": audit["exceptions_approved"]})
         info = manifest["roles"][role]
         key[blind] = {"run": run.name, "role_id": role, "seat": titles[role], "mode": manifest["mode"],
+                      "appraise_state": manifest.get("appraise_state"), "environment": manifest.get("environment"),
                       "skills": info.get("skills"), "origin": manifest.get("origin"),
                       "backend": manifest["backend"], "model": manifest["model"],
                       "model_served": manifest.get("model_served"), "code_version": manifest.get("code_version"),

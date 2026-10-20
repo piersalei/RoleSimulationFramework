@@ -213,7 +213,7 @@ class SkillRunTests(unittest.TestCase):
         bound = bind(self.binding, "role1", load_library())
         actions = {}
         for label, skills in (("with", bound), ("without", None)):
-            agent = Agent(MockBackend(), self.scenario["allowed_actions"], "合作方负责人", "role2", "profile_only",
+            agent = Agent(MockBackend(), self.scenario["allowed_actions"], {"role2": "合作方负责人"}, "profile_only",
                           skills=skills)
             response = agent.step(StepRequest("role1", 1, "g", [cued_events()[0]], None, self.persona))
             actions[label] = response.actions[0].intent_note
@@ -221,7 +221,7 @@ class SkillRunTests(unittest.TestCase):
 
     def test_agent_rejects_nothing_when_no_skills_are_given(self):
         event = cued_events()[0]
-        agent = Agent(MockBackend(), self.scenario["allowed_actions"], "合作方负责人", "role2")
+        agent = Agent(MockBackend(), self.scenario["allowed_actions"], {"role2": "合作方负责人"})
         response = agent.step(StepRequest("role1", 1, self.scenario["background"], [event], None, self.persona))
         self.assertEqual(response.status, "ok")
         self.assertNotIn("skill_catalog", agent.last_payload)

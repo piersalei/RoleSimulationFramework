@@ -6,7 +6,7 @@ from unittest import mock
 
 from fixtures import cued_events, load
 from rolesim.agent import initial_state, observe
-from rolesim.mechanisms import CARD_MECHANISMS, CARDS
+from rolesim.mechanisms import CARDS, RULES, validate_cards
 from rolesim.modules import STATUSES, transition
 from rolesim.state import (DOMAINS, OPERATORS, SOFT_RULES, VERSIONS, commit_phase, may_write,
                            validate_dynamic)
@@ -35,7 +35,7 @@ def intensity_change(**patch):
 
 class CommitTests(unittest.TestCase):
     def setUp(self):
-        state = initial_state()
+        state = initial_state(others=["partner"])
         self.dynamic, self.status = state["dynamic"], state["module_status"]
         self.visible = {"e1", "e2", "action:1"}
 
@@ -105,7 +105,7 @@ class CommitTests(unittest.TestCase):
 
 class ModuleStatusTests(unittest.TestCase):
     def setUp(self):
-        state = initial_state()
+        state = initial_state(others=["partner"])
         self.state, self.visible = state, {"e1"}
 
     def test_unmodelled_unknown_and_inactive_modules_cannot_be_written(self):
@@ -170,7 +170,7 @@ class ModuleStatusTests(unittest.TestCase):
 
 class StagedCommitTests(unittest.TestCase):
     def setUp(self):
-        state = initial_state()
+        state = initial_state(others=["partner"])
         self.dynamic, self.status = state["dynamic"], state["module_status"]
         self.visible = {"e1", "e2"}
 
@@ -281,7 +281,7 @@ class StagedCommitTests(unittest.TestCase):
 
 class HarmHistoryTests(unittest.TestCase):
     def test_harm_events_need_the_full_record(self):
-        state = initial_state()
+        state = initial_state(others=["partner"])
         path = "dynamic.relation_state.partner.harm_history.events"
         event = {"event_id": "e1", "severity": .4, "acknowledged": False, "repaired": False,
                  "last_activated": "e1"}
@@ -297,7 +297,7 @@ class HarmHistoryTests(unittest.TestCase):
 class RuntimeStateTests(unittest.TestCase):
     def test_every_perceive_writes_an_evidenced_delta(self):
         persona = load("role1")
-        state = initial_state()
+        state = initial_state(others=["partner"])
         for event in cued_events():
             observe(state, event, persona)
         for delta in state["updates"]:
@@ -311,7 +311,7 @@ class RuntimeStateTests(unittest.TestCase):
 
     def test_unknown_inputs_skip_their_branch_instead_of_guessing(self):
         persona = load("role1")
-        state = initial_state()
+        state = initial_state(others=["partner"])
         state["dynamic"]["relation_state"]["partner"]["trust"] = None
         state["module_status"][TRUST]["status"] = "unknown"
         for event in cued_events():
@@ -321,12 +321,23 @@ class RuntimeStateTests(unittest.TestCase):
 
 
 class CardMechanismMappingTests(unittest.TestCase):
-    def test_every_card_maps_to_registered_operators(self):
-        self.assertEqual(set(CARD_MECHANISMS), {card["id"] for card in CARDS})
-        for card, operators in CARD_MECHANISMS.items():
-            with self.subTest(card=card):
-                self.assertTrue(operators)
-                self.assertLessEqual(set(operators), set(OPERATORS))
+    def test_every_card_effect_names_a_rule_and_registered_operators_that_may_write_its_path(self):
+        validate_cards()
+        for card in CARDS:
+            for effect in card["effects"]:
+                with self.subTest(card=card["id"], rule=effect["rule"]):
+                    self.assertIn(effect["rule"], RULES)
+                    self.assertLessEqual(set(effect["operators"]), set(OPERATORS))
+                    path = effect["path"].format(other="partner")
+                    self.assertTrue(all(may_write(op, path) for op in effect["operators"]))
+        self.assertEqual({e["rule"] for c in CARDS for e in c["effects"]}, set(RULES))
+
+    def test_malformed_cards_are_rejected(self):
+        for patch in ({"status": "calibrated"}, {"trigger": {"any_of": []}},
+                      {"effects": [{"rule": "nope", "path": INTENSITY, "operators": ["emotion_update"],
+                                    "group": "g", "when": "every_event", "params": {}}]}):
+            with self.subTest(patch=patch), self.assertRaises(ValueError):
+                validate_cards([{**CARDS[0], **patch}])
 
 
 if __name__ == "__main__":

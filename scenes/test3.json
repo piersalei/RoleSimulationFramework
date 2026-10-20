@@ -1,0 +1,76 @@
+{
+  "schema_version": "3.0",
+  "id": "test3",
+  "background": "某研究项目组要向合作方交付一批数据。上周例会约定：合作方本周一前补发数据说明，项目组收到说明后三天内交付全部数据。今天项目负责人召集三方在会议室当面商量交付安排。",
+  "agents": [
+    {
+      "id": "project",
+      "kind": "role",
+      "title": "项目组数据负责人"
+    },
+    {
+      "id": "partner",
+      "kind": "role",
+      "title": "合作方负责人"
+    },
+    {
+      "id": "pi",
+      "kind": "role",
+      "title": "项目负责人"
+    },
+    {
+      "id": "env",
+      "kind": "environment",
+      "title": "会议室",
+      "world": {
+        "time": "15:00",
+        "place": "项目组会议室",
+        "weather": "阴"
+      },
+      "rules": {
+        "minutes_per_round": 10,
+        "announce_time": true,
+        "events": [
+          {
+            "round": 2,
+            "text": "窗外开始下雨，雨点打在玻璃上。",
+            "set": {
+              "weather": "小雨"
+            }
+          },
+          {
+            "round": 3,
+            "text": "你的手机收到同事消息：第三批数据今晚能清洗完，明天上午可以核验。",
+            "audience": [
+              "project"
+            ],
+            "cues": {
+              "repair": 0.4
+            }
+          },
+          {
+            "round": 4,
+            "text": "前台来敲门：这间会议室16:00有下一场预约，还剩十分钟。",
+            "cues": {
+              "pressure": 0.5
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "max_turns": 12,
+  "allowed_actions": [
+    "request_evidence",
+    "ask_clarification",
+    "propose_plan",
+    "set_boundary",
+    "wait",
+    "agree",
+    "close"
+  ],
+  "world_private": {
+    "do_not_disclose": "HIDDEN_WORLD_SENTINEL_47",
+    "purpose": "知识隔离测试；不传给任何角色的模型调用。"
+  }
+}
