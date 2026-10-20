@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def load(name):
-    return json.loads((ROOT / "examples" / name).read_text())
+    folder = "scenes" if name == "cooperation_conflict.json" else "personas"
+    return json.loads((ROOT / "examples" / folder / name).read_text())
 
 
 class Capture(MockBackend):

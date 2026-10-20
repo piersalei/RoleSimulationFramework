@@ -16,6 +16,7 @@ import json
 import random
 from pathlib import Path
 
+from .briefing import briefing_for
 from .catalog import write_json
 from .state import VERSIONS
 
@@ -133,6 +134,10 @@ def export_package(run_dirs, out_dir, seed=0):
             "use": "comparison only; plausibility of the role's inference is judged from role-visible "
                    "evidence, not from agreement with this file",
             "world_private": inputs["scenario"]["world_private"], "role_invisible_events": hidden})
+        # Bound skills are the same whether or not a run used them, so listing them keeps the blind.
+        write_json(folder / "role_setup.json", {
+            "briefing": briefing_for(inputs["scenario"], role),
+            "bound_skills": [s["name"] for s in inputs.get("skills") or []]})
         write_json(folder / "annotation_template.json", _template(samples, blind))
         audit = json.loads((run / "audit_report.json").read_text(encoding="utf-8")) \
             if (run / "audit_report.json").exists() else None
@@ -140,7 +145,8 @@ def export_package(run_dirs, out_dir, seed=0):
             "checks": [{k: c[k] for k in ("id", "dimension", "status", "failures")} for c in audit["checks"]],
             "rejected_groups": audit["rejected_groups"], "soft_violations": audit["soft_violations"],
             "exceptions_approved": audit["exceptions_approved"]})
-        key[blind] = {"run": run.name, "mode": manifest["mode"], "backend": manifest["backend"],
+        key[blind] = {"run": run.name, "mode": manifest["mode"], "skills": manifest.get("skills"),
+                      "backend": manifest["backend"],
                       "model": manifest["model"], "model_served": manifest.get("model_served"),
                       "code_version": manifest.get("code_version"), "persona_hash": manifest["persona_hash"],
                       "scenario_hash": manifest["scenario_hash"]}
@@ -151,7 +157,7 @@ def export_package(run_dirs, out_dir, seed=0):
         "auto_audited_dimensions": AUTO_DIMENSIONS, "hard_error_types": HARD_ERROR_TYPES,
         "protocol": "sample package -> auto audit -> human scoring -> second-rater re-score -> report",
         "per_run_files": ["evaluator_samples.jsonl", "role_visible_trace.jsonl", "counterpart_truth.json",
-                          "annotation_template.json", "auto_audit.json"],
+                          "role_setup.json", "annotation_template.json", "auto_audit.json"],
         "evidence_boundary": "The evaluation protocol is not frozen (evaluation_protocol_version "
                              "'unfrozen'). Controller prompts and method labels are deliberately excluded "
                              "from per-run files. A package built from mock runs checks the export, "

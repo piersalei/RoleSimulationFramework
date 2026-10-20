@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def load(name):
-    return json.loads((ROOT / "examples" / name).read_text())
+    folder = "scenes" if name == "cooperation_conflict.json" else "personas"
+    return json.loads((ROOT / "examples" / folder / name).read_text())
 
 
 def read_lines(path):
@@ -49,7 +50,7 @@ class AuditTests(unittest.TestCase):
     def test_clean_run_passes_and_writes_reports(self):
         self.assertTrue(self.manifest["audit"]["passed"])
         report = json.loads((self.run_dir / "audit_report.json").read_text())
-        self.assertEqual([c["status"] for c in report["checks"]], ["pass"] * 5)
+        self.assertEqual([c["status"] for c in report["checks"]], ["pass"] * 6)
         self.assertEqual(report["error_rate"]["rejected_groups"], 0)
         self.assertIn("unknown", report["module_coverage"])
         self.assertIn("does not show", report["evidence_boundary"])

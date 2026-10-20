@@ -1,10 +1,16 @@
-"""Rebuild fictional, hand-authored fixtures (persona schema 2.0). Not population/personality sampling."""
+"""Rebuild fictional, hand-authored fixtures. Not population/personality sampling.
+
+Two packages, kept apart: a persona package (examples/personas/: persona schema 2.0 plus a
+skills binding) and a scene package (examples/scenes/: events, world data and per-role
+briefings).
+"""
 import copy
 import json
 from pathlib import Path
 
 from rolesim.modules import STABLE_MODULES, entry
 from rolesim.persona import FACET_KEYS, SCHEMA_VERSION
+from rolesim.skills import BINDING_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = 'synthetic_authoring_fixture; 非量表测量、非心理学同学提供的实证数值'
@@ -12,6 +18,12 @@ FIXTURE = 'synthetic_authoring_fixture; 非量表测量、非心理学同学提�
 
 def save(name, data):
     (ROOT / 'examples' / name).write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+
+def binding(persona_id, items):
+    note = '工程侧按画像拟定的绑定与优先级，未经心理学组审定：'
+    return {'schema_version': BINDING_VERSION, 'persona_id': persona_id,
+            'skills': [{'name': n, 'priority': p, 'note': note + why} for n, p, why in items]}
 
 
 def normalise(raw):
@@ -96,7 +108,17 @@ base['stable']['traits']['personality']['facets'].update({
     'conscientiousness.deliberation': 1.4, 'conscientiousness.dutifulness': 1.2,
     'extraversion.assertiveness': -.8, 'agreeableness.compliance': 1.3,
 })
-save('cautious.json', base)
+save('personas/cautious.json', base)
+save('personas/cautious.skills.json', binding('cautious', [
+    ('verify-before-commit', .95, '核查偏好高、审慎分面高'),
+    ('selective-disclosure', .9, '焦虑分面高，倾向回避暴露自身不足'),
+    ('staged-commitment', .8, '尽责且审慎，偏好可兑现的小承诺'),
+    ('acknowledge-first', .8, '表达直接性低，先照顾对方处境'),
+    ('accept-verified-repair', .75, '修复机制先验高，但依赖兑现证据'),
+    ('soft-boundary', .7, '顺从分面高，边界以委婉方式表达'),
+    ('pause-under-pressure', .6, '威胁敏感度高、恢复慢'),
+    ('proactive-disclosure', .4, '主张性低，较少主动陈述'),
+]))
 other = copy.deepcopy(base)
 other.update(id='assertive', name='周越', public_description='虚构研究项目成员，负责核验与交付数据，表达较直接。', self_view=['我愿意推进工作，也会说明我能承担到什么程度。', '合作应有清楚的责任和可核验的条件。'])
 t = other['stable']['traits']
@@ -116,13 +138,21 @@ other['stable']['values']['schwartz_priorities']['weights'] = normalise(
     {'benevolence_dependability': .7, 'security_personal': .4, 'self_direction_action': .85})
 other['stable']['core_goals'] = [{'id': 'g1', 'text': '推进交付，同时明确自己能承担的范围', 'priority': .9, 'stability': .8,
                                   'source': FIXTURE, 'supports': [{'id': 'g1a', 'text': '把责任与可核验条件说清楚'}]}]
-save('assertive.json', other)
+save('personas/assertive.json', other)
+save('personas/assertive.skills.json', binding('assertive', [
+    ('firm-boundary', .95, '主张性高、表达直接性高'),
+    ('proactive-disclosure', .85, '倾向主动摆出条件和理由'),
+    ('staged-commitment', .85, '愿意推进，同时说清可承担范围'),
+    ('accept-verified-repair', .6, '修复机制先验中等'),
+    ('selective-disclosure', .6, '焦虑分面低，隐瞒动机较弱'),
+    ('verify-before-commit', .4, '核查偏好低'),
+]))
 
 def event(i, content, cues, signal=0, readers=None, kind='observation'):
     return {'id': i, 'text': content, 'readers': readers or ['*'], 'cues': cues, 'reliability_signal': signal, 'kind': kind}
 
 scenario = {
-    'schema_version': '1.0', 'id': 'cooperation_conflict_v1',
+    'schema_version': '1.1', 'id': 'cooperation_conflict_v1',
     'goal': '在不做无法兑现的承诺的前提下，与合作方明确可核验的交付范围。',
     'partner': '合作方负责人',
     'allowed_actions': ['request_evidence', 'ask_clarification', 'propose_plan', 'set_boundary', 'wait'],
@@ -135,5 +165,13 @@ scenario = {
     ],
     'evidence': event('status_receipt', '你获得一份状态回执：部分数据仍在复核；回执没有给出最终完成时间。', {'uncertainty': .2, 'pressure': .1}),
     'world_private': {'do_not_disclose': 'HIDDEN_WORLD_SENTINEL_47', 'purpose': '知识隔离测试；不传给角色或表达模型。'},
+    # '*' applies to whichever persona fills the focal slot; a role-specific key would override it.
+    'briefings': {'*': {
+        'goal': '只承诺能核实的部分，同时不让合作关系破裂。',
+        'disclose': [{'id': 'd1', 'text': '前两批记录你已经核对完毕，今天可以先交付这部分。', 'markers': ['前两批']}],
+        'conceal': [{'id': 'c1', 'text': '你这边第三批数据其实还没清洗完，即使对方的说明今天到了，也来不及全部交付。',
+                     'markers': ['没清洗完', '未清洗', '还没清洗', '第三批'], 'strategy': 'omission'}],
+        'recap': [{'id': 'recap:r1', 'text': '上周例会上，合作方承诺本周一前补发数据说明；你答应收到说明后三天内交付全部数据。'}],
+    }},
 }
-save('cooperation_conflict.json', scenario)
+save('scenes/cooperation_conflict.json', scenario)

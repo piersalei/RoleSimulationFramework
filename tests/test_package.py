@@ -13,7 +13,8 @@ HIDDEN_TEXT = "下周的人员安排可能改变"
 
 
 def load(name):
-    return json.loads((ROOT / "examples" / name).read_text())
+    folder = "scenes" if name == "cooperation_conflict.json" else "personas"
+    return json.loads((ROOT / "examples" / folder / name).read_text())
 
 
 def rows(path):
@@ -113,6 +114,26 @@ class PackageTests(unittest.TestCase):
         (broken / "manifest.json").write_text(json.dumps({"status": "failed"}))
         with self.assertRaises(ValueError):
             export_package([broken], Path(self.tmp.name) / "bad")
+
+    def test_skills_control_pair_stays_blind_and_role_setup_carries_briefing(self):
+        base = Path(self.tmp.name)
+        pair = [base / "with_skills", base / "no_skills"]
+        for run, use in zip(pair, (True, False)):
+            run_episode(load("cautious.json"), load("cooperation_conflict.json"), MockBackend(), run,
+                        skills=load("cautious.skills.json"), use_skills=use)
+        out = base / "skills_pkg"
+        export_package(pair, out, seed=1)
+        key = json.loads((out / "blind_key.json").read_text())["runs"]
+        self.assertEqual(sorted(v["skills"]["enabled"] for v in key.values()), [False, True])
+        setups = [(out / blind / "role_setup.json").read_text() for blind in key]
+        self.assertEqual(setups[0], setups[1])
+        setup = json.loads(setups[0])
+        self.assertEqual(setup["briefing"]["conceal"][0]["id"], "c1")
+        self.assertEqual(setup["bound_skills"][0], "verify-before-commit")
+        for blind in key:
+            blob = "".join(p.read_text() for p in (out / blind).iterdir())
+            for label in ("skill_catalog", "active_skills", "skill_style", '"enabled"'):
+                self.assertNotIn(label, blob)
 
     def test_package_declares_unfrozen_protocol_and_dimensions(self):
         meta = json.loads((self.out / "package.json").read_text())

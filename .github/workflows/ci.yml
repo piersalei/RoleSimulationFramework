@@ -11,7 +11,11 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m unittest discover -s tests -v
-      - run: python -m rolesim validate examples/cautious.json
-      - run: python -m rolesim validate examples/assertive.json
+      - run: python -m rolesim validate examples/personas/cautious.json
+      - run: python -m rolesim validate examples/personas/assertive.json
+      - run: python -m rolesim skills examples/personas/cautious.skills.json --persona examples/personas/cautious.json
+      - run: python -m rolesim skills examples/personas/assertive.skills.json --persona examples/personas/assertive.json
       - run: python -m rolesim run --out runs/ci-smoke
       - run: python -m rolesim audit runs/ci-smoke
+      - run: python -m rolesim run --skills examples/personas/cautious.skills.json --out runs/ci-skills
+      - run: python -m rolesim audit runs/ci-skills

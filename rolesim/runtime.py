@@ -8,8 +8,10 @@ import json
 import subprocess
 from pathlib import Path
 
+from . import skills as sk
 from .agent import Agent
 from .audit import write_report
+from .briefing import briefing_for, validate_briefing
 from .catalog import digest, write_json
 from .contract import (Event, PerceiveRequest, StepRequest, Visibility, to_dict,
                        validate_event as validate_contract_event)
@@ -42,8 +44,14 @@ def validate_event(event):
         raise ValueError("a claim cannot itself establish reliability")
 
 
+SCENE_KEYS = {"1.0": {"schema_version", "id", "goal", "partner", "allowed_actions", "events", "evidence",
+                      "world_private"}}
+# 1.1 adds per-role briefings (interaction goal, disclose/conceal, recap); see briefing.py.
+SCENE_KEYS["1.1"] = SCENE_KEYS["1.0"] | {"briefings"}
+
+
 def validate_scenario(scenario):
-    if set(scenario) != {"schema_version", "id", "goal", "partner", "allowed_actions", "events", "evidence", "world_private"} or scenario["schema_version"] != "1.0":
+    if not isinstance(scenario, dict) or set(scenario) != SCENE_KEYS.get(scenario.get("schema_version")):
         raise ValueError("scenario: unsupported schema")
     for key in ("id", "goal", "partner"):
         text(scenario[key], key)
@@ -61,6 +69,13 @@ def validate_scenario(scenario):
         raise ValueError("duplicate event ids")
     if not isinstance(scenario["world_private"], dict):
         raise ValueError("world_private must be an object")
+    if "briefings" in scenario:
+        briefings = scenario["briefings"]
+        if not isinstance(briefings, dict) or not briefings:
+            raise ValueError("briefings must map role ids (or '*') to briefings")
+        for role, item in briefings.items():
+            text(role, "briefing role")
+            validate_briefing(item, {e["id"] for e in events})
 
 
 PARTNER_ID = "partner"
@@ -163,26 +178,37 @@ def code_version(root=CODE_ROOT):
         return {"git_sha": "unavailable", "git_dirty": None}
 
 
-def run_episode(persona, scenario, backend, output, mode="profile_state_mechanisms"):
+def run_episode(persona, scenario, backend, output, mode="profile_state_mechanisms", skills=None,
+                use_skills=True):
+    """Run one focal role. `skills` is the persona's skills binding; `use_skills=False` keeps it
+    on record but out of the prompts, as a no-skills control."""
     validate_persona(persona)
     validate_scenario(scenario)
     if set(persona["stable"]["mechanism_priors"]) != {c["id"] for c in CARDS}:
         raise ValueError("mechanism priors must match the enabled card registry")
     role_id = persona["id"]
+    bound = sk.bind(skills, role_id, sk.load_library()) if skills is not None else None
+    briefing = briefing_for(scenario, role_id)
     env = ScriptedEnvironment(scenario, role_id)
-    agent = Agent(backend, scenario["allowed_actions"], scenario["partner"], PARTNER_ID, mode)
+    agent = Agent(backend, scenario["allowed_actions"], scenario["partner"], PARTNER_ID, mode,
+                  skills=bound if use_skills else None, briefing=briefing)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     fingerprint = digest(persona)
-    manifest = {"schema_version": "1.1", "status": "running", "backend": backend.label,
+    manifest = {"schema_version": "1.2", "status": "running", "backend": backend.label,
                 "model": backend.model, "mode": mode, "interface": "env-contract-v0 step/perceive", "versions": dict(VERSIONS),
                 "stable_snapshot_id": digest(persona["stable"]), "code_version": code_version(),
                 "persona_hash": fingerprint,
                 "scenario_hash": digest(scenario), "mechanism_hash": digest(CARDS),
+                "skills": None if bound is None else {"enabled": bool(use_skills), "binding_hash": digest(skills),
+                                                      "skills_hash": digest(bound),
+                                                      "names": [s["name"] for s in bound]},
+                "briefing": briefing is not None,
                 "sampling": "mock deterministic; real model temperature 0.3; server determinism not guaranteed",
                 "evidence_boundary": "engineering smoke run; no human-validity or method-effectiveness claim"}
     write_json(output / "manifest.json", manifest)
-    write_json(output / "inputs.json", {"persona": persona, "scenario": scenario, "mechanisms": CARDS})
+    write_json(output / "inputs.json", {"persona": persona, "scenario": scenario, "mechanisms": CARDS,
+                                        "skills_binding": skills, "skills": bound})
     write_json(output / "views.json", compile_views(persona))
     try:
         with (output / "audit.jsonl").open("w", encoding="utf-8") as audit, \
@@ -213,6 +239,7 @@ def run_episode(persona, scenario, backend, output, mode="profile_state_mechanis
                 for snapshot in (stepped.state, perceived.state):
                     states.write(json.dumps(snapshot, ensure_ascii=False) + "\n")
                 audit.write(json.dumps({"turn": turn, "controller_input": agent.last_payload,
+                                        "expression_input": agent.last_express,
                                         "decision": agent.last_decision, "thought": stepped.thought,
                                         "proposal": to_dict(proposal), "step_delta": stepped.delta,
                                         "outcomes": [to_dict(e) for e in outcomes],

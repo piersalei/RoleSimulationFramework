@@ -9,6 +9,7 @@ report says nothing about whether the simulated role is psychologically plausibl
 import json
 from pathlib import Path
 
+from .briefing import briefing_for, mentions, recap_entries
 from .catalog import digest, write_json
 from .state import OPERATORS, VERSIONS, may_write, validate_dynamic
 from .modules import governing
@@ -39,7 +40,10 @@ def audit_run(run_dir):
     records = _lines(run / "audit.jsonl")
     mech_log = _lines(run / "mechanism_log.jsonl")
     role = inputs["persona"]["id"]
+    briefing = briefing_for(inputs["scenario"], role)
     visible = {e["event_id"] for e in events if role in e["visibility"]["audience"]}
+    # The recap is the role's own memory of earlier history, seeded before the first event.
+    visible |= {e["id"] for e in recap_entries(briefing)}
     hidden = [e for e in events if role not in e["visibility"]["audience"]]
     by_id = {s["state_id"]: s for s in states}
 
@@ -83,7 +87,7 @@ def audit_run(run_dir):
         own.add(rec["proposal"]["proposal_id"])
         for delta in (rec["step_delta"], rec["perceive_delta"]):
             snap = by_id.get(delta.get("to_state_id"))
-            known = (set(snap["memory"]) if snap else set()) | own
+            known = (set(snap["memory"]) if snap else set()) | own | {e["id"] for e in recap_entries(briefing)}
             for change in delta.get("changes", []):
                 changes_seen += 1
                 where = {"state_id": delta.get("to_state_id"), "path": change.get("path")}
@@ -120,6 +124,22 @@ def audit_run(run_dir):
     write_check = _check("operator_write_compatible", "机制与写回相容性（权限层）", write_fail, changes_seen,
                          "operator registry, path permission and module status only; theory fit needs human scoring")
 
+    # -- concealed information (scene briefing) ------------------------------
+    secrets = briefing["conceal"] if briefing else []
+    conceal_fail, disclosed = [], []
+    for rec in records:
+        speech = rec["proposal"]["content"]
+        expression = json.dumps(rec.get("expression_input"), ensure_ascii=False)
+        for item in secrets:
+            if item["text"] in expression:
+                conceal_fail.append({"turn": rec["turn"], "item": item["id"],
+                                     "error": "concealed text reached the expression prompt"})
+        for item_id in mentions(speech, secrets):
+            conceal_fail.append({"turn": rec["turn"], "item": item_id, "error": "concealed item spoken"})
+        disclosed += [{"turn": rec["turn"], "item": i} for i in mentions(speech, briefing["disclose"] if briefing else [])]
+    conceal_check = _check("concealed_info_withheld", "证据与可见性", conceal_fail, len(records) * len(secrets),
+                           "keyword markers only; paraphrased leaks need human review")
+
     # -- soft constraints, exceptions, rejections (reported, not failures) ---
     flags = [{"commit_key": e["commit_key"], **f} for e in mech_log for f in e.get("flags", [])]
     rejected = [{"commit_key": e["commit_key"], **r} for e in mech_log for r in e.get("rejected", [])]
@@ -130,7 +150,7 @@ def audit_run(run_dir):
         for item in final["module_status"].values():
             coverage[item["status"]] = coverage.get(item["status"], 0) + 1
 
-    checks = [field_check, evidence_check, write_check, stable_check, trace_check]
+    checks = [field_check, evidence_check, write_check, stable_check, trace_check, conceal_check]
     return {
         "run": run.name, "role_id": role, "manifest_status": manifest.get("status"),
         "passed": all(c["status"] == "pass" for c in checks) and manifest.get("status") == "completed",
@@ -138,6 +158,7 @@ def audit_run(run_dir):
         "soft_violations": [f for f in flags if f["flag"] == "soft_violation"],
         "exceptions_approved": [f for f in flags if f["flag"] == "exception_approved"],
         "rejected_groups": rejected,
+        "disclosed_items": disclosed,
         "error_rate": {"candidate_changes": candidates, "rejected_groups": len(rejected)},
         "module_coverage": coverage,
         "status_transitions": manifest.get("status_transitions"),
@@ -158,6 +179,7 @@ def render_markdown(report):
     rate = report["error_rate"]
     lines += ["", f"- 软约束违反：{len(report['soft_violations'])}；豁免：{len(report['exceptions_approved'])}",
               f"- 被拒依赖组：{rate['rejected_groups']} / 候选变化 {rate['candidate_changes']}",
+              f"- 主动透露（简报 disclose 条目被说出）：{len(report['disclosed_items'])} 次（只统计，不判错）",
               f"- 模块覆盖（末态）：{json.dumps(report['module_coverage'], ensure_ascii=False)}",
               f"- 需人工评分的维度：{'、'.join(report['needs_human_scoring'])}", ""]
     for c in report["checks"]:

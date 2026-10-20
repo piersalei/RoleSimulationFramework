@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "id": "cooperation_conflict_v1",
   "goal": "在不做无法兑现的承诺的前提下，与合作方明确可核验的交付范围。",
   "partner": "合作方负责人",
@@ -94,5 +94,38 @@
   "world_private": {
     "do_not_disclose": "HIDDEN_WORLD_SENTINEL_47",
     "purpose": "知识隔离测试；不传给角色或表达模型。"
+  },
+  "briefings": {
+    "*": {
+      "goal": "只承诺能核实的部分，同时不让合作关系破裂。",
+      "disclose": [
+        {
+          "id": "d1",
+          "text": "前两批记录你已经核对完毕，今天可以先交付这部分。",
+          "markers": [
+            "前两批"
+          ]
+        }
+      ],
+      "conceal": [
+        {
+          "id": "c1",
+          "text": "你这边第三批数据其实还没清洗完，即使对方的说明今天到了，也来不及全部交付。",
+          "markers": [
+            "没清洗完",
+            "未清洗",
+            "还没清洗",
+            "第三批"
+          ],
+          "strategy": "omission"
+        }
+      ],
+      "recap": [
+        {
+          "id": "recap:r1",
+          "text": "上周例会上，合作方承诺本周一前补发数据说明；你答应收到说明后三天内交付全部数据。"
+        }
+      ]
+    }
   }
 }

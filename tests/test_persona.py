@@ -12,7 +12,8 @@ DEMOGRAPHICS = "stable.identity.demographics"
 
 
 def load(name="cautious.json"):
-    return json.loads((ROOT / "examples" / name).read_text())
+    folder = "scenes" if name == "cooperation_conflict.json" else "personas"
+    return json.loads((ROOT / "examples" / folder / name).read_text())
 
 
 class PersonaV2Tests(unittest.TestCase):

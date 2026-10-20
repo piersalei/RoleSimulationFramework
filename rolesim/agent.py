@@ -5,6 +5,9 @@ own memory and state chain; the environment stores snapshots but never edits the
 """
 import copy
 
+from . import memory as mem
+from . import skills as sk
+from .briefing import controller_view, expression_view, recap_entries
 from .catalog import digest
 from .contract import (PerceiveRequest, PerceiveResponse, ProposedAction, StepRequest,
                        StepResponse, Visibility, validate_event)
@@ -19,7 +22,7 @@ PARTNER = "partner"  # relation key for the single focal partner in this slice
 MODES = ("profile_only", "profile_state", "profile_state_mechanisms")
 
 
-def initial_state():
+def initial_state(briefing=None):
     dynamic, status = new_dynamic([PARTNER])
     log = []
     # Prototype starting values, not measured baselines: marked origin "default" and
@@ -31,8 +34,8 @@ def initial_state():
                  ["engineering_default"])
     validate_dynamic(dynamic, status)
     return {"schema_version": SCHEMA_VERSION, "psychology_version": PSYCHOLOGY_VERSION,
-            "dynamic": dynamic, "module_status": status, "status_log": log, "memory": [],
-            "seen_ids": [], "updates": [], "mechanism_log": [], "commits": {}}
+            "dynamic": dynamic, "module_status": status, "status_log": log,
+            "memory": recap_entries(briefing), "seen_ids": [], "updates": [], "mechanism_log": [], "commits": {}}
 
 
 def observation(event):
@@ -89,20 +92,27 @@ def observe(state, event, persona, phase="perceive"):
     delta["changes"] = adopted
     delta["rejected"] = log["rejected"]
     state["mechanism_log"].append(log)
-    state["memory"].append(observation(event))
+    mem.add(state["memory"], observation(event))
     state["seen_ids"].append(event.event_id)
     state["updates"].append(delta)
     return delta
 
 
-def make_payload(persona, state, trigger, scene_context, partner, allowed, mode):
+def make_payload(persona, state, trigger, scene_context, partner, allowed, mode, skills=None, briefing=None):
+    """Decision prompt. Skills and briefing belong to the profile, so they appear in every mode."""
     views = compile_views(persona)
     if not allowed:
         raise ValueError("no feasible action remains")
+    query = " ".join(filter(None, [(trigger or {}).get("content"), (briefing or {}).get("goal")]))
     data = {"role": views["role_self"], "behavioral_constraints": views["controller_only"],
             "goal": scene_context, "partner": partner,
-            "visible_history": copy.deepcopy(state["memory"]),
+            "visible_history": mem.recall(state["memory"], query),
             "allowed_actions": list(allowed)}
+    if briefing:
+        data["briefing"] = controller_view(briefing)
+    if skills:
+        data["skill_catalog"] = sk.catalog(skills)
+        data["active_skills"] = sk.select(skills, trigger, allowed, briefing)
     if mode not in MODES:
         raise ValueError(f"unknown mode: {mode}")
     if mode != "profile_only":
@@ -127,12 +137,17 @@ def validate_decision(decision, payload):
 
 
 class Agent:
-    def __init__(self, backend, allowed_actions, partner, partner_id=PARTNER, mode="profile_state_mechanisms"):
+    def __init__(self, backend, allowed_actions, partner, partner_id=PARTNER, mode="profile_state_mechanisms",
+                 skills=None, briefing=None):
+        """`skills` is a bound skill list (skills.bind); `briefing` is this role's validated scene briefing."""
         if mode not in MODES:
             raise ValueError(f"unknown mode: {mode}")
         self.backend = backend
         self.allowed_actions = list(allowed_actions)
         self.partner, self.partner_id, self.mode = partner, partner_id, mode
+        self.skills = copy.deepcopy(skills) or None
+        self.briefing = copy.deepcopy(briefing) or None
+        self.last_express = None
         self.persona = None
         self.state = None
         self.state_id = None
@@ -150,7 +165,7 @@ class Agent:
             if set(profile["stable"]["mechanism_priors"]) != {c["id"] for c in CARDS}:
                 raise ValueError("mechanism priors must match the enabled card registry")
             self.persona = copy.deepcopy(profile)
-            self.state = initial_state()
+            self.state = initial_state(self.briefing)
         elif profile is not None and profile != self.persona:
             raise ValueError("stable persona cannot change within an episode")
         if role_id != self.persona["id"]:
@@ -213,18 +228,24 @@ class Agent:
             work = copy.deepcopy(self.state)
             log_start = len(work["mechanism_log"])
             changes, trigger = self._ingest(work, req.new_events, req.role_id, "step")
-            payload = make_payload(self.persona, work, trigger, req.scene_context,
-                                   self.partner, self._allowed(work["memory"]), self.mode)
+            payload = make_payload(self.persona, work, trigger, req.scene_context, self.partner,
+                                   self._allowed(work["memory"]), self.mode, self.skills, self.briefing)
             self.last_payload = payload
             decision = self.backend.decide(copy.deepcopy(payload))
             self.last_decision = decision
             validate_decision(decision, payload)
             views = compile_views(self.persona)
-            speech = self.backend.express({
-                "role": views["role_self"],
-                "style_constraints": [r for r in views["controller_only"]["conditional_rules"]
-                                      if r["source_field"].startswith("speech_style.")],
-                "action": decision["action"], "visible_history": copy.deepcopy(work["memory"])})
+            # Need-to-know: no concealed text, decision guidance or skill names reach this prompt.
+            express = {"role": views["role_self"],
+                       "style_constraints": [r for r in views["controller_only"]["conditional_rules"]
+                                             if r["source_field"].startswith("speech_style.")],
+                       "action": decision["action"], "visible_history": copy.deepcopy(payload["visible_history"])}
+            if self.skills:
+                express["skill_style"] = sk.expression_hints(self.skills, payload["active_skills"])
+            if self.briefing:
+                express["disclosure"] = expression_view(self.briefing)
+            self.last_express = express
+            speech = self.backend.express(copy.deepcopy(express))
             text(speech, "speech")
             if len(speech) > 600:
                 raise ValueError("speech too long")
@@ -233,8 +254,8 @@ class Agent:
             action = ProposedAction(proposal_id=proposal_id, kind="speech", content=speech,
                                     proposed_visibility=Visibility("public", audience),
                                     target=[self.partner_id], intent_note=decision["action"])
-            work["memory"].append({"id": proposal_id, "type": "own_action", "actor": req.role_id,
-                                   "content": speech, "cues": {}})
+            mem.add(work["memory"], {"id": proposal_id, "type": "own_action", "actor": req.role_id,
+                                     "content": speech, "cues": {}})
             self.intents[proposal_id] = decision["action"]
             state, delta = self._commit(work, req.turn, "step", changes, log_start)
             return StepResponse(req.role_id, req.turn, [action], decision["brief_reason"], state, delta)

@@ -1,0 +1,46 @@
+{
+  "schema_version": "skills-binding-1.0",
+  "persona_id": "cautious",
+  "skills": [
+    {
+      "name": "verify-before-commit",
+      "priority": 0.95,
+      "note": "工程侧按画像拟定的绑定与优先级，未经心理学组审定：核查偏好高、审慎分面高"
+    },
+    {
+      "name": "selective-disclosure",
+      "priority": 0.9,
+      "note": "工程侧按画像拟定的绑定与优先级，未经心理学组审定：焦虑分面高，倾向回避暴露自身不足"
+    },
+    {
+      "name": "staged-commitment",
+      "priority": 0.8,
+      "note": "工程侧按画像拟定的绑定与优先级，未经心理学组审定：尽责且审慎，偏好可兑现的小承诺"
+    },
+    {
+      "name": "acknowledge-first",
+      "priority": 0.8,
+      "note": "工程侧按画像拟定的绑定与优先级，未经心理学组审定：表达直接性低，先照顾对方处境"
+    },
+    {
+      "name": "accept-verified-repair",
+      "priority": 0.75,
+      "note": "工程侧按画像拟定的绑定与优先级，未经心理学组审定：修复机制先验高，但依赖兑现证据"
+    },
+    {
+      "name": "soft-boundary",
+      "priority": 0.7,
+      "note": "工程侧按画像拟定的绑定与优先级，未经心理学组审定：顺从分面高，边界以委婉方式表达"
+    },
+    {
+      "name": "pause-under-pressure",
+      "priority": 0.6,
+      "note": "工程侧按画像拟定的绑定与优先级，未经心理学组审定：威胁敏感度高、恢复慢"
+    },
+    {
+      "name": "proactive-disclosure",
+      "priority": 0.4,
+      "note": "工程侧按画像拟定的绑定与优先级，未经心理学组审定：主张性低，较少主动陈述"
+    }
+  ]
+}
