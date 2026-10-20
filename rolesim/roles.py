@@ -2,11 +2,12 @@
 
     roles/<id>.json    one file per role: persona (schema 2.0, embedded unchanged),
                        skills (name / priority / note) and the opening setup
-    scenes/<id>.json   one background file per scene (scene schema 1.2)
+    scenes/<id>.json   one background file per scene (scene schema 2.0): shared
+                       background, two seats, turn limit, allowed moves
 
-The file name is the id. Any role can be seated in any scene that `fit` accepts; swapping
-either side is a matter of naming another file. The scene format is a stand-in until the
-environment group's background format lands; it does not direct the role.
+The file name is the id. A run seats one role per seat, in order; what happens is then
+up to the roles. The scene format is a stand-in until the environment group's
+background format lands; it does not direct the roles.
 """
 from collections import namedtuple
 from pathlib import Path
@@ -17,7 +18,7 @@ from .catalog import digest
 from .mechanisms import CARDS as MECHANISM_CARDS
 from .persona import validate_persona
 from .providers import strict_json
-from .runtime import make_agent, run_episode, scene_event_ids, validate_scenario
+from .runtime import RESERVED_IDS, make_agent, run_dialogue, validate_scenario
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLES_DIR = ROOT / "roles"
@@ -25,7 +26,7 @@ SCENES_DIR = ROOT / "scenes"
 ROLE_FORMAT = "role-1.0"
 ROLE_KEYS = {"format", "persona", "skills", "setup"}
 
-Seated = namedtuple("Seated", "agent role_id role_profile scene_context")
+Seated = namedtuple("Seated", "agent role_id role_profile scene_context title")
 
 
 def _path(ref, folder):
@@ -62,7 +63,7 @@ def validate_role(role_file, library=None):
         bound = sk.bind(binding(role_file), role_file["persona"]["id"],
                         library if library is not None else sk.load_library())
     if role_file["setup"] is not None:
-        validate_briefing(role_file["setup"])
+        validate_briefing(role_file["setup"], RESERVED_IDS)
     return bound
 
 
@@ -91,54 +92,69 @@ def available(folder):
 
 
 def fit(role, scene):
-    """Errors stop a seating; notes are things an author may want to know."""
+    """Can this role sit in this scene? Errors stop a seating; notes are things an author may want to know."""
     persona, scenario, setup = role["persona"], scene["scenario"], role["setup"]
     errors, notes = [], []
     if set(persona["stable"]["mechanism_priors"]) != {c["id"] for c in MECHANISM_CARDS}:
         errors.append("persona mechanism priors do not match the enabled mechanism cards")
     if setup is not None:
         try:
-            validate_briefing(setup, scene_event_ids(scenario))
+            validate_briefing(setup, RESERVED_IDS)
         except ValueError as exc:
             errors.append(f"setup: {exc}")
     allowed = set(scenario["allowed_actions"])
-    # Outcome events carry no cues, so the scheduled events bound what can ever cue a skill.
-    cued = {cue for event in scenario["events"] + [scenario["evidence"]]
-            for cue, value in event["cues"].items() if value >= sk.CUE_THRESHOLD}
+    # Cues now come from each role's own appraisal of what is said, so only the setup
+    # and the action space can rule a skill out in advance.
     for skill in role["bound"] or []:
         if skill["trigger"]:
             if not (setup or {}).get(skill["trigger"]):
                 notes.append(f"skill {skill['name']}: never active here (setup has no '{skill['trigger']}' items)")
         elif skill["actions"] and not set(skill["actions"]) & allowed:
             notes.append(f"skill {skill['name']}: never active here (none of its actions are allowed)")
-        elif not set(skill["cues"]) & cued:
-            notes.append(f"skill {skill['name']}: never active here (no event carries its cues)")
     return {"ok": not errors, "errors": errors, "notes": notes}
 
 
-def _check(role, scene):
-    result = fit(role, scene)
+def fit_cast(roles, scene):
+    """One distinct role per seat, each fitting the scene."""
+    seats = scene["scenario"]["seats"]
+    errors, notes = [], []
+    if len(roles) != len(seats):
+        errors.append(f"scene {scene['id']} has {len(seats)} seats; got {len(roles)} roles")
+    if len({r["id"] for r in roles}) != len(roles):
+        errors.append("the same role cannot take two seats")
+    for role, seat in zip(roles, seats):
+        result = fit(role, scene)
+        errors += [f"{role['id']} ({seat['title']}): {e}" for e in result["errors"]]
+        notes += [f"{role['id']} ({seat['title']}): {n}" for n in result["notes"]]
+    return {"ok": not errors, "errors": errors, "notes": notes}
+
+
+def _check(roles, scene):
+    result = fit_cast(roles, scene)
     if not result["ok"]:
-        raise ValueError(f"role {role['id']} does not fit scene {scene['id']}: " + "; ".join(result["errors"]))
+        raise ValueError(f"cast does not fit scene {scene['id']}: " + "; ".join(result["errors"]))
 
 
-def seat(role, scene, backend, mode="profile_state_mechanisms", use_skills=True):
-    """Seat a role in a scene. An environment drives the returned Agent through
-    `step`/`perceive`, sending `role_profile` on the first step as the contract requires."""
-    _check(role, scene)
-    agent = make_agent(role["persona"], scene["scenario"], backend, mode, role["bound"], use_skills, role["setup"])
-    return Seated(agent, role["id"], role["persona"], scene["scenario"]["background"])
+def seat(roles, scene, backend, mode="profile_state_mechanisms", use_skills=True):
+    """Seat the cast. An environment drives each returned Agent through `step`/`perceive`,
+    sending `role_profile` on the first step as the contract requires."""
+    _check(roles, scene)
+    ids = [r["id"] for r in roles]
+    scenario = scene["scenario"]
+    return [Seated(make_agent(r["persona"], scenario, backend, i, ids[1 - i], mode, r["bound"], use_skills, r["setup"]),
+                   r["id"], r["persona"], scenario["background"], scenario["seats"][i]["title"])
+            for i, r in enumerate(roles)]
 
 
-def origin(role, scene):
-    return {"role": {"id": role["id"], "file_hash": digest(role["file"])},
+def origin(roles, scene):
+    return {"roles": [{"id": r["id"], "file_hash": digest(r["file"])} for r in roles],
             "scene": {"id": scene["id"], "file_hash": digest(scene["scenario"])}}
 
 
-def run(role, scene, backend, output, mode="profile_state_mechanisms", use_skills=True):
-    """The scripted-environment run for a role file in a scene file."""
-    _check(role, scene)
-    if not use_skills and role["binding"] is None:
-        raise ValueError("--no-skills needs a role that lists skills")
-    return run_episode(role["persona"], scene["scenario"], backend, output, mode, role["binding"],
-                       use_skills, role["setup"], origin(role, scene))
+def run(roles, scene, backend, output, mode="profile_state_mechanisms", use_skills=True):
+    """Run a scene with one role file per seat."""
+    _check(roles, scene)
+    if not use_skills and all(r["binding"] is None for r in roles):
+        raise ValueError("--no-skills needs at least one role that lists skills")
+    cast = [{"persona": r["persona"], "skills": r["binding"], "briefing": r["setup"]} for r in roles]
+    return run_dialogue(cast, scene["scenario"], backend, output, mode, use_skills, origin(roles, scene))

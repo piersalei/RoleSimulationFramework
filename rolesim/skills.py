@@ -3,8 +3,8 @@
 A skill is a habitual coping or speaking strategy (persona line). It can only shape
 which feasible action the controller favours and how the line is phrased; it never
 writes state. Loading is progressive: every bound skill contributes name and
-description; a skill's body enters the decision prompt only when the current event
-or the role's briefing activates it; the expression prompt only receives the
+description; a skill's body enters the decision prompt only when the cues the role
+perceived in the current event, or the role's briefing, activate it; the expression prompt only receives the
 "表达要点" section of active skills.
 
 Our own fields live under `metadata`, which the Agent Skills specification allows,
@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .catalog import digest
 from .persona import bounded, text
+from .vocab import ACTIONS, CUES
 
 ROOT = Path(__file__).resolve().parents[1]
 LIBRARY = ROOT / "library" / "skills"
@@ -24,9 +25,6 @@ BINDING_VERSION = "skills-binding-1.0"
 NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 KINDS = {"decision", "expression", "disclosure"}
 TRIGGERS = {"conceal", "disclose"}
-# Same vocabularies as the scripted environment (runtime.CUES / runtime.ACTIONS).
-CUES = {"uncertainty", "pressure", "commitment", "repair", "conflict"}
-ACTIONS = {"request_evidence", "ask_clarification", "propose_plan", "set_boundary", "wait"}
 SECTIONS = {"决策要点": "decision", "表达要点": "expression", "不会做的事": "avoid", "边界": "limits"}
 CUE_THRESHOLD = .5
 MAX_ACTIVE = 3

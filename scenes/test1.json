@@ -1,98 +1,29 @@
 {
-  "schema_version": "1.2",
+  "schema_version": "2.0",
   "id": "test1",
-  "background": "你所在的研究项目要向合作方交付一批数据；按约定，合作方负责补发数据说明。",
-  "partner": "合作方负责人",
+  "background": "某研究项目组要向合作方交付一批数据。上周例会约定：合作方本周一前补发数据说明，项目组收到说明后三天内交付全部数据。今天双方负责人当面沟通交付安排。",
+  "seats": [
+    {
+      "id": "project",
+      "title": "项目组数据负责人"
+    },
+    {
+      "id": "partner",
+      "title": "合作方负责人"
+    }
+  ],
+  "max_turns": 8,
   "allowed_actions": [
     "request_evidence",
     "ask_clarification",
     "propose_plan",
     "set_boundary",
-    "wait"
+    "wait",
+    "agree",
+    "close"
   ],
-  "events": [
-    {
-      "id": "e1",
-      "text": "合作方催促：今天能否交出全部数据？你尚未收到完整的状态记录。",
-      "readers": [
-        "*"
-      ],
-      "cues": {
-        "uncertainty": 0.9,
-        "pressure": 0.6,
-        "conflict": 0.9
-      },
-      "reliability_signal": 0,
-      "kind": "observation"
-    },
-    {
-      "id": "e2",
-      "text": "你核对了约定的收件箱：合作方此前承诺补发的说明仍未到达。",
-      "readers": [
-        "*"
-      ],
-      "cues": {
-        "commitment": 0.9,
-        "uncertainty": 0.6,
-        "pressure": 0.8,
-        "conflict": 0.8
-      },
-      "reliability_signal": -0.7,
-      "kind": "observation"
-    },
-    {
-      "id": "e3",
-      "text": "合作方提出先核验一部分记录，再一起协商剩余数据的时间；这仍是一项提议。",
-      "readers": [
-        "*"
-      ],
-      "cues": {
-        "repair": 0.9,
-        "commitment": 0.5,
-        "uncertainty": 0.3
-      },
-      "reliability_signal": 0,
-      "kind": "claim"
-    },
-    {
-      "id": "e4",
-      "text": "核验完成的记录已按新约定收到，你检查了收件记录。",
-      "readers": [
-        "*"
-      ],
-      "cues": {
-        "repair": 0.8,
-        "commitment": 0.9
-      },
-      "reliability_signal": 0.8,
-      "kind": "observation"
-    },
-    {
-      "id": "partner_private",
-      "text": "只有合作方收到内部通知：下周的人员安排可能改变。",
-      "readers": [
-        "partner"
-      ],
-      "cues": {},
-      "reliability_signal": 0,
-      "kind": "observation"
-    }
-  ],
-  "evidence": {
-    "id": "status_receipt",
-    "text": "你获得一份状态回执：部分数据仍在复核；回执没有给出最终完成时间。",
-    "readers": [
-      "*"
-    ],
-    "cues": {
-      "uncertainty": 0.2,
-      "pressure": 0.1
-    },
-    "reliability_signal": 0,
-    "kind": "observation"
-  },
   "world_private": {
     "do_not_disclose": "HIDDEN_WORLD_SENTINEL_47",
-    "purpose": "知识隔离测试；不传给角色或表达模型。"
+    "purpose": "知识隔离测试；不传给任何角色的模型调用。"
   }
 }

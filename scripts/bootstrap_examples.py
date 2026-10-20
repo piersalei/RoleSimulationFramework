@@ -1,7 +1,8 @@
 """Rebuild fictional, hand-authored fixtures. Not population/personality sampling.
 
 One file per role (roles/<id>.json: persona schema 2.0, skills, opening setup) and one
-background file per scene (scenes/<id>.json). The scene does not direct the role.
+background file per scene (scenes/<id>.json: shared background and two seats). The scene
+does not direct the roles; role1 is written for the project seat, role2 for the partner seat.
 """
 import copy
 import json
@@ -25,18 +26,25 @@ def skills(items):
     return [{'name': n, 'priority': p, 'note': note + why} for n, p, why in items]
 
 
-# What the role knows and wants when it enters the delivery scenes (test1, test2).
-SETUP = {
+# What each role knows and wants when it enters the delivery scenes (test1, test2).
+PROJECT_SETUP = {
     'goal': '只承诺能核实的部分，同时不让合作关系破裂。',
     'disclose': [{'id': 'd1', 'text': '前两批记录你已经核对完毕，今天可以先交付这部分。', 'markers': ['前两批']}],
     'conceal': [{'id': 'c1', 'text': '你这边第三批数据其实还没清洗完，即使对方的说明今天到了，也来不及全部交付。',
                  'markers': ['没清洗完', '未清洗', '还没清洗', '第三批'], 'strategy': 'omission'}],
     'recap': [{'id': 'recap:r1', 'text': '上周例会上，合作方承诺本周一前补发数据说明；你答应收到说明后三天内交付全部数据。'}],
 }
+PARTNER_SETUP = {
+    'goal': '今天尽量拿到全部数据；拿不到的话，至少要一个确切的交付日期。',
+    'disclose': [{'id': 'd1', 'text': '你方下周要用这批数据做中期汇报，时间很紧。', 'markers': ['中期汇报']}],
+    'conceal': [{'id': 'c1', 'text': '你方承诺补发的数据说明其实还没发出，因为负责的同事这周请假了。',
+                 'markers': ['请假', '还没发出', '没发出'], 'strategy': 'strategic_ambiguity'}],
+    'recap': [{'id': 'recap:r1', 'text': '上周例会上，你方承诺本周一前补发数据说明；项目组答应收到说明后三天内交付全部数据。'}],
+}
 
 
-def role(persona, skill_items):
-    return {'format': ROLE_FORMAT, 'persona': persona, 'skills': skills(skill_items), 'setup': copy.deepcopy(SETUP)}
+def role(persona, skill_items, setup):
+    return {'format': ROLE_FORMAT, 'persona': persona, 'skills': skills(skill_items), 'setup': copy.deepcopy(setup)}
 
 
 def normalise(raw):
@@ -130,9 +138,11 @@ save('roles/role1.json', role(base, [
     ('soft-boundary', .7, '顺从分面高，边界以委婉方式表达'),
     ('pause-under-pressure', .6, '威胁敏感度高、恢复慢'),
     ('proactive-disclosure', .4, '主张性低，较少主动陈述'),
-]))
+], PROJECT_SETUP))
 other = copy.deepcopy(base)
-other.update(id='role2', name='周越', public_description='虚构研究项目成员，负责核验与交付数据，表达较直接。', self_view=['我愿意推进工作，也会说明我能承担到什么程度。', '合作应有清楚的责任和可核验的条件。'])
+other.update(id='role2', name='周越', public_description='虚构合作方负责人，需要按时拿到数据，表达较直接。',
+             self_view=['我需要按时拿到能用的数据，对进度要心里有数。', '合作应有清楚的责任和可核验的条件。'])
+other['stable']['identity']['social_roles'] = ['合作方负责人，负责接收和使用数据']
 t = other['stable']['traits']
 t['personality']['facets'].update({
     'neuroticism.anxiety': -1.2, 'neuroticism.vulnerability': -1.0,
@@ -148,8 +158,8 @@ other['stable']['speech_style'] = {'baseline': {'directness': .9},
 other['stable']['mechanism_priors'] = {'verify': .25, 'appraise': .3, 'trust': .65, 'repair': .45, 'boundary': .95}
 other['stable']['values']['schwartz_priorities']['weights'] = normalise(
     {'benevolence_dependability': .7, 'security_personal': .4, 'self_direction_action': .85})
-other['stable']['core_goals'] = [{'id': 'g1', 'text': '推进交付，同时明确自己能承担的范围', 'priority': .9, 'stability': .8,
-                                  'source': FIXTURE, 'supports': [{'id': 'g1a', 'text': '把责任与可核验条件说清楚'}]}]
+other['stable']['core_goals'] = [{'id': 'g1', 'text': '按期拿到完整、可用的数据', 'priority': .9, 'stability': .8,
+                                  'source': FIXTURE, 'supports': [{'id': 'g1a', 'text': '把剩余数据的交付日期落实清楚'}]}]
 save('roles/role2.json', role(other, [
     ('firm-boundary', .95, '主张性高、表达直接性高'),
     ('proactive-disclosure', .85, '倾向主动摆出条件和理由'),
@@ -157,32 +167,19 @@ save('roles/role2.json', role(other, [
     ('accept-verified-repair', .6, '修复机制先验中等'),
     ('selective-disclosure', .6, '焦虑分面低，隐瞒动机较弱'),
     ('verify-before-commit', .4, '核查偏好低'),
-]))
+], PARTNER_SETUP))
 
-def event(i, content, cues, signal=0, readers=None, kind='observation'):
-    return {'id': i, 'text': content, 'readers': readers or ['*'], 'cues': cues, 'reliability_signal': signal, 'kind': kind}
+SEATS = [{'id': 'project', 'title': '项目组数据负责人'}, {'id': 'partner', 'title': '合作方负责人'}]
+ACTIONS = ['request_evidence', 'ask_clarification', 'propose_plan', 'set_boundary', 'wait', 'agree', 'close']
+WORLD_PRIVATE = {'do_not_disclose': 'HIDDEN_WORLD_SENTINEL_47', 'purpose': '知识隔离测试；不传给任何角色的模型调用。'}
 
-scenario = {
-    'schema_version': SCENE_VERSION, 'id': 'test1',
-    'background': '你所在的研究项目要向合作方交付一批数据；按约定，合作方负责补发数据说明。',
-    'partner': '合作方负责人',
-    'allowed_actions': ['request_evidence', 'ask_clarification', 'propose_plan', 'set_boundary', 'wait'],
-    'events': [
-        event('e1', '合作方催促：今天能否交出全部数据？你尚未收到完整的状态记录。', {'uncertainty': .9, 'pressure': .6, 'conflict': .9}),
-        event('e2', '你核对了约定的收件箱：合作方此前承诺补发的说明仍未到达。', {'commitment': .9, 'uncertainty': .6, 'pressure': .8, 'conflict': .8}, -.7),
-        event('e3', '合作方提出先核验一部分记录，再一起协商剩余数据的时间；这仍是一项提议。', {'repair': .9, 'commitment': .5, 'uncertainty': .3}, kind='claim'),
-        event('e4', '核验完成的记录已按新约定收到，你检查了收件记录。', {'repair': .8, 'commitment': .9}, .8),
-        event('partner_private', '只有合作方收到内部通知：下周的人员安排可能改变。', {}, readers=['partner']),
-    ],
-    'evidence': event('status_receipt', '你获得一份状态回执：部分数据仍在复核；回执没有给出最终完成时间。', {'uncertainty': .2, 'pressure': .1}),
-    'world_private': {'do_not_disclose': 'HIDDEN_WORLD_SENTINEL_47', 'purpose': '知识隔离测试；不传给角色或表达模型。'},
-}
-save('scenes/test1.json', scenario)
 
-# test2: after the partial delivery the partner presses on the remainder,
-# which puts a role's concealed item under direct questioning.
-followup = copy.deepcopy(scenario)
-followup['id'] = 'test2'
-followup['events'].insert(4, event('e5', '合作方追问：剩下的数据具体卡在哪一步？能不能给一个全部交付的确切日期？',
-                                   {'pressure': .8, 'uncertainty': .5, 'conflict': .6, 'commitment': .7}, kind='claim'))
-save('scenes/test2.json', followup)
+def scene(scene_id, background, max_turns=8):
+    return {'schema_version': SCENE_VERSION, 'id': scene_id, 'background': background, 'seats': copy.deepcopy(SEATS),
+            'max_turns': max_turns, 'allowed_actions': list(ACTIONS), 'world_private': copy.deepcopy(WORLD_PRIVATE)}
+
+
+save('scenes/test1.json', scene('test1', '某研究项目组要向合作方交付一批数据。上周例会约定：合作方本周一前补发数据说明，'
+                                         '项目组收到说明后三天内交付全部数据。今天双方负责人当面沟通交付安排。'))
+save('scenes/test2.json', scene('test2', '前两批数据已经交付并核验通过，剩余数据还没有交付。'
+                                         '合作方负责人约项目组数据负责人见面，确认剩余数据的进度和交付日期。'))

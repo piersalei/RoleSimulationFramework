@@ -154,7 +154,7 @@
   - 行动反馈、新证据、权力变化或时间推进到达时，开启新的 `event_phase`，重新核定可见性并读取最新提交状态。
   - 重试以角色、事件、阶段和提交编号保证幂等。
   - `StateDelta` 的 `mechanism` 取值从 7 个改为 11 个算子，属于对环境组可见的变化，需要告知（见第 6 节）。
-- 现状：`rolesim/contract.py` 定义合同附录里的数据类；`rolesim/agent.py` 的 `Agent.step` / `Agent.perceive` 按 v0 合同实现。`runtime.ScriptedEnvironment` 是其中一种裁决器：单焦点角色、四轮固定反馈，产出 `type=outcome` 事件并带 `of_proposal`。多角色调度器尚未实现。两处工程侧扩展待环境组确认：`Event.signals` 携带脚本标注的线索；脚本裁决器从 `ProposedAction.intent_note` 读取动作标签。
+- 现状：`rolesim/contract.py` 定义合同附录里的数据类；`rolesim/agent.py` 的 `Agent.step` / `Agent.perceive` 按 v0 合同实现。`runtime.DialogueEnvironment` 是两个角色的对话环境：只给共享背景，开场后按座位轮流请角色发言，把台词原样转给对方，不编造结果。没有环境标注线索时，由角色自己的模型从本角色立场评价线索，程序按公式更新状态。两处工程侧扩展待环境组确认：`Event.signals` 可携带环境标注的线索（有则优先）；动作标签放在 `ProposedAction.intent_note`。
 - 归属：场景组定义接口，工程侧实现适配器。
 
 ### M7 轨迹记录与回放（trace）
@@ -217,9 +217,9 @@
 | U7 | 状态更新器 | M3 | 按 11 个算子生成候选 StateDelta；依赖组原子提交；硬错拒绝、软错标记、豁免记录 | 激活卡 + 事件 → StateDelta | 心理学组 3.1–3.3、7 | `commit_phase` 已有；只有紧张、信任两条规则 |
 | U8 | 决策控制器 | M5 | 生成并筛选选项，选出 ProposedAction，产出私有 thought，在规则区间内选变化量 | 视图 + 状态 + 卡 → actions | 环境组 2.3、3.1 | `make_payload` + `decide`，部分 |
 | U9 | 表达 | M5 | 按已选动作和风格生成台词，不泄露机制和分数 | action + 自知 + 风格 → speech | 环境组 2.3 | `express`，已有 |
-| U10 | 环境适配层 | M6 | 实现 `step` / `perceive`，数据类；`event_phase` 与幂等；脚本环境作测试替身；多角色调度器 | 环境组请求 ⇄ Agent | 环境组 3、4 | `agent.py` + `contract.py` + `ScriptedEnvironment`；多角色调度未做 |
+| U10 | 环境适配层 | M6 | 实现 `step` / `perceive`，数据类；`event_phase` 与幂等；脚本环境作测试替身；多角色调度器 | 环境组请求 ⇄ Agent | 环境组 3、4 | `agent.py` + `contract.py` + `DialogueEnvironment`（两个座位）；三方以上未做 |
 | U11 | 模型后端 | M5 | 兼容接口调用、严格 JSON、失败不回退 mock；回环地址不走代理 | — | — | `providers.py`，已有 |
-| U12 | 运行记录 | M7 | manifest、inputs、audit、public、state 序列、`mechanism_log`、prompt 与原始输出、四类版本号、Git SHA | — | 环境组 5 | `run_episode`，部分（缺原始模型输出落盘与回放） |
+| U12 | 运行记录 | M7 | manifest、inputs、audit、public、state 序列、`mechanism_log`、prompt 与原始输出、四类版本号、Git SHA | — | 环境组 5 | `run_dialogue`，每个角色一份记录，含思考模式推理；缺回放工具 |
 | U13 | 评测 | M8 | 自动审计（越界、无证据、stable 被改、引用不可见事件、规则覆盖）、样本包导出、标注工具 | 运行目录 → 报告 | 心理学组 5、第三部分 | `audit.py`、`package.py` 已有；标注工具、复标统计未做 |
 
 单元间依赖：U2→U3→U8/U9；U5→U4；U6→U7→U4；U10 调用 U5、U6、U7、U8、U9；U12、U13 读取全部产物。M9 工程基础不单列实现单元。
@@ -238,7 +238,7 @@
 
 - 五块 dynamic 结构、范围、`source` 必填、`apply_delta` 四条硬约束和反例测试（`state.py`、`tests/test_state.py`）。
 - 机制卡到 7 个旧机制名的映射 `CARD_MECHANISMS`。
-- `step` / `perceive` 数据类与 Agent 实现、可见性二次校验、`type=outcome` 事件回写、`prev_state_id` 校验（`contract.py`、`agent.py`、`runtime.ScriptedEnvironment`）。
+- `step` / `perceive` 数据类与 Agent 实现、可见性二次校验、`type=outcome` 事件回写、`prev_state_id` 校验（`contract.py`、`agent.py`、`runtime.DialogueEnvironment`）。
 
 ### 阶段 A：结构升级到 v1（2026-10-19 完成，第 7 项和 Git SHA 除外）
 

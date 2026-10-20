@@ -1,9 +1,10 @@
-"""One focal role interacting with a scripted environment through the contract interface.
+"""Two roles in one scene, talking to each other through the environment contract.
 
-The scripted environment is one adjudicator implementation behind `step`/`perceive`;
-it is a test double, not a free-form multi-agent world simulator.
+A scene is shared background plus seats; it holds no script. The environment opens the
+scene, relays each role's speech to everyone present and stops after `max_turns` or
+when a role closes the conversation. It never writes a line for a role and never
+invents an outcome: what one role says is the only new event the other receives.
 """
-import copy
 import json
 import subprocess
 from pathlib import Path
@@ -16,145 +17,97 @@ from .catalog import digest, write_json
 from .contract import (Event, PerceiveRequest, StepRequest, Visibility, to_dict,
                        validate_event as validate_contract_event)
 from .mechanisms import CARDS
-from .persona import bounded, compile_views, text, validate_persona
+from .persona import compile_views, text, validate_persona
 from .state import VERSIONS
+from .vocab import ACTIONS
 
 CODE_ROOT = Path(__file__).resolve().parents[1]
-ACTIONS = {"request_evidence", "ask_clarification", "propose_plan", "set_boundary", "wait"}
-CUES = {"uncertainty", "pressure", "commitment", "repair", "conflict"}
 
-
-def validate_event(event):
-    if set(event) != {"id", "text", "readers", "cues", "reliability_signal", "kind"}:
-        raise ValueError("event: unexpected or missing field")
-    for key in ("id", "text"):
-        text(event[key], key)
-    if event["kind"] not in {"observation", "claim", "feedback"}:
-        raise ValueError("unsupported event kind")
-    if not isinstance(event["readers"], list) or not event["readers"]:
-        raise ValueError("event requires readers")
-    for reader in event["readers"]:
-        text(reader, "reader")
-    if not isinstance(event["cues"], dict) or not set(event["cues"]) <= CUES:
-        raise ValueError("unsupported cue")
-    for key, value in event["cues"].items():
-        bounded(value, 0, 1, key)
-    bounded(event["reliability_signal"], -1, 1, "reliability_signal")
-    if event["kind"] == "claim" and event["reliability_signal"] != 0:
-        raise ValueError("a claim cannot itself establish reliability")
-
-
-# A scene is background only: what happens, who sees it, what the world keeps private.
-# It does not direct the role; goals and secrets come with the role (roles.py, briefing.py).
-SCENE_VERSION = "1.2"
-SCENE_KEYS = {"schema_version", "id", "background", "partner", "allowed_actions", "events", "evidence",
-              "world_private"}
+# Background only: who is present and what everyone knows. Goals and secrets come with
+# the role (roles.py, briefing.py); what happens next is up to the roles.
+SCENE_VERSION = "2.0"
+SCENE_KEYS = {"schema_version", "id", "background", "seats", "max_turns", "allowed_actions", "world_private"}
+SEATS = 2
+MAX_TURNS = 40
+OPEN_ID = "open"
+RESERVED_IDS = {OPEN_ID}
 
 
 def validate_scenario(scenario):
     if not isinstance(scenario, dict) or scenario.get("schema_version") != SCENE_VERSION or set(scenario) != SCENE_KEYS:
         raise ValueError(f"scenario: expected scene schema {SCENE_VERSION} with fields {sorted(SCENE_KEYS)}")
-    for key in ("id", "background", "partner"):
+    for key in ("id", "background"):
         text(scenario[key], key)
+    seats = scenario["seats"]
+    if not isinstance(seats, list) or len(seats) != SEATS:
+        raise ValueError(f"scenario: exactly {SEATS} seats are supported")
+    for seat in seats:
+        if not isinstance(seat, dict) or set(seat) != {"id", "title"}:
+            raise ValueError("scenario seat: expected fields id, title")
+        text(seat["id"], "seat id")
+        text(seat["title"], "seat title")
+    if len({s["id"] for s in seats}) != len(seats) or len({s["title"] for s in seats}) != len(seats):
+        raise ValueError("scenario: seat ids and titles must be distinct")
+    turns = scenario["max_turns"]
+    if isinstance(turns, bool) or not isinstance(turns, int) or not SEATS <= turns <= MAX_TURNS:
+        raise ValueError(f"scenario: max_turns must be an integer from {SEATS} to {MAX_TURNS}")
     actions = scenario["allowed_actions"]
     if not isinstance(actions, list) or not actions or not set(actions) <= ACTIONS or len(set(actions)) != len(actions):
         raise ValueError("scenario: unsupported/duplicate action")
-    if not isinstance(scenario["events"], list) or not scenario["events"]:
-        raise ValueError("scenario requires scheduled events")
-    events = scenario["events"] + [scenario["evidence"]]
-    for event in events:
-        validate_event(event)
-        if event["id"].startswith(("action:", "feedback:", "speech:")):
-            raise ValueError("reserved event id prefix")
-    if len({e["id"] for e in events}) != len(events):
-        raise ValueError("duplicate event ids")
     if not isinstance(scenario["world_private"], dict):
         raise ValueError("world_private must be an object")
 
 
-def scene_event_ids(scenario):
-    return {e["id"] for e in scenario["events"] + [scenario["evidence"]]}
+class DialogueEnvironment:
+    """Opens the scene and relays speech; every event is public to the cast."""
 
-
-PARTNER_ID = "partner"
-# Fixture adjudications for actions that do not depend on world data.
-REPLIES = {"request_evidence": ("failed", "当前没有对你开放的可核对记录。"),
-           "ask_clarification": ("success", "合作方说明：请先明确今天可交付的范围，再商定剩余时间。"),
-           "propose_plan": ("partial", "方案已送交合作方，尚未得到接受或实际执行的证据。"),
-           "set_boundary": ("partial", "合作方听到了你提出的边界，尚未承诺接受。"),
-           "wait": ("success", "核对时间已预留，当前没有新的事实到达。")}
-
-
-class ScriptedEnvironment:
-    """Converts a scripted scenario into contract Events and adjudicates proposals."""
-
-    def __init__(self, scenario, role_id):
+    def __init__(self, scenario, cast):
         validate_scenario(scenario)
-        self.scenario, self.role_id = scenario, role_id
-        self.cast = [role_id, PARTNER_ID]
-        self.log = []   # every Event the environment produced, for replay
+        if len(cast) != len(scenario["seats"]) or len(set(cast)) != len(cast):
+            raise ValueError("cast: one distinct role per seat")
+        self.scenario, self.cast = scenario, list(cast)
+        self.titles = {role: seat["title"] for role, seat in zip(cast, scenario["seats"])}
+        self.log = []                               # every Event produced, for replay
+        self.inbox = {role: [] for role in cast}    # delivered at the role's next step
+        self.closed_by = None
 
-    def _event(self, raw, turn, type_, actor, outcome=None, caused_by=None):
-        if "*" in raw["readers"]:
-            visibility = Visibility("public", list(self.cast))
-        else:
-            visibility = Visibility("private", list(raw["readers"]))
-        event = Event(event_id=raw["id"], turn=turn, type=type_, actor=actor, content=raw["text"],
-                      visibility=visibility, outcome=outcome, caused_by=caused_by,
-                      signals={"cues": copy.deepcopy(raw["cues"]),
-                               "reliability_signal": raw["reliability_signal"]})
+    def _publish(self, event):
         validate_contract_event(event)
         self.log.append(event)
+        for role in event.visibility.audience:
+            if role != event.actor:
+                self.inbox[role].append(event)
         return event
 
-    def scheduled(self):
-        """Yield (turn, Event) for scheduled events, already filtered to the focal role."""
-        turn = 0
-        for raw in self.scenario["events"]:
-            if raw["kind"] == "claim":
-                type_, actor = "speech", PARTNER_ID
-            else:
-                type_, actor = "narration", "env"
-            if not visible(raw, self.role_id):
-                self._event(raw, turn + 1, type_, actor)  # logged, never delivered
-                continue
-            turn += 1
-            yield turn, self._event(raw, turn, type_, actor)
+    def open(self):
+        present = "与".join(self.titles[r] for r in self.cast)
+        return self._publish(Event(OPEN_ID, 1, "narration", "env", f"{present}开始就这件事当面沟通。",
+                                   Visibility("public", list(self.cast))))
 
-    def adjudicate(self, proposal, turn):
-        """Return the Events a proposal produces; the outcome always reaches the actor."""
-        action = proposal.intent_note
-        speech = Event(event_id=f"speech:{turn}", turn=turn, type="speech", actor=self.role_id,
-                       content=proposal.content, target=list(proposal.target),
-                       visibility=Visibility("public", list(self.cast)), caused_by=proposal.proposal_id)
-        validate_contract_event(speech)
-        self.log.append(speech)
-        evidence = self.scenario["evidence"]
-        # The world, not the model, decides whether information/action results exist.
-        if action == "request_evidence" and visible(evidence, self.role_id):
-            raw, status = evidence, "success"
-        elif action in self.scenario["allowed_actions"]:
-            status, reply = REPLIES[action]
-            raw = {"id": f"feedback:{turn}", "text": reply, "readers": [self.role_id],
-                   "cues": {}, "reliability_signal": 0}
-        else:
-            status = "blocked"
-            raw = {"id": f"feedback:{turn}", "text": "该行动在本场景中不可执行。", "readers": [self.role_id],
-                   "cues": {}, "reliability_signal": 0}
-        outcome = {"of_proposal": proposal.proposal_id, "status": status, "detail": raw["text"]}
-        result = self._event(raw, turn, "outcome", "env", outcome=outcome, caused_by=proposal.proposal_id)
-        return speech, [result]
+    def turns(self):
+        for turn in range(1, self.scenario["max_turns"] + 1):
+            if self.closed_by:
+                return
+            yield turn, self.cast[(turn - 1) % len(self.cast)]
+
+    def collect(self, role):
+        events, self.inbox[role] = self.inbox[role], []
+        return events
+
+    def relay(self, proposal, turn, speaker):
+        """Publish a proposed line as said. The chosen move stays private to the speaker."""
+        if proposal.kind != "speech" or proposal.intent_note not in self.scenario["allowed_actions"]:
+            raise ValueError("proposal is not an allowed speech move in this scene")
+        event = Event(f"speech:{turn}", turn, "speech", speaker, proposal.content,
+                      Visibility("public", list(self.cast)), target=list(proposal.target),
+                      caused_by=proposal.proposal_id)
+        self._publish(event)
+        if proposal.intent_note == "close":
+            self.closed_by = speaker
+        return event
 
 
-def visible(raw, role_id):
-    return "*" in raw["readers"] or role_id in raw["readers"]
-
-
-def _public(handle, turn, speaker, text_, action=None):
-    record = {"turn": turn, "speaker": speaker}
-    if action:
-        record["action"] = action
-    record["text"] = text_
+def _public(handle, record):
     handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
@@ -176,103 +129,129 @@ def code_version(root=CODE_ROOT):
         return {"git_sha": "unavailable", "git_dirty": None}
 
 
-def make_agent(persona, scenario, backend, mode="profile_state_mechanisms", bound=None, use_skills=True,
-               briefing=None):
-    """The one place a role is seated in a scene. The scene supplies the action space and the
-    partner; the role brings its skills and its opening setup (`briefing`). The profile itself
+def make_agent(persona, scenario, backend, seat, partner_id, mode="profile_state_mechanisms", bound=None,
+               use_skills=True, briefing=None):
+    """The one place a role takes a seat. The scene supplies the action space and who sits
+    where; the role brings its skills and its opening setup (`briefing`). The profile itself
     reaches the Agent through the first StepRequest, per the env contract."""
     validate_persona(persona)
     validate_scenario(scenario)
     if set(persona["stable"]["mechanism_priors"]) != {c["id"] for c in CARDS}:
         raise ValueError("mechanism priors must match the enabled card registry")
     if briefing is not None:
-        validate_briefing(briefing, scene_event_ids(scenario))
-    return Agent(backend, scenario["allowed_actions"], scenario["partner"], PARTNER_ID, mode,
-                 skills=bound if use_skills else None, briefing=briefing)
+        validate_briefing(briefing, RESERVED_IDS)
+    titles = [s["title"] for s in scenario["seats"]]
+    return Agent(backend, scenario["allowed_actions"], titles[1 - seat], partner_id, mode,
+                 skills=bound if use_skills else None, briefing=briefing, seat=titles[seat])
 
 
-def run_episode(persona, scenario, backend, output, mode="profile_state_mechanisms", skills=None,
-                use_skills=True, briefing=None, origin=None):
-    """Run one focal role. `skills` is the persona's skills binding; `use_skills=False` keeps it
-    on record but out of the prompts, as a no-skills control. `briefing` is the role's opening
-    setup. `origin` records which role and scene files supplied the inputs."""
-    role_id = persona["id"]
-    bound = sk.bind(skills, role_id, sk.load_library()) if skills is not None else None
-    agent = make_agent(persona, scenario, backend, mode, bound, use_skills, briefing)
-    env = ScriptedEnvironment(scenario, role_id)
+def run_dialogue(cast, scenario, backend, output, mode="profile_state_mechanisms", use_skills=True, origin=None):
+    """Run one scene. `cast` lists one {persona, skills, briefing} per seat, in seat order:
+    `skills` is the role's skills binding (or None), `briefing` its opening setup (or None).
+    `use_skills=False` keeps skills on record but out of every prompt, as a no-skills control.
+    `origin` records which role and scene files supplied the inputs."""
+    validate_scenario(scenario)
+    ids = [m["persona"]["id"] for m in cast]
+    env = DialogueEnvironment(scenario, ids)
+    agents, members = {}, {}
+    for seat, member in enumerate(cast):
+        role = ids[seat]
+        bound = sk.bind(member["skills"], role, sk.load_library()) if member["skills"] is not None else None
+        agents[role] = make_agent(member["persona"], scenario, backend, seat, ids[1 - seat], mode, bound,
+                                  use_skills, member["briefing"])
+        members[role] = {**member, "bound": bound, "fingerprint": digest(member["persona"])}
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
-    fingerprint = digest(persona)
-    manifest = {"schema_version": "1.2", "status": "running", "backend": backend.label,
-                "model": backend.model, "mode": mode, "interface": "env-contract-v0 step/perceive", "versions": dict(VERSIONS),
-                "stable_snapshot_id": digest(persona["stable"]), "code_version": code_version(),
-                "persona_hash": fingerprint,
-                "scenario_hash": digest(scenario), "mechanism_hash": digest(CARDS),
-                "skills": None if bound is None else {"enabled": bool(use_skills), "binding_hash": digest(skills),
-                                                      "skills_hash": digest(bound),
-                                                      "names": [s["name"] for s in bound]},
-                "briefing": briefing is not None, "origin": origin,
-                "sampling": "mock deterministic; real model temperature 0.3; server determinism not guaranteed",
-                "evidence_boundary": "engineering smoke run; no human-validity or method-effectiveness claim"}
+    manifest = {"schema_version": "2.0", "status": "running", "backend": backend.label,
+                "model": backend.model, "sampling": backend.sampling, "mode": mode,
+                "interface": "env-contract-v0 step/perceive", "versions": dict(VERSIONS),
+                "code_version": code_version(), "scene_id": scenario["id"], "scenario_hash": digest(scenario),
+                "mechanism_hash": digest(CARDS),
+                "cast": [{"role_id": r, "seat": s["id"], "title": s["title"]} for r, s in zip(ids, scenario["seats"])],
+                "roles": {r: {"persona_hash": m["fingerprint"],
+                              "stable_snapshot_id": digest(m["persona"]["stable"]),
+                              "skills": None if m["bound"] is None else {
+                                  "enabled": bool(use_skills), "binding_hash": digest(m["skills"]),
+                                  "skills_hash": digest(m["bound"]), "names": [s["name"] for s in m["bound"]]},
+                              "briefing": m["briefing"] is not None} for r, m in members.items()},
+                "origin": origin,
+                "evidence_boundary": "engineering run; no human-validity or method-effectiveness claim"}
     write_json(output / "manifest.json", manifest)
-    write_json(output / "inputs.json", {"persona": persona, "scenario": scenario, "mechanisms": CARDS,
-                                        "skills_binding": skills, "skills": bound, "briefing": briefing})
-    write_json(output / "views.json", compile_views(persona))
+    folders = {}
+    for seat, role in enumerate(ids):
+        folder = folders[role] = output / "roles" / role
+        folder.mkdir(parents=True)
+        m = members[role]
+        write_json(folder / "inputs.json", {"persona": m["persona"], "scenario": scenario, "seat": scenario["seats"][seat],
+                                            "mechanisms": CARDS, "skills_binding": m["skills"], "skills": m["bound"],
+                                            "briefing": m["briefing"]})
+        write_json(folder / "views.json", compile_views(m["persona"]))
+    handles = {}
     try:
-        with (output / "audit.jsonl").open("w", encoding="utf-8") as audit, \
-                (output / "public.jsonl").open("w", encoding="utf-8") as public, \
-                (output / "states.jsonl").open("w", encoding="utf-8") as states, \
-                (output / "mechanism_log.jsonl").open("w", encoding="utf-8") as mech_log:
-            turn = 0
-            logged = 0
-            for turn, event in env.scheduled():
-                if event.visibility.scope == "public":
-                    _public(public, turn, "environment", event.content)
-                stepped = agent.step(StepRequest(role_id=role_id, turn=turn, scene_context=scenario["background"],
-                                                 new_events=[event], prev_state_id=agent.state_id,
-                                                 role_profile=persona if turn == 1 else None,
+        for role, folder in folders.items():
+            handles[role] = {name: (folder / f"{name}.jsonl").open("w", encoding="utf-8")
+                             for name in ("audit", "states", "mechanism_log")}
+        logged = {role: 0 for role in ids}
+        spoken = {role: 0 for role in ids}
+        turn = 0
+        with (output / "public.jsonl").open("w", encoding="utf-8") as public:
+            opening = env.open()
+            _public(public, {"turn": 0, "speaker": "environment", "text": opening.content})
+            for turn, role in env.turns():
+                agent, member, files = agents[role], members[role], handles[role]
+                stepped = agent.step(StepRequest(role_id=role, turn=turn, scene_context=scenario["background"],
+                                                 new_events=env.collect(role), prev_state_id=agent.state_id,
+                                                 role_profile=member["persona"] if agent.state_id is None else None,
                                                  allowed_kinds=["speech"]))
                 _raise(agent, stepped)
                 proposal = stepped.actions[0]
-                _public(public, turn, role_id, proposal.content, proposal.intent_note)
-                speech_event, outcomes = env.adjudicate(proposal, turn)
-                perceived = agent.perceive(PerceiveRequest(role_id=role_id, turn=turn, events=outcomes,
+                speech = env.relay(proposal, turn, role)
+                _public(public, {"turn": turn, "speaker": role, "title": env.titles[role],
+                                 "action": proposal.intent_note, "text": proposal.content})
+                perceived = agent.perceive(PerceiveRequest(role_id=role, turn=turn, events=[speech],
                                                            prev_state_id=stepped.state["state_id"]))
                 _raise(agent, perceived)
-                for item in outcomes:
-                    if item.visibility.scope == "public":
-                        _public(public, turn, "environment", item.content)
-                if digest(persona) != fingerprint:
+                if digest(member["persona"]) != member["fingerprint"]:
                     raise AssertionError("stable persona was modified")
                 for snapshot in (stepped.state, perceived.state):
-                    states.write(json.dumps(snapshot, ensure_ascii=False) + "\n")
-                audit.write(json.dumps({"turn": turn, "controller_input": agent.last_payload,
-                                        "expression_input": agent.last_express,
-                                        "decision": agent.last_decision, "thought": stepped.thought,
-                                        "proposal": to_dict(proposal), "step_delta": stepped.delta,
-                                        "outcomes": [to_dict(e) for e in outcomes],
-                                        "perceive_delta": perceived.delta,
-                                        "state_after": perceived.state}, ensure_ascii=False) + "\n")
-                write_json(output / "state.json", perceived.state)
-                for entry in agent.mechanism_log[logged:]:
-                    mech_log.write(json.dumps(entry, ensure_ascii=False) + "\n")
-                logged = len(agent.mechanism_log)
-        if not turn:
-            raise ValueError("scenario has no events visible to this role")
+                    files["states"].write(json.dumps(snapshot, ensure_ascii=False) + "\n")
+                files["audit"].write(json.dumps({
+                    "turn": turn, "appraisals": agent.last_appraisals, "controller_input": agent.last_payload,
+                    "expression_input": agent.last_express, "decision": agent.last_decision,
+                    "reasoning": agent.last_reasoning, "thought": stepped.thought, "proposal": to_dict(proposal),
+                    "step_delta": stepped.delta, "delivered": [to_dict(speech)],
+                    "perceive_delta": perceived.delta, "state_after": perceived.state}, ensure_ascii=False) + "\n")
+                write_json(folders[role] / "state.json", perceived.state)
+                for entry in agent.mechanism_log[logged[role]:]:
+                    files["mechanism_log"].write(json.dumps(entry, ensure_ascii=False) + "\n")
+                logged[role] = len(agent.mechanism_log)
+                spoken[role] += 1
+                for handle in [public, *files.values()]:
+                    handle.flush()
+        for files in handles.values():
+            for handle in files.values():
+                handle.close()
         write_json(output / "environment_events.json", [to_dict(e) for e in env.log])
-        manifest.update(status="completed", turns=turn, api_calls=backend.calls,
-                        model_served=sorted(backend.served_models),
-                        final_state_id=agent.state_id, visibility_warnings=agent.warnings,
-                        rejected_groups=sum(len(e["rejected"]) for e in agent.mechanism_log),
-                        status_transitions=len(agent.state["status_log"]))
+        manifest.update(status="completed", turns=turn, closed_by=env.closed_by, api_calls=backend.calls,
+                        model_served=sorted(backend.served_models))
+        for role, agent in agents.items():
+            manifest["roles"][role].update(
+                turns=spoken[role], final_state_id=agent.state_id, visibility_warnings=agent.warnings,
+                rejected_groups=sum(len(e["rejected"]) for e in agent.mechanism_log),
+                status_transitions=len(agent.state["status_log"]) if agent.state else 0)
         write_json(output / "manifest.json", manifest)
         report = write_report(output)
         manifest["audit"] = {"passed": report["passed"],
-                             "failed_checks": [c["id"] for c in report["checks"] if c["status"] != "pass"]}
+                             "failed_checks": {r: [c["id"] for c in rep["checks"] if c["status"] != "pass"]
+                                               for r, rep in report["roles"].items()}}
         write_json(output / "manifest.json", manifest)
         return manifest
     except Exception as exc:
-        manifest.update(status="failed", error_type=type(exc).__name__, api_calls=backend.calls,
+        for files in handles.values():
+            for handle in files.values():
+                handle.close()
+        write_json(output / "environment_events.json", [to_dict(e) for e in env.log])
+        manifest.update(status="failed", error_type=type(exc).__name__, error=str(exc)[:500], api_calls=backend.calls,
                         model_served=sorted(backend.served_models))
         write_json(output / "manifest.json", manifest)
         raise

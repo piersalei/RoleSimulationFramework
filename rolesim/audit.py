@@ -31,15 +31,34 @@ def _check(check_id, dimension, failures, total, note=""):
             "checked": total, "failures": len(failures), "details": failures[:MAX_DETAILS], "note": note}
 
 
-def audit_run(run_dir):
-    run = Path(run_dir)
-    manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
-    inputs = json.loads((run / "inputs.json").read_text(encoding="utf-8"))
-    events = json.loads((run / "environment_events.json").read_text(encoding="utf-8"))
-    states = _lines(run / "states.jsonl")
-    records = _lines(run / "audit.jsonl")
-    mech_log = _lines(run / "mechanism_log.jsonl")
-    role = inputs["persona"]["id"]
+def _read(path):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _strings(item)
+
+
+def _prompts(rec):
+    """Everything this role's model calls were given in one turn."""
+    parts = [rec.get("controller_input"), rec.get("expression_input")]
+    parts += [a.get("input") for a in rec.get("appraisals", [])]
+    return json.dumps(parts, ensure_ascii=False)
+
+
+def audit_role(run, role, manifest, events):
+    folder = run / "roles" / role
+    inputs = _read(folder / "inputs.json")
+    states = _lines(folder / "states.jsonl")
+    records = _lines(folder / "audit.jsonl")
+    mech_log = _lines(folder / "mechanism_log.jsonl")
     briefing = inputs.get("briefing")
     visible = {e["event_id"] for e in events if role in e["visibility"]["audience"]}
     # The recap is the role's own memory of earlier history, seeded before the first event.
@@ -61,7 +80,7 @@ def audit_run(run_dir):
     stable_id = digest(inputs["persona"]["stable"])
     failures = [{"state_id": s["state_id"], "error": "stable differs from the run's persona"}
                 for s in states if digest(s["stable"]) != stable_id or s.get("stable_snapshot_id") != stable_id]
-    if manifest.get("stable_snapshot_id") not in (None, stable_id):
+    if manifest["roles"][role].get("stable_snapshot_id") not in (None, stable_id):
         failures.append({"state_id": None, "error": "manifest stable_snapshot_id disagrees with inputs"})
     stable_check = _check("stable_unchanged", "稳定一致性", failures, len(states))
 
@@ -140,6 +159,20 @@ def audit_run(run_dir):
     conceal_check = _check("concealed_info_withheld", "证据与可见性", conceal_fail, len(records) * len(secrets),
                            "keyword markers only; paraphrased leaks need human review")
 
+    # -- the other roles' private material and world-private data ------------
+    private = []
+    for other in manifest["cast"]:
+        if other["role_id"] == role:
+            continue
+        theirs = _read(run / "roles" / other["role_id"] / "inputs.json").get("briefing") or {}
+        private += [(f"{other['role_id']}:{i['id']}", i["text"]) for i in theirs.get("conceal", [])]
+    private += [("world_private", s) for s in _strings(inputs["scenario"]["world_private"]) if len(s) >= 6]
+    cross_fail = [{"turn": rec["turn"], "item": label, "error": "another role's secret or world-private data "
+                   "reached this role's model calls"}
+                  for rec in records for label, value in private if value in _prompts(rec)]
+    cross_check = _check("cross_role_isolation", "证据与可见性", cross_fail, len(records) * len(private),
+                         "exact text of the other roles' concealed items and world-private strings")
+
     # -- soft constraints, exceptions, rejections (reported, not failures) ---
     flags = [{"commit_key": e["commit_key"], **f} for e in mech_log for f in e.get("flags", [])]
     rejected = [{"commit_key": e["commit_key"], **r} for e in mech_log for r in e.get("rejected", [])]
@@ -150,7 +183,7 @@ def audit_run(run_dir):
         for item in final["module_status"].values():
             coverage[item["status"]] = coverage.get(item["status"], 0) + 1
 
-    checks = [field_check, evidence_check, write_check, stable_check, trace_check, conceal_check]
+    checks = [field_check, evidence_check, write_check, stable_check, trace_check, conceal_check, cross_check]
     return {
         "run": run.name, "role_id": role, "manifest_status": manifest.get("status"),
         "passed": all(c["status"] == "pass" for c in checks) and manifest.get("status") == "completed",
@@ -161,7 +194,7 @@ def audit_run(run_dir):
         "disclosed_items": disclosed,
         "error_rate": {"candidate_changes": candidates, "rejected_groups": len(rejected)},
         "module_coverage": coverage,
-        "status_transitions": manifest.get("status_transitions"),
+        "status_transitions": manifest["roles"][role].get("status_transitions"),
         "needs_human_scoring": HUMAN_DIMENSIONS,
         "evidence_boundary": "Automatic audit of structure, evidence, visibility, write permission and "
                              "stable consistency. Passing does not show psychological validity; "
@@ -191,8 +224,26 @@ def render_markdown(report):
     return "\n".join(lines)
 
 
+def audit_run(run_dir):
+    """Audit every role of a run; the run passes only if every role does."""
+    run = Path(run_dir)
+    manifest = _read(run / "manifest.json")
+    events = _read(run / "environment_events.json")
+    roles = {c["role_id"]: audit_role(run, c["role_id"], manifest, events) for c in manifest["cast"]}
+    return {"run": run.name, "manifest_status": manifest.get("status"),
+            "passed": manifest.get("status") == "completed" and all(r["passed"] for r in roles.values()),
+            "roles": roles}
+
+
 def write_report(run_dir):
-    report = audit_run(run_dir)
-    write_json(Path(run_dir) / "audit_report.json", report)
-    (Path(run_dir) / "audit_report.md").write_text(render_markdown(report), encoding="utf-8")
+    run = Path(run_dir)
+    report = audit_run(run)
+    for role, item in report["roles"].items():
+        write_json(run / "roles" / role / "audit_report.json", item)
+        (run / "roles" / role / "audit_report.md").write_text(render_markdown(item), encoding="utf-8")
+    write_json(run / "audit_report.json", report)
+    head = [f"# 自动审计：{report['run']}", "", f"- 结论：{'通过' if report['passed'] else '未通过'}"]
+    head += [f"- {role}：{'通过' if item['passed'] else '未通过'}" for role, item in report["roles"].items()]
+    body = [render_markdown(item).replace("# ", "## ", 1) for item in report["roles"].values()]
+    (run / "audit_report.md").write_text("\n".join(head + [""] + body), encoding="utf-8")
     return report

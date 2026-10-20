@@ -2,6 +2,10 @@
 
 The agent only sees contract Events whose audience includes its role. It keeps its
 own memory and state chain; the environment stores snapshots but never edits them.
+
+An event that arrives without environment cues (another role's speech) is first
+appraised from this role's standpoint: the model reports which cues the role perceives
+and how strongly (0-1), and the program alone turns those cues into state changes.
 """
 import copy
 
@@ -12,9 +16,10 @@ from .catalog import digest
 from .contract import (PerceiveRequest, PerceiveResponse, ProposedAction, StepRequest,
                        StepResponse, Visibility, validate_event)
 from .mechanisms import CARDS, select_cards
-from .persona import compile_views, text, validate_persona
+from .persona import bounded, compile_views, text, validate_persona
 from .state import (PSYCHOLOGY_VERSION, SCHEMA_VERSION, VERSIONS, activate, commit_phase,
                     new_dynamic, validate_dynamic)
+from .vocab import ACTION_TEXT, CUE_TEXT, CUES
 
 PARTNER = "partner"  # relation key for the single focal partner in this slice
 # Ablation levels. State is computed and logged in every mode; the mode only decides
@@ -38,17 +43,19 @@ def initial_state(briefing=None):
             "memory": recap_entries(briefing), "seen_ids": [], "updates": [], "mechanism_log": [], "commits": {}}
 
 
-def observation(event):
-    # Only what the role perceives: no audience list, no environment-side annotations
-    # beyond cues.
-    item = {"id": event.event_id, "type": event.type, "actor": event.actor,
-            "content": event.content, "cues": copy.deepcopy((event.signals or {}).get("cues", {}))}
+def observation(event, cues=None, names=None):
+    """Only what the role perceives: no audience list, no environment-side annotations
+    beyond cues. `cues` are the role's own appraisal when the event carried none;
+    `names` shows speakers as the role knows them (itself as 我, the other by title)."""
+    item = {"id": event.event_id, "type": event.type, "actor": (names or {}).get(event.actor, event.actor),
+            "content": event.content,
+            "cues": copy.deepcopy(cues if cues is not None else (event.signals or {}).get("cues", {}))}
     if event.outcome is not None:
         item["outcome"] = copy.deepcopy(event.outcome)
     return item
 
 
-def observe(state, event, persona, phase="perceive"):
+def observe(state, event, persona, phase="perceive", cues=None, names=None):
     """Apply one visible contract Event to `state`; return the delta, or None if skipped.
 
     Candidate changes are committed by dependency group against one snapshot. A rejected
@@ -59,9 +66,10 @@ def observe(state, event, persona, phase="perceive"):
     s = persona["stable"]
     dynamic = state["dynamic"]
     signals = event.signals or {}
+    perceived = cues if cues is not None else signals.get("cues", {})
     tension = dynamic["affect_state"]["emotion"]["intensity"]
     trust = dynamic["relation_state"][PARTNER]["trust"]
-    pressure = signals.get("cues", {}).get("pressure", 0)
+    pressure = perceived.get("pressure", 0)
     # Someone's words are not evidence of fulfilment: only narrated facts and
     # adjudicated outcomes may move reliability.
     signal = signals.get("reliability_signal", 0) if event.type in {"narration", "outcome"} else 0
@@ -76,7 +84,8 @@ def observe(state, event, persona, phase="perceive"):
             changes.append({"path": "dynamic.affect_state.emotion.intensity", "before": tension,
                             "after": new_tension, "evidence": [event.event_id], "group": "affect",
                             "mechanism": "emotion_update" if pressure else "decay_or_recovery",
-                            "reason": "事件带有压力线索" if pressure else "无新压力，紧张按恢复速率回落"})
+                            "reason": ("角色感受到压力" if cues is not None else "事件带有压力线索")
+                            if pressure else "无新压力，紧张按恢复速率回落"})
     if trust is not None:
         new_trust = round(min(1, max(0, trust + .15 * signal)), 4)
         if new_trust != trust:
@@ -92,22 +101,56 @@ def observe(state, event, persona, phase="perceive"):
     delta["changes"] = adopted
     delta["rejected"] = log["rejected"]
     state["mechanism_log"].append(log)
-    mem.add(state["memory"], observation(event))
+    mem.add(state["memory"], observation(event, cues, names))
     state["seen_ids"].append(event.event_id)
     state["updates"].append(delta)
     return delta
 
 
-def make_payload(persona, state, trigger, scene_context, partner, allowed, mode, skills=None, briefing=None):
+def _query(trigger, briefing):
+    return " ".join(filter(None, [(trigger or {}).get("content"), (briefing or {}).get("goal")]))
+
+
+def appraisal_payload(persona, state, event_view, scene_context, partner, seat=None, briefing=None):
+    """Appraisal prompt: the same in every ablation mode, because it feeds the state that
+    every mode computes."""
+    views = compile_views(persona)
+    data = {"role": views["role_self"], "behavioral_constraints": views["controller_only"],
+            "scene_background": scene_context, "self_seat": seat, "partner": partner,
+            "visible_history": mem.recall(state["memory"], _query(event_view, briefing)),
+            "event": {k: event_view[k] for k in ("id", "type", "actor", "content")},
+            "cue_definitions": dict(CUE_TEXT)}
+    if briefing:
+        data["briefing"] = controller_view(briefing)
+    return data
+
+
+def validate_appraisal(result):
+    if not isinstance(result, dict) or set(result) != {"cues", "reason"}:
+        raise ValueError("appraisal must contain cues and reason only")
+    cues = result["cues"]
+    if not isinstance(cues, dict) or not set(cues) <= CUES:
+        raise ValueError("appraisal: unsupported cue")
+    for key, value in cues.items():
+        bounded(value, 0, 1, f"appraisal cue {key}")
+    text(result["reason"], "appraisal reason")
+    if len(result["reason"]) > 200:
+        raise ValueError("appraisal reason too long")
+
+
+def make_payload(persona, state, trigger, scene_context, partner, allowed, mode, skills=None, briefing=None,
+                 seat=None, previous_actions=()):
     """Decision prompt. Skills and briefing belong to the profile, so they appear in every mode."""
     views = compile_views(persona)
     if not allowed:
         raise ValueError("no feasible action remains")
-    query = " ".join(filter(None, [(trigger or {}).get("content"), (briefing or {}).get("goal")]))
     data = {"role": views["role_self"], "behavioral_constraints": views["controller_only"],
-            "scene_background": scene_context, "partner": partner,
-            "visible_history": mem.recall(state["memory"], query),
-            "allowed_actions": list(allowed)}
+            "scene_background": scene_context, "self_seat": seat, "partner": partner,
+            "visible_history": mem.recall(state["memory"], _query(trigger, briefing)),
+            "respond_to": copy.deepcopy(trigger),
+            "my_previous_actions": list(previous_actions)[-3:],
+            "allowed_actions": list(allowed),
+            "action_meanings": {a: ACTION_TEXT[a] for a in allowed}}
     if briefing:
         data["briefing"] = controller_view(briefing)
     if skills:
@@ -138,23 +181,26 @@ def validate_decision(decision, payload):
 
 class Agent:
     def __init__(self, backend, allowed_actions, partner, partner_id=PARTNER, mode="profile_state_mechanisms",
-                 skills=None, briefing=None):
-        """`skills` is a bound skill list (skills.bind); `briefing` is this role's validated scene briefing."""
+                 skills=None, briefing=None, seat=None):
+        """`partner` is the counterpart as this role knows it (a seat title); `seat` is this role's
+        own seat title. `skills` is a bound skill list (skills.bind); `briefing` is this role's
+        validated opening setup."""
         if mode not in MODES:
             raise ValueError(f"unknown mode: {mode}")
         self.backend = backend
         self.allowed_actions = list(allowed_actions)
-        self.partner, self.partner_id, self.mode = partner, partner_id, mode
+        self.partner, self.partner_id, self.mode, self.seat = partner, partner_id, mode, seat
         self.skills = copy.deepcopy(skills) or None
         self.briefing = copy.deepcopy(briefing) or None
-        self.last_express = None
+        self.scene_context = None
         self.persona = None
         self.state = None
         self.state_id = None
         self.snapshots = {}     # state_id -> AgentState, for replay
-        self.intents = {}       # proposal_id -> chosen action label
+        self.actions = []       # moves this role has made, in order
         self.warnings = []
-        self.last_payload = self.last_decision = self.last_error = None
+        self.last_payload = self.last_decision = self.last_express = self.last_error = None
+        self.last_appraisals, self.last_reasoning = [], {}
 
     # -- helpers -----------------------------------------------------------
     def _check(self, role_id, prev_state_id, profile):
@@ -173,6 +219,25 @@ class Agent:
         if prev_state_id != self.state_id:
             raise ValueError("prev_state_id does not match the latest state")
 
+    @property
+    def names(self):
+        return {self.persona["id"]: "我", self.partner_id: self.partner, "env": "旁白"}
+
+    def _model(self, stage, call, payload):
+        result = call(copy.deepcopy(payload))
+        reasoning = getattr(self.backend, "last_reasoning", None)
+        if reasoning:
+            self.last_reasoning.setdefault(stage, []).append(reasoning)
+        return result
+
+    def _appraise(self, state, event):
+        payload = appraisal_payload(self.persona, state, observation(event, {}, self.names), self.scene_context,
+                                    self.partner, self.seat, self.briefing)
+        result = self._model("appraise", self.backend.appraise, payload)
+        self.last_appraisals.append({"event_id": event.event_id, "input": payload, "output": result})
+        validate_appraisal(result)
+        return copy.deepcopy(result["cues"])
+
     def _ingest(self, state, events, role_id, phase):
         changes, last = [], None
         for event in events:
@@ -181,10 +246,16 @@ class Agent:
                 # Contract 3.3.1: the environment filters; we drop and warn as a second check.
                 self.warnings.append({"event_id": event.event_id, "warning": "audience excludes role; dropped"})
                 continue
-            delta = observe(state, event, self.persona, phase)
+            if event.event_id in state["seen_ids"]:
+                continue
+            cues = None
+            if event.actor != role_id and not (event.signals or {}).get("cues"):
+                cues = self._appraise(state, event)
+            delta = observe(state, event, self.persona, phase, cues, self.names)
             if delta is not None:
                 changes.extend(delta["changes"])
-                last = observation(event)
+                if event.actor != role_id:
+                    last = observation(event, cues, self.names)
         return changes, last
 
     def _commit(self, state, turn, trigger, changes, log_start):
@@ -206,11 +277,24 @@ class Agent:
         self.snapshots[state_id] = snapshot
         return copy.deepcopy(snapshot), delta
 
-    def _allowed(self, memory):
-        # Information already obtained should not be requested forever.
-        obtained = any(self.intents.get(m["outcome"]["of_proposal"]) == "request_evidence"
-                       and m["outcome"]["status"] == "success" for m in memory if "outcome" in m)
-        return [a for a in self.allowed_actions if not (obtained and a == "request_evidence")]
+    def _express_payload(self, work, trigger, decision, payload):
+        views = compile_views(self.persona)
+        own = [m["content"] for m in work["memory"] if m["type"] == "speech" and m["actor"] == "我"]
+        # Need-to-know: no concealed text, decision guidance or skill names reach this prompt.
+        express = {"role": views["role_self"],
+                   "style_constraints": [r for r in views["controller_only"]["conditional_rules"]
+                                         if r["source_field"].startswith("speech_style.")],
+                   "self_seat": self.seat, "partner": self.partner,
+                   "respond_to": None if trigger is None else {"speaker": trigger["actor"],
+                                                               "content": trigger["content"]},
+                   "action": decision["action"], "action_meaning": ACTION_TEXT[decision["action"]],
+                   "my_previous_lines": own[-3:],
+                   "visible_history": copy.deepcopy(payload["visible_history"])}
+        if self.skills:
+            express["skill_style"] = sk.expression_hints(self.skills, payload["active_skills"])
+        if self.briefing:
+            express["disclosure"] = expression_view(self.briefing)
+        return express
 
     @property
     def mechanism_log(self):
@@ -221,31 +305,25 @@ class Agent:
 
     # -- contract interface ------------------------------------------------
     def step(self, req: StepRequest) -> StepResponse:
+        self.last_appraisals, self.last_reasoning = [], {}
+        self.last_payload = self.last_decision = self.last_express = None
         try:
             self._check(req.role_id, req.prev_state_id, req.role_profile)
             if "speech" not in req.allowed_kinds:
                 raise ValueError("this agent only proposes speech in v0")
+            self.scene_context = req.scene_context
             work = copy.deepcopy(self.state)
             log_start = len(work["mechanism_log"])
             changes, trigger = self._ingest(work, req.new_events, req.role_id, "step")
             payload = make_payload(self.persona, work, trigger, req.scene_context, self.partner,
-                                   self._allowed(work["memory"]), self.mode, self.skills, self.briefing)
+                                   self.allowed_actions, self.mode, self.skills, self.briefing, self.seat,
+                                   self.actions)
             self.last_payload = payload
-            decision = self.backend.decide(copy.deepcopy(payload))
+            decision = self._model("decide", self.backend.decide, payload)
             self.last_decision = decision
             validate_decision(decision, payload)
-            views = compile_views(self.persona)
-            # Need-to-know: no concealed text, decision guidance or skill names reach this prompt.
-            express = {"role": views["role_self"],
-                       "style_constraints": [r for r in views["controller_only"]["conditional_rules"]
-                                             if r["source_field"].startswith("speech_style.")],
-                       "action": decision["action"], "visible_history": copy.deepcopy(payload["visible_history"])}
-            if self.skills:
-                express["skill_style"] = sk.expression_hints(self.skills, payload["active_skills"])
-            if self.briefing:
-                express["disclosure"] = expression_view(self.briefing)
-            self.last_express = express
-            speech = self.backend.express(copy.deepcopy(express))
+            express = self.last_express = self._express_payload(work, trigger, decision, payload)
+            speech = self._model("express", self.backend.express, express)
             text(speech, "speech")
             if len(speech) > 600:
                 raise ValueError("speech too long")
@@ -254,10 +332,9 @@ class Agent:
             action = ProposedAction(proposal_id=proposal_id, kind="speech", content=speech,
                                     proposed_visibility=Visibility("public", audience),
                                     target=[self.partner_id], intent_note=decision["action"])
-            mem.add(work["memory"], {"id": proposal_id, "type": "own_action", "actor": req.role_id,
-                                     "content": speech, "cues": {}})
-            self.intents[proposal_id] = decision["action"]
+            # The line enters memory when the environment reports it as said (perceive).
             state, delta = self._commit(work, req.turn, "step", changes, log_start)
+            self.actions.append(decision["action"])
             return StepResponse(req.role_id, req.turn, [action], decision["brief_reason"], state, delta)
         except Exception as exc:
             self.last_error = exc
@@ -276,3 +353,5 @@ class Agent:
             self.last_error = exc
             return PerceiveResponse(req.role_id, req.turn, self.latest_state() or {}, {},
                                     status="error", error=f"{type(exc).__name__}: {exc}")
+
+

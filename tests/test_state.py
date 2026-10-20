@@ -4,11 +4,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from fixtures import load
+from fixtures import cued_events, load
 from rolesim.agent import initial_state, observe
 from rolesim.mechanisms import CARD_MECHANISMS, CARDS
 from rolesim.modules import STATUSES, transition
-from rolesim.runtime import ScriptedEnvironment
 from rolesim.state import (DOMAINS, OPERATORS, SOFT_RULES, VERSIONS, commit_phase, may_write,
                            validate_dynamic)
 
@@ -298,9 +297,8 @@ class HarmHistoryTests(unittest.TestCase):
 class RuntimeStateTests(unittest.TestCase):
     def test_every_perceive_writes_an_evidenced_delta(self):
         persona = load("role1")
-        scenario = load("test1")
         state = initial_state()
-        for _, event in ScriptedEnvironment(scenario, persona["id"]).scheduled():
+        for event in cued_events():
             observe(state, event, persona)
         for delta in state["updates"]:
             self.assertEqual(delta["rejected"], [])
@@ -313,11 +311,10 @@ class RuntimeStateTests(unittest.TestCase):
 
     def test_unknown_inputs_skip_their_branch_instead_of_guessing(self):
         persona = load("role1")
-        scenario = load("test1")
         state = initial_state()
         state["dynamic"]["relation_state"]["partner"]["trust"] = None
         state["module_status"][TRUST]["status"] = "unknown"
-        for _, event in ScriptedEnvironment(scenario, persona["id"]).scheduled():
+        for event in cued_events():
             delta = observe(state, event, persona)
             self.assertTrue(all(c["path"] != TRUST for c in delta["changes"]))
         self.assertIsNone(state["dynamic"]["relation_state"]["partner"]["trust"])

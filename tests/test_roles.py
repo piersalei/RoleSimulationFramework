@@ -8,8 +8,8 @@ from fixtures import ROOT, load, role_file
 from rolesim.agent import Agent
 from rolesim.contract import Event, StepRequest, Visibility
 from rolesim.providers import MockBackend
-from rolesim.roles import ROLES_DIR, SCENES_DIR, available, fit, load_role, load_scene, run, seat
-from rolesim.runtime import run_episode
+from rolesim.roles import ROLES_DIR, SCENES_DIR, available, fit, fit_cast, load_role, load_scene, run, seat
+from rolesim.runtime import run_dialogue
 
 
 class Scratch:
@@ -27,14 +27,15 @@ class Scratch:
 
 
 class RoleFileTests(unittest.TestCase):
-    def test_shipped_roles_and_scenes_load_and_all_pairs_fit(self):
+    def test_shipped_roles_and_scenes_load_and_the_cast_fits(self):
         self.assertEqual(available(ROLES_DIR), ["role1", "role2"])
         self.assertEqual(available(SCENES_DIR), ["test1", "test2"])
-        for role_id in available(ROLES_DIR):
-            role = load_role(role_id)
-            self.assertEqual(role["id"], role_id)
-            for scene_id in available(SCENES_DIR):
-                self.assertTrue(fit(role, load_scene(scene_id))["ok"])
+        roles = [load_role(r) for r in available(ROLES_DIR)]
+        self.assertEqual([r["id"] for r in roles], ["role1", "role2"])
+        for scene_id in available(SCENES_DIR):
+            result = fit_cast(roles, load_scene(scene_id))
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["notes"], [])
 
     def test_id_or_path(self):
         self.assertEqual(load_role("role1")["persona"], load_role(str(ROLES_DIR / "role1.json"))["persona"])
@@ -75,6 +76,7 @@ class RoleFileTests(unittest.TestCase):
 class FitTests(unittest.TestCase):
     def setUp(self):
         self.role, self.scene = load_role("role1"), load_scene("test1")
+        self.cast = [self.role, load_role("role2")]
 
     def test_notes_skills_that_can_never_activate(self):
         scene, role = copy.deepcopy(self.scene), copy.deepcopy(self.role)
@@ -89,54 +91,72 @@ class FitTests(unittest.TestCase):
         role["persona"]["stable"]["mechanism_priors"].pop("verify")
         self.assertFalse(fit(role, self.scene)["ok"])
         with self.assertRaisesRegex(ValueError, "does not fit"):
-            seat(role, self.scene, MockBackend())
+            seat([role, self.cast[1]], self.scene, MockBackend())
         role = copy.deepcopy(self.role)
-        role["setup"]["disclose"][0]["id"] = "e1"
+        role["setup"]["disclose"][0]["id"] = "open"
         self.assertTrue(fit(role, self.scene)["errors"][0].startswith("setup:"))
+
+    def test_cast_needs_one_distinct_role_per_seat(self):
+        for cast in ([self.role], [self.role, self.role], self.cast + [self.role]):
+            with self.subTest(n=len(cast)):
+                self.assertFalse(fit_cast(cast, self.scene)["ok"])
+                with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(ValueError, "does not fit"):
+                    run(cast, self.scene, MockBackend(), Path(tmp) / "run")
 
 
 class SeatAndRunTests(unittest.TestCase):
-    def test_seat_gives_an_environment_a_ready_agent(self):
-        role, scene = load_role("role2"), load_scene("test2")
-        seated = seat(role, scene, MockBackend())
-        self.assertIsInstance(seated.agent, Agent)
-        self.assertEqual(seated.agent.allowed_actions, scene["scenario"]["allowed_actions"])
-        self.assertEqual(seated.agent.briefing, role["setup"])
-        self.assertEqual(seated.scene_context, scene["scenario"]["background"])
-        self.assertIsNone(seat(role, scene, MockBackend(), use_skills=False).agent.skills)
+    def test_seat_gives_an_environment_ready_agents(self):
+        roles, scene = [load_role("role1"), load_role("role2")], load_scene("test2")
+        seated = seat(roles, scene, MockBackend())
+        self.assertEqual([s.title for s in seated], ["项目组数据负责人", "合作方负责人"])
+        first, second = seated
+        self.assertIsInstance(first.agent, Agent)
+        self.assertEqual((first.agent.partner, first.agent.partner_id), ("合作方负责人", "role2"))
+        self.assertEqual((second.agent.partner, second.agent.partner_id), ("项目组数据负责人", "role1"))
+        self.assertEqual(first.agent.allowed_actions, scene["scenario"]["allowed_actions"])
+        self.assertEqual(second.agent.briefing, roles[1]["setup"])
+        self.assertEqual(first.scene_context, scene["scenario"]["background"])
+        self.assertIsNone(seat(roles, scene, MockBackend(), use_skills=False)[0].agent.skills)
         event = Event(event_id="x1", turn=1, type="narration", actor="env", content="合作方催促交付。",
-                      visibility=Visibility("public", [seated.role_id, "partner"]),
+                      visibility=Visibility("public", ["role1", "role2"]),
                       signals={"cues": {"pressure": .8}, "reliability_signal": 0})
-        response = seated.agent.step(StepRequest(role_id=seated.role_id, turn=1, scene_context=seated.scene_context,
-                                                 new_events=[event], prev_state_id=None,
-                                                 role_profile=seated.role_profile, allowed_kinds=["speech"]))
+        response = first.agent.step(StepRequest(role_id=first.role_id, turn=1, scene_context=first.scene_context,
+                                                new_events=[event], prev_state_id=None,
+                                                role_profile=first.role_profile, allowed_kinds=["speech"]))
         self.assertEqual(response.status, "ok")
 
-    def test_swapping_the_role_swaps_only_the_role(self):
-        scene = load_scene("test2")
+    def test_swapping_seats_or_scene_swaps_only_that_input(self):
+        roles = {r: load_role(r) for r in ("role1", "role2")}
         with tempfile.TemporaryDirectory() as tmp:
-            runs = {r: run(load_role(r), scene, MockBackend(), Path(tmp) / r) for r in ("role1", "role2")}
-        for role_id, manifest in runs.items():
-            self.assertEqual(manifest["turns"], 5)
-            self.assertTrue(manifest["audit"]["passed"])
-            self.assertEqual(manifest["origin"]["role"]["id"], role_id)
-            self.assertEqual(manifest["origin"]["scene"]["id"], "test2")
-        self.assertEqual(runs["role1"]["scenario_hash"], runs["role2"]["scenario_hash"])
-        self.assertNotEqual(runs["role1"]["persona_hash"], runs["role2"]["persona_hash"])
+            runs = {name: run([roles[a], roles[b]], load_scene(scene), MockBackend(), Path(tmp) / name)
+                    for name, (a, b, scene) in {"ab1": ("role1", "role2", "test1"), "ba1": ("role2", "role1", "test1"),
+                                                "ab2": ("role1", "role2", "test2")}.items()}
+        for name, manifest in runs.items():
+            self.assertEqual(manifest["turns"], 8)
+            self.assertTrue(manifest["audit"]["passed"], name)
+        self.assertEqual([c["role_id"] for c in runs["ba1"]["cast"]], ["role2", "role1"])
+        self.assertEqual(runs["ab1"]["scenario_hash"], runs["ba1"]["scenario_hash"])
+        self.assertNotEqual(runs["ab1"]["scenario_hash"], runs["ab2"]["scenario_hash"])
+        self.assertEqual(runs["ab1"]["roles"], runs["ab2"]["roles"])
+        self.assertEqual(runs["ab2"]["origin"]["scene"]["id"], "test2")
+        self.assertEqual([r["id"] for r in runs["ba1"]["origin"]["roles"]], ["role2", "role1"])
 
     def test_no_skills_control_needs_skills(self):
         data = role_file("role1")
         data["skills"] = []
-        role = load_role(Scratch(self).write("role1", data))
+        other = role_file("role2")
+        other["skills"] = []
+        scratch = Scratch(self)
+        roles = [load_role(scratch.write("role1", data)), load_role(scratch.write("role2", other))]
         with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(ValueError, "lists skills"):
-            run(role, load_scene("test1"), MockBackend(), Path(tmp) / "run", use_skills=False)
+            run(roles, load_scene("test1"), MockBackend(), Path(tmp) / "run", use_skills=False)
 
     def test_role_file_run_matches_the_raw_call(self):
-        role, scene = load_role("role1"), load_scene("test1")
+        roles, scene = [load_role("role1"), load_role("role2")], load_scene("test1")
         with tempfile.TemporaryDirectory() as tmp:
-            run(role, scene, MockBackend(), Path(tmp) / "file")
-            raw = run_episode(role["persona"], scene["scenario"], MockBackend(), Path(tmp) / "raw",
-                              skills=role["binding"], briefing=role["setup"])
+            run(roles, scene, MockBackend(), Path(tmp) / "file")
+            cast = [{"persona": r["persona"], "skills": r["binding"], "briefing": r["setup"]} for r in roles]
+            raw = run_dialogue(cast, scene["scenario"], MockBackend(), Path(tmp) / "raw")
             self.assertEqual((Path(tmp) / "file" / "public.jsonl").read_text(),
                              (Path(tmp) / "raw" / "public.jsonl").read_text())
         self.assertIsNone(raw["origin"])

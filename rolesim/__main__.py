@@ -9,10 +9,10 @@ from .providers import ChatBackend, MockBackend
 from .agent import MODES
 from .audit import write_report
 from .package import export_package
-from .roles import ROLES_DIR, SCENES_DIR, available, fit, load_role, load_scene, run
+from .roles import ROLES_DIR, SCENES_DIR, available, fit_cast, load_role, load_scene, run
 from .skills import load_library
 
-DEFAULT_ROLE = "role1"
+DEFAULT_ROLES = ["role1", "role2"]
 DEFAULT_SCENE = "test1"
 
 
@@ -22,8 +22,8 @@ def main():
     catalog = sub.add_parser("catalog", help="index source documents as reference data")
     catalog.add_argument("--sources", default="data/sources")
     catalog.add_argument("--out", default="data/catalog.json")
-    listing = sub.add_parser("list", help="list roles and scenes and how they fit, or check one pairing")
-    listing.add_argument("--role", help="role id (roles/<id>.json) or path")
+    listing = sub.add_parser("list", help="list roles and scenes, or check one cast in one scene")
+    listing.add_argument("--roles", nargs="+", help="one role id or path per seat, in seat order")
     listing.add_argument("--scene", help="scene id (scenes/<id>.json) or path")
     for name in ("validate", "compile"):
         item = sub.add_parser(name, help=f"{name} a role file")
@@ -38,10 +38,11 @@ def main():
     package.add_argument("run_dirs", nargs="+")
     package.add_argument("--out", required=True)
     package.add_argument("--seed", type=int, default=0)
-    demo = sub.add_parser("run", help="one role in a scripted scene")
-    demo.add_argument("--role", default=DEFAULT_ROLE, help="role id (roles/<id>.json) or path")
+    demo = sub.add_parser("run", help="two roles talking in a background-only scene")
+    demo.add_argument("--roles", nargs="+", default=DEFAULT_ROLES,
+                      help="one role id (roles/<id>.json) or path per seat, in seat order")
     demo.add_argument("--scene", default=DEFAULT_SCENE, help="scene id (scenes/<id>.json) or path")
-    demo.add_argument("--no-skills", action="store_true", help="keep the role's skills on record but out of the prompts")
+    demo.add_argument("--no-skills", action="store_true", help="keep the roles' skills on record but out of the prompts")
     demo.add_argument("--backend", choices=["mock", "chat"], default="mock")
     demo.add_argument("--mode", choices=list(MODES), default="profile_state_mechanisms")
     demo.add_argument("--out", default=None)
@@ -72,10 +73,10 @@ def main():
         elif args.command == "package":
             print(json.dumps(export_package(args.run_dirs, args.out, args.seed), ensure_ascii=False))
         else:
-            role, scene = load_role(args.role), load_scene(args.scene)
+            roles, scene = [load_role(r) for r in args.roles], load_scene(args.scene)
             backend = MockBackend() if args.backend == "mock" else ChatBackend()
             output = args.out or "runs/" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-            result = run(role, scene, backend, output, args.mode, not args.no_skills)
+            result = run(roles, scene, backend, output, args.mode, not args.no_skills)
             print(json.dumps({"output": str(output), **result}, ensure_ascii=False, indent=2))
     except (ValueError, OSError, RuntimeError, KeyError, TypeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -83,12 +84,12 @@ def main():
 
 
 def _list(args):
-    if bool(args.role) != bool(args.scene):
-        raise ValueError("give both --role and --scene, or neither to list everything")
-    if args.role:
-        role, scene = load_role(args.role), load_scene(args.scene)
-        result = fit(role, scene)
-        print(f"{'FITS' if result['ok'] else 'DOES NOT FIT'}: {role['id']} -> {scene['id']}")
+    if bool(args.roles) != bool(args.scene):
+        raise ValueError("give both --roles and --scene, or neither to list everything")
+    if args.roles:
+        roles, scene = [load_role(r) for r in args.roles], load_scene(args.scene)
+        result = fit_cast(roles, scene)
+        print(f"{'FITS' if result['ok'] else 'DOES NOT FIT'}: {' + '.join(r['id'] for r in roles)} -> {scene['id']}")
         for line in result["errors"]:
             print(f"  error: {line}")
         for line in result["notes"]:
@@ -96,12 +97,12 @@ def _list(args):
         sys.exit(0 if result["ok"] else 2)
     library = load_library()
     roles = {i: load_role(i, library=library) for i in available(ROLES_DIR)}
-    scenes = {i: load_scene(i) for i in available(SCENES_DIR)}
     print("Roles:  " + ", ".join(f"{i} ({r['persona']['name']})" for i, r in roles.items()))
-    print("Scenes: " + ", ".join(
-        f"{i} ({sum('*' in e['readers'] for e in s['scenario']['events'])} public events)" for i, s in scenes.items()))
-    for i, role in roles.items():
-        print(f"  {i}: " + "  ".join(f"{j} {'ok' if fit(role, s)['ok'] else 'no'}" for j, s in scenes.items()))
+    print("Scenes:")
+    for i in available(SCENES_DIR):
+        s = load_scene(i)["scenario"]
+        seats = " / ".join(seat["title"] for seat in s["seats"])
+        print(f"  {i}: seats {seats}; up to {s['max_turns']} turns")
 
 
 if __name__ == "__main__":

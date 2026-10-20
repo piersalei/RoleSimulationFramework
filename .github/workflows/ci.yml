@@ -17,7 +17,7 @@ jobs:
       - run: python -m rolesim list
       - run: python -m rolesim run --out runs/ci-smoke
       - run: python -m rolesim audit runs/ci-smoke
-      - run: python -m rolesim run --role role2 --scene test2 --out runs/ci-role2
-      - run: python -m rolesim audit runs/ci-role2
+      - run: python -m rolesim run --roles role2 role1 --scene test2 --out runs/ci-swapped
+      - run: python -m rolesim audit runs/ci-swapped
       - run: python -m rolesim run --no-skills --out runs/ci-no-skills
       - run: python -m rolesim audit runs/ci-no-skills

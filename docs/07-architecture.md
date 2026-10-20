@@ -4,9 +4,9 @@
 
 ## 1. 一句话概括
 
-把心理学组整理的两份库和回复，落成一条**可审计的数据通道**：角色文件（稳定档案 + skills + 开场设定）+ 剧情文件（背景 + 事件）→ 角色可见事件与记忆 → 带证据的状态更新 → 决策与表达 → 环境裁决 → 全程落盘 → 自动审计 → 盲化评审包。
+把心理学组整理的两份库和回复，落成一条**可审计的数据通道**：两个角色文件（稳定档案 + skills + 开场设定）+ 剧情文件（共享背景 + 座位）→ 两个角色轮流发言，环境只转发 → 每个角色对收到的话做感知评价 → 带证据的状态更新 → 决策与表达 → 全程落盘 → 自动审计 → 盲化评审包。
 
-通道已经打通，并有 138 项工程测试。2026-10-20 新增人格 skills、角色开场设定（交互目标、想透露 / 想隐瞒、前情提要）和记忆召回；输入整理成"一个角色一个文件、一个剧情一个文件"，用编号命名、可任意搭配。均不改动与两组约定的合同。**心理内容大多仍是空壳**：11 个更新算子只有写权限、没有幅度规则；机制卡数值是未校准的工程假设；真实模型还没跑过。所有验证都是工程层面的，没有心理有效性证据，mock 的输出差异也不能当证据。
+通道已经打通，并有 142 项工程测试。2026-10-20 新增人格 skills、角色开场设定（交互目标、想透露 / 想隐瞒、前情提要）和记忆召回；输入整理成"一个角色一个文件、一个剧情一个文件"；随后去掉事件脚本，改为两个角色基于背景自主对话，并用本地 Qwen3-8B（思考模式）跑通。均不改动与两组约定的合同。**心理内容大多仍是空壳**：11 个更新算子只有写权限、没有幅度规则；机制卡数值是未校准的工程假设。所有验证都是工程层面的，没有心理有效性证据，mock 的输出差异也不能当证据。
 
 ## 2. 总体结构
 
@@ -16,12 +16,12 @@ flowchart TB
     SRC["两份心理学库<br/>data/sources + catalog.json"]
     PER["角色文件 roles/role1.json …<br/>档案 persona 2.0 + skills + 开场设定"]
     SKL["skill 库<br/>library/skills/*/SKILL.md"]
-    SCN["剧情文件 scenes/test1.json …<br/>背景 + 事件 + 世界私有数据（不指导角色）"]
+    SCN["剧情文件 scenes/test1.json …<br/>共享背景 + 两个座位 + 世界私有数据（无剧本）"]
   end
 
   subgraph CORE["角色核心 rolesim/"]
     VIEW["视图编译 persona.py<br/>系统真值 / 角色自知 / 他者可见 / 控制器约束"]
-    AG["Agent agent.py<br/>step 提出行动 / perceive 接收结果"]
+    AG["Agent agent.py（每个座位一个）<br/>感知评价 → step 提出行动 / perceive 确认已说出"]
     ST["动态状态 state.py + modules.py<br/>六域 · 模块状态 · 11 个算子 · 分组原子提交"]
     MECH["机制卡 mechanisms.py<br/>5 张调度卡"]
     SK["人格 skills skills.py<br/>三级加载 · 不写状态"]
@@ -31,7 +31,7 @@ flowchart TB
   end
 
   subgraph ENV["环境适配 runtime.py + contract.py"]
-    SE["ScriptedEnvironment<br/>可见性过滤 · 裁决 · outcome 事件"]
+    SE["DialogueEnvironment<br/>开场 · 轮流 · 原样转发 · 收尾"]
   end
 
   subgraph OUT["记录与评审"]
@@ -49,14 +49,14 @@ flowchart TB
   PER --> BR
   BR --> AG
   BR -- "前情提要" --> MEM
-  SE -- "角色可见 Event" --> AG
+  SE -- "对方的台词 Event" --> AG
   AG <--> ST
   AG <--> MEM
   AG <--> SK
   AG <--> MECH
   AG <--> BK
-  AG -- "ProposedAction" --> SE
-  SE -- "outcome Event" --> AG
+  AG -- "ProposedAction（台词 + 私下的动作）" --> SE
+  SE -- "已说出的台词 Event" --> AG
   AG --> RUN
   SE --> RUN
   RUN --> AUD --> PKG
@@ -65,7 +65,8 @@ flowchart TB
 
 读图要点：
 
-- **环境裁决发生了什么，角色只提出尝试。** `ProposedAction` 被接受、成功与否，都由环境产生的 `outcome` 事件告诉角色。
+- **环境不写剧本、不编造结果。** 它只开场、按座位轮流请角色发言、把台词原样转给对方，到轮数上限或有人选 `close` 时收尾。一方说的话是另一方收到的唯一新事件；角色选的动作留在 `intent_note` 里，不进任何事件。
+- **每个角色是独立的 Agent。** 各有各的状态链、记忆和模型调用；对方的开场设定、状态、推理永远不进入自己的提示。
 - **只有 Agent 通过后端接触模型。** 状态、机制、画像编译都能在没有模型的情况下完整校验。
 - 虚线表示只是来源引用：`catalog.json` 提供章节索引和哈希，档案里的 `source_ref` 必须指向其中的条目（有测试检查）。
 
@@ -83,40 +84,45 @@ flowchart TB
 | 记忆 | `memory.py` | 只增；前情固定在前；较早条目按字符二元组相似度 + 显著性召回；最近 12 条完整保留 | 完成，未接 Mem0 服务 |
 | 接口合同 | `contract.py` | Event / ProposedAction / AgentState / StateDelta 数据类与校验 | 完成（按环境组合同 v0） |
 | 角色 | `agent.py` | `step` / `perceive`、可见性二次校验、决策与表达编排、状态链 | 完成 |
-| 后端 | `providers.py` | mock 夹具；兼容 `/chat/completions` 的真实后端，失败不回退 | 完成，真实模型未跑 |
-| 环境与运行 | `runtime.py` | 脚本环境、`run_episode`、落盘、git SHA | 单焦点角色 + 四轮 |
-| 审计 | `audit.py` | 从落盘产物重新推导五项自动检查 | 完成 |
+| 后端 | `providers.py` | mock 夹具；兼容 `/chat/completions` 的真实后端（评价、决策、表达三类调用；思考模式开启，推理只进运行记录），失败不回退 | 完成，已接本地 Qwen3-8B |
+| 词表 | `vocab.py` | 七个交流动作、五种线索及其中文说明 | 完成 |
+| 环境与运行 | `runtime.py` | scene schema 2.0 校验、`DialogueEnvironment`、`run_dialogue`、按角色落盘、git SHA | 两个座位 |
+| 审计 | `audit.py` | 从落盘产物按角色重新推导七项自动检查 | 完成 |
 | 评审包 | `package.py` | 盲化评审包导出 | 完成 |
-| 角色与剧情文件 | `roles.py`、`roles/`、`scenes/` | 角色文件与剧情文件的读取校验、`fit` 搭配检查、`seat` 组装 Agent、`run` | 完成；只支持一个模型驱动的角色 |
+| 角色与剧情文件 | `roles.py`、`roles/`、`scenes/` | 角色文件与剧情文件的读取校验、`fit` / `fit_cast` 入座检查、`seat` 为每个座位组装 Agent、`run` | 完成 |
 | 入口 | `__main__.py` | `catalog` `list` `validate` `compile` `skills` `run` `audit` `package` | 完成 |
-| 示例与重建 | `roles/`、`scenes/`、`scripts/bootstrap_examples.py` | 两个虚构角色 role1（林澄）、role2（周越）+ 两个剧情 test1（4 轮）、test2（5 轮追问版） | 虚构设定 |
+| 示例与重建 | `roles/`、`scenes/`、`scripts/bootstrap_examples.py` | 两个虚构角色 role1（林澄，项目组一方）、role2（周越，合作方一方）+ 两个剧情 test1（交付沟通）、test2（剩余数据跟进），各最多 8 次发言 | 虚构设定 |
 
-## 4. 一个事件怎么被处理
+## 4. 一轮发言怎么被处理
 
 ```mermaid
 sequenceDiagram
-  participant E as 环境 ScriptedEnvironment
-  participant A as Agent
+  participant E as 环境 DialogueEnvironment
+  participant A as 轮到的 Agent
   participant S as 状态 commit_phase
   participant M as 模型后端
 
-  E->>A: step(新的可见事件)
+  E->>A: step(上次发言后新到的事件：开场旁白或对方的台词)
   A->>A: 二次校验可见性，audience 不含自己则丢弃并告警
-  A->>S: 候选变化（紧张、信任）+ 证据 event_id
+  A->>M: appraise（事件不带环境线索时：从本角色立场评价感到哪些线索）
+  M-->>A: cues（五种之一，0–1）+ reason
+  A->>A: 校验线索名和范围
+  A->>S: 候选变化（紧张；信任只认兑现证据）+ 证据 event_id
   S-->>A: 采纳 / 拒绝，写 mechanism_log
   A->>A: 召回记忆（前情 + 相关旧条目 + 最近 12 条），激活 skill
   A->>A: 按消融档位组装决策提示（开场设定、skill 各档都有；可含 current_state、机制卡）
   A->>M: decide
   M-->>A: action + evidence_ids + brief_reason
   A->>A: 校验：动作可行、证据可见
-  A->>M: express（只给自知、风格约束、skill 表达要点、可透露信息、动作、可见历史）
+  A->>M: express（只给自知、风格约束、skill 表达要点、可透露信息、要回应的话、动作及其含义、自己最近说过的话、可见历史）
   M-->>A: speech
   A-->>E: ProposedAction（speech）+ 新状态快照
-  E->>E: 裁决，产生 outcome 事件（只给行动者）
-  E->>A: perceive(outcome)
-  A->>S: 候选变化
+  E->>E: 原样发布为公开台词事件，放进对方的收件箱
+  E->>A: perceive(自己刚说出的台词)
+  A->>S: 候选变化（无新压力，紧张按恢复速率回落）
   S-->>A: 采纳 / 拒绝
   A-->>E: 新状态快照（prev_state_id 串链）
+  E->>E: 轮到对方
 ```
 
 要点：
@@ -124,6 +130,8 @@ sequenceDiagram
 - 每个事件**用同一份已提交快照**生成候选，同一阶段内不读取未提交的候选。
 - 决策或表达失败时返回 `status=error`，**状态不前进**，也不会换成 mock 或把内心独白当台词。
 - `perceive` 之后下一次 `step` 读取的就是最新状态；`prev_state_id` 不匹配会被拒绝。
+- 自己的台词在 `perceive` 时才进入记忆（环境确认"已说出"），记忆里自己的话标为"我"，对方的话标为对方的座位名。
+- 感知评价提示在三档消融里完全相同：它决定的是三档都要计算的状态。
 
 ## 5. 状态结构
 
@@ -200,7 +208,8 @@ flowchart TB
 | 自我理解 `self_view` | 是 | 是 | 否 | 否 |
 | 条件化行为语句（含表达风格规则） | 是 | 仅 `speech_style.*` 部分 | 否 | 否 |
 | 动机基线、价值、核心目标 | 是 | 否 | 否 | 否 |
-| 可见历史 | 是 | 是 | 是 | 是（作为轨迹） |
+| 可见历史（含对方的台词） | 是 | 是 | 是 | 是（作为轨迹） |
+| 对方的开场设定、状态、推理 | 否 | 否 | 仅在单独的对照文件 | 否 |
 | 当前动态状态 | 仅 `profile_state` 及以上 | 否 | 是（前后状态） | 否 |
 | 机制卡与控制器提示 | 仅 `profile_state_mechanisms` | 否 | 否（提示不导出，避免暴露档位） | 否 |
 | 模型输出与推理摘要 | — | — | 是 | 否 |
@@ -221,21 +230,18 @@ flowchart TB
 flowchart LR
   RUNX["python -m rolesim run"] --> D["运行目录"]
   D --> F1["manifest.json<br/>版本 · git SHA · 模型 · 调用数"]
-  D --> F2["inputs.json / views.json<br/>系统侧复现"]
-  D --> F3["states.jsonl / state.json<br/>状态链"]
-  D --> F4["mechanism_log.jsonl<br/>提交日志"]
-  D --> F5["audit.jsonl<br/>模型输入输出 · 增量"]
-  D --> F6["public.jsonl<br/>公开轨迹"]
-  D --> F7["environment_events.json<br/>全部事件（含私有）"]
-  D --> AR["audit_report.json / .md<br/>六项自动检查"]
+  D --> F6["public.jsonl<br/>双方台词"]
+  D --> F7["environment_events.json<br/>全部事件"]
+  D --> RD["roles/&lt;id&gt;/（每个角色一份）<br/>inputs · views · states · mechanism_log<br/>audit.jsonl（评价/决策/表达输入输出 · 推理）"]
+  D --> AR["audit_report.json / .md<br/>每个角色七项自动检查"]
   D --> PK["python -m rolesim package"]
   AR --> PK
   PK --> P1["R01/ evaluator_samples<br/>role_visible_trace<br/>counterpart_truth<br/>role_setup<br/>annotation_template"]
   PK --> P2["blind_key.json<br/>方法标签，不给评审者"]
 ```
 
-- **自动审计**从落盘文件重新推导，不信任引擎自己的记录：字段有效性、证据与可见性、写权限、stable 一致、轨迹可追溯、隐瞒信息未泄露（隐瞒原文不进表达提示，关键词不出现在台词）；另外单列软约束、豁免、被拒依赖组、模块覆盖、主动透露次数。其余维度只标注"需人工评分"。
-- **评审包**每个运行一个盲化编号；模式、后端、模型、代码版本只在 `blind_key.json`。对方真实状态单独成文件，只供对照。
+- **自动审计**从落盘文件重新推导，不信任引擎自己的记录：字段有效性、证据与可见性、写权限、stable 一致、轨迹可追溯、隐瞒信息未泄露（隐瞒原文不进表达提示，关键词不出现在台词）、跨角色隔离（对方的隐瞒原文和世界私有数据不出现在本角色的任何调用里）；另外单列软约束、豁免、被拒依赖组、模块覆盖、主动透露次数。其余维度只标注"需人工评分"。
+- **评审包**里每个运行的每个角色是一个盲化单元；模式、后端、模型、代码版本只在 `blind_key.json`。对方的开场设定和末态单独成文件，只供对照。
 - 每次运行自带四类版本号：`construct_definition_version`（未登记）、`state_schema_version`、`update_rule_version`、`evaluation_protocol_version`（未冻结）。
 
 ## 9. 核心不变量
@@ -245,11 +251,12 @@ flowchart LR
 1. `stable` 在一个轨迹内不可变；`StateDelta` 的路径以 `stable` 开头一律拒绝，运行中每轮还用哈希复核。
 2. 每条状态变化必须带**本角色可见**的证据，且只能写 `active` 模块、自己算子白名单内的路径。
 3. 数值越界直接拒绝，不截断；未知用 `null`，不用中性值代替。
-4. 世界私有数据和他人的隐藏心理字段不进入任何模型调用；角色不可见的事件在入口被丢弃。角色自己要隐瞒的信息只进决策提示，不进表达提示。
+4. 世界私有数据和他人的隐藏心理字段（包括对方的开场设定和状态）不进入任何模型调用；角色不可见的事件在入口被丢弃。角色自己要隐瞒的信息只进评价和决策提示，不进表达提示。
 5. skill 只影响提示内容，不产生状态变化；记忆只增不改。
-6. 他人的口头承诺不算"已兑现"的证据，只有叙述事实和环境裁决的结果可以改变可靠性判断。
-7. 模型调用失败就停下并记录，**不静默回退 mock**。
-8. 旧 schema 的档案和轨迹被拒绝，不做静默转换（剧情只接受 scene schema 1.2，带 `goal` / `briefings` 的旧格式被拒绝）。
+6. 他人的口头承诺不算"已兑现"的证据，只有叙述事实和环境裁决的结果可以改变可靠性判断；所以纯对话里信任不变。
+7. 环境不替角色说话、不编造结果；模型给出的感知线索只能是登记过的五种、0–1，状态变化由程序按公式计算。
+8. 模型调用失败就停下并记录，**不静默回退 mock**。
+9. 旧 schema 的档案和轨迹被拒绝，不做静默转换（剧情只接受 scene schema 2.0，带事件脚本的 1.x 格式被拒绝）。
 
 ## 10. 完成度与未做
 
@@ -259,8 +266,8 @@ flowchart LR
 | 人格 skills | 9 个 SKILL.md、人物绑定、三级加载、`--no-skills` 对照 | 心理学组审定内容；从语料蒸馏 skill；纠正层与 skill 版本；由模型读描述自主激活的档位 |
 | 开场设定与记忆 | 角色文件的开场设定（目标、透露、隐瞒、前情）；只增记忆与召回；隐瞒泄露审计 | 接入 Mem0 服务；换说法的泄露检测；记忆更新人格（需与心理学组对齐） |
 | 动态状态 | 六域骨架，原子提交，三级错误，日志与版本 | 11 个算子的机制卡数值；信念、目标、他人模型的更新规则；时间事件与衰减规则 |
-| 环境 | 单焦点角色 + 四轮脚本；合同 v0 已与环境组对接 | 多角色调度；真实场景；时间轴与打断（设计见 [09](09-timeline-and-interruption.md)） |
-| 模型 | 两阶段接口、严格 JSON、本机回环不走代理 | 真实模型运行（需要可用的服务） |
+| 环境 | 两个角色基于背景轮流自主对话；合同 v0 已与环境组对接 | 三方以上；非对话行动与世界事实（如"文件已到"）；时间轴与打断（设计见 [09](09-timeline-and-interruption.md)） |
+| 模型 | 评价 / 决策 / 表达三类调用、严格 JSON、思考模式、本机回环不走代理；本地 Qwen3-8B 已跑通 | 更大模型；多次重复运行的统计 |
 | 评测 | 三档消融，自动审计，盲化评审包，标注模板 | 评审包带稳定画像；评测协议冻结；标注工具；复标统计；回放工具；真人基线 |
 
 ## 11. 常用命令
@@ -271,9 +278,9 @@ flowchart LR
 python3.11 -m unittest discover -s tests -v
 python3.11 -m rolesim list
 python3.11 -m rolesim validate role1
-python3.11 -m rolesim run --role role1 --scene test1 --mode profile_state --out runs/demo
-python3.11 -m rolesim run --role role2 --scene test2 --out runs/role2-test2
-python3.11 -m rolesim run --role role1 --scene test1 --no-skills --out runs/no-skills
+python3.11 -m rolesim run --roles role1 role2 --scene test1 --mode profile_state --out runs/demo
+python3.11 -m rolesim run --roles role1 role2 --scene test2 --out runs/test2
+python3.11 -m rolesim run --roles role1 role2 --scene test1 --no-skills --out runs/no-skills
 python3.11 -m rolesim audit runs/demo
 python3.11 -m rolesim package runs/a runs/b --out outputs/review --seed 1
 PYTHONPATH=. python3.11 scripts/bootstrap_examples.py   # 重建 roles/ 与 scenes/ 示例

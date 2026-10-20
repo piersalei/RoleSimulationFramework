@@ -1,13 +1,13 @@
 """Export review packages from finished runs (psychology reply, section 3.3-3.4).
 
-For each run the export writes, under a blinded id:
+Each role of each run is one blinded unit. For each unit the export writes:
   - evaluator_samples.jsonl: one sample per state transition with the context an
     evaluator needs (pre/post state, role-visible trigger events, model output, every
     candidate and its fate);
   - role_visible_trace.jsonl: only what the role itself could see and do, for judging
     outward behaviour without access to internal states or world truth;
-  - counterpart_truth.json: world-private data and role-invisible events, for comparison
-    only. Whether the role's inference was reasonable is judged from role-visible
+  - counterpart_truth.json: world-private data, role-invisible events, and the other
+    role's opening setup and final state, for comparison only. Whether the role's inference was reasonable is judged from role-visible
     evidence, never from agreement with this file.
 Method labels (mode, backend, model, code version) live only in blind_key.json at the
 package root, so the per-run folders can be handed to raters on their own.
@@ -51,14 +51,14 @@ def _state_view(snap):
                                       "module_status": snap["module_status"]}
 
 
-def _samples(run, blind):
-    inputs = json.loads((run / "inputs.json").read_text(encoding="utf-8"))
-    role = inputs["persona"]["id"]
+def _samples(run, role, blind):
+    folder = run / "roles" / role
+    inputs = json.loads((folder / "inputs.json").read_text(encoding="utf-8"))
     events = json.loads((run / "environment_events.json").read_text(encoding="utf-8"))
     visible = {e["event_id"]: e for e in events if role in e["visibility"]["audience"]}
-    states = _rows(run / "states.jsonl")
-    records = _rows(run / "audit.jsonl")
-    log = _rows(run / "mechanism_log.jsonl")
+    states = _rows(folder / "states.jsonl")
+    records = _rows(folder / "audit.jsonl")
+    log = _rows(folder / "mechanism_log.jsonl")
     samples, previous = [], None
     for index, snap in enumerate(states):
         record = records[index // 2]
@@ -84,11 +84,11 @@ def _samples(run, blind):
     return samples, events, inputs, role, visible
 
 
-def _role_trace(records, events, role, visible):
+def _role_trace(records, events, role, visible, titles):
     trace = []
     proposals = {r["proposal"]["proposal_id"]: r for r in records}
     for event in sorted(visible.values(), key=lambda e: e["turn"]):
-        item = {"turn": event["turn"], "speaker": event["actor"], "kind": event["type"],
+        item = {"turn": event["turn"], "speaker": titles.get(event["actor"], event["actor"]), "kind": event["type"],
                 "text": event["content"]}
         if event.get("caused_by") in proposals and event["actor"] == role:
             item["action"] = proposals[event["caused_by"]]["proposal"]["intent_note"]
@@ -105,56 +105,71 @@ def _template(samples, blind):
             "trajectory_scores": {d: None for d in TRAJECTORY_DIMENSIONS}, "trajectory_reason": ""}
 
 
+def _counterparts(run, manifest, role):
+    out = {}
+    for seat in manifest["cast"]:
+        if seat["role_id"] == role:
+            continue
+        folder = run / "roles" / seat["role_id"]
+        inputs = json.loads((folder / "inputs.json").read_text(encoding="utf-8"))
+        final = json.loads((folder / "state.json").read_text(encoding="utf-8"))
+        out[seat["title"]] = {"briefing": inputs.get("briefing"), "final_state": _state_view(final)}
+    return out
+
+
 def export_package(run_dirs, out_dir, seed=0):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=False)
     runs = [Path(r) for r in run_dirs]
     if not runs:
         raise ValueError("no run directories given")
-    order = list(range(len(runs)))
-    random.Random(seed).shuffle(order)
-    key, files = {}, []
-    for rank, position in enumerate(order, 1):
-        run = runs[position]
+    units = []
+    for run in runs:
         manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
         if manifest.get("status") != "completed":
             raise ValueError(f"{run.name}: only completed runs can be exported")
+        units += [(run, manifest, seat["role_id"]) for seat in manifest["cast"]]
+    random.Random(seed).shuffle(units)
+    key, files = {}, []
+    for rank, (run, manifest, role) in enumerate(units, 1):
         blind = f"R{rank:02d}"
-        samples, events, inputs, role, visible = _samples(run, blind)
+        titles = {s["role_id"]: s["title"] for s in manifest["cast"]}
+        samples, events, inputs, role, visible = _samples(run, role, blind)
         folder = out / blind
         folder.mkdir()
         (folder / "evaluator_samples.jsonl").write_text(
             "".join(json.dumps(s, ensure_ascii=False) + "\n" for s in samples), encoding="utf-8")
-        trace = _role_trace(_rows(run / "audit.jsonl"), events, role, visible)
+        trace = _role_trace(_rows(run / "roles" / role / "audit.jsonl"), events, role, visible, titles)
         (folder / "role_visible_trace.jsonl").write_text(
             "".join(json.dumps(t, ensure_ascii=False) + "\n" for t in trace), encoding="utf-8")
         hidden = [_event_view(e) for e in events if role not in e["visibility"]["audience"]]
         write_json(folder / "counterpart_truth.json", {
             "use": "comparison only; plausibility of the role's inference is judged from role-visible "
                    "evidence, not from agreement with this file",
-            "world_private": inputs["scenario"]["world_private"], "role_invisible_events": hidden})
+            "world_private": inputs["scenario"]["world_private"], "role_invisible_events": hidden,
+            "counterparts": _counterparts(run, manifest, role)})
         # Bound skills are the same whether or not a run used them, so listing them keeps the blind.
         write_json(folder / "role_setup.json", {
-            "briefing": inputs.get("briefing"),
+            "seat": titles[role], "briefing": inputs.get("briefing"),
             "bound_skills": [s["name"] for s in inputs.get("skills") or []]})
         write_json(folder / "annotation_template.json", _template(samples, blind))
-        audit = json.loads((run / "audit_report.json").read_text(encoding="utf-8")) \
-            if (run / "audit_report.json").exists() else None
+        report = run / "roles" / role / "audit_report.json"
+        audit = json.loads(report.read_text(encoding="utf-8")) if report.exists() else None
         write_json(folder / "auto_audit.json", None if audit is None else {
             "checks": [{k: c[k] for k in ("id", "dimension", "status", "failures")} for c in audit["checks"]],
             "rejected_groups": audit["rejected_groups"], "soft_violations": audit["soft_violations"],
             "exceptions_approved": audit["exceptions_approved"]})
-        key[blind] = {"run": run.name, "mode": manifest["mode"], "skills": manifest.get("skills"),
-                      "origin": manifest.get("origin"),
-                      "backend": manifest["backend"],
-                      "model": manifest["model"], "model_served": manifest.get("model_served"),
-                      "code_version": manifest.get("code_version"), "persona_hash": manifest["persona_hash"],
-                      "scenario_hash": manifest["scenario_hash"]}
+        info = manifest["roles"][role]
+        key[blind] = {"run": run.name, "role_id": role, "seat": titles[role], "mode": manifest["mode"],
+                      "skills": info.get("skills"), "origin": manifest.get("origin"),
+                      "backend": manifest["backend"], "model": manifest["model"],
+                      "model_served": manifest.get("model_served"), "code_version": manifest.get("code_version"),
+                      "persona_hash": info["persona_hash"], "scenario_hash": manifest["scenario_hash"]}
         files.append(blind)
     write_json(out / "blind_key.json", {"warning": "method labels; keep away from raters", "runs": key})
     write_json(out / "package.json", {
-        "runs": files, "seed": seed, "versions": dict(VERSIONS), "dimensions": DIMENSIONS,
-        "auto_audited_dimensions": AUTO_DIMENSIONS, "hard_error_types": HARD_ERROR_TYPES,
+        "runs": files, "unit": "one role in one run", "seed": seed, "versions": dict(VERSIONS),
+        "dimensions": DIMENSIONS, "auto_audited_dimensions": AUTO_DIMENSIONS, "hard_error_types": HARD_ERROR_TYPES,
         "protocol": "sample package -> auto audit -> human scoring -> second-rater re-score -> report",
         "per_run_files": ["evaluator_samples.jsonl", "role_visible_trace.jsonl", "counterpart_truth.json",
                           "role_setup.json", "annotation_template.json", "auto_audit.json"],
@@ -163,3 +178,5 @@ def export_package(run_dirs, out_dir, seed=0):
                              "from per-run files. A package built from mock runs checks the export, "
                              "not the role."})
     return {"package": str(out), "runs": files}
+
+

@@ -4,14 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rolesim import runtime
+from rolesim import vocab
 from rolesim.agent import MODES, Agent
 from rolesim.contract import StepRequest
 from rolesim.providers import MockBackend
-from rolesim.runtime import ScriptedEnvironment, run_episode
+from rolesim.runtime import run_dialogue
 from rolesim.skills import (ACTIONS, BINDING_VERSION, CUES, LIBRARY, bind, load_library, parse_skill,
                             select)
-from fixtures import load, setup
+from fixtures import cued_events, load, setup
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,8 +71,8 @@ class LibraryTests(unittest.TestCase):
                 self.assertTrue(skill["expression"] and skill["avoid"] and skill["limits"])
 
     def test_vocabularies_match_the_scripted_environment(self):
-        self.assertEqual(CUES, runtime.CUES)
-        self.assertEqual(ACTIONS, runtime.ACTIONS)
+        self.assertEqual(CUES, vocab.CUES)
+        self.assertEqual(ACTIONS, vocab.ACTIONS)
 
     def test_valid_fixture_parses(self):
         skill = parse_skill(VALID, "demo-skill", CATALOG_IDS)
@@ -166,12 +166,16 @@ class SkillRunTests(unittest.TestCase):
         self.binding = load("role1.skills")
 
     def run_capture(self, mode="profile_state_mechanisms", use_skills=True, binding="default"):
+        """role1 carries the skills under test; role2 sits opposite without any."""
         backend = Capture()
+        cast = [{"persona": self.persona, "skills": self.binding if binding == "default" else binding,
+                 "briefing": None},
+                {"persona": load("role2"), "skills": None, "briefing": None}]
         with tempfile.TemporaryDirectory() as folder:
-            manifest = run_episode(self.persona, self.scenario, backend, Path(folder) / "run", mode,
-                                   self.binding if binding == "default" else binding, use_skills)
+            manifest = run_dialogue(cast, self.scenario, backend, Path(folder) / "run", mode, use_skills)
             public = (Path(folder) / "run" / "public.jsonl").read_text()
-        return backend.payloads, manifest, public
+        mine = [p for p in backend.payloads if p["role"]["id"] == "role1"]
+        return mine, manifest, public
 
     def test_skills_reach_decision_in_every_mode(self):
         for mode in MODES:
@@ -179,7 +183,7 @@ class SkillRunTests(unittest.TestCase):
                 payloads, manifest, _ = self.run_capture(mode)
                 self.assertIn("skill_catalog", payloads[0])
                 self.assertIn("active_skills", payloads[0])
-                self.assertTrue(manifest["skills"]["enabled"])
+                self.assertTrue(manifest["roles"]["role1"]["skills"]["enabled"])
                 self.assertTrue(manifest["audit"]["passed"])
 
     def test_expression_gets_style_hints_only(self):
@@ -197,25 +201,27 @@ class SkillRunTests(unittest.TestCase):
     def test_no_skills_control_keeps_binding_on_record_only(self):
         payloads, manifest, _ = self.run_capture(use_skills=False)
         self.assertFalse(any("skill_catalog" in p or "skill_style" in p for p in payloads))
-        self.assertFalse(manifest["skills"]["enabled"])
-        self.assertEqual(manifest["skills"]["names"][0], "verify-before-commit")
+        self.assertFalse(manifest["roles"]["role1"]["skills"]["enabled"])
+        self.assertEqual(manifest["roles"]["role1"]["skills"]["names"][0], "verify-before-commit")
 
     def test_without_binding_runs_as_before(self):
         payloads, manifest, _ = self.run_capture(binding=None)
-        self.assertIsNone(manifest["skills"])
+        self.assertIsNone(manifest["roles"]["role1"]["skills"])
         self.assertFalse(any("skill_catalog" in p for p in payloads))
 
     def test_mock_follows_active_skills_when_cards_are_absent(self):
-        _, _, with_skills = self.run_capture("profile_only")
-        _, _, without = self.run_capture("profile_only", use_skills=False)
-        first = lambda public: [json.loads(l) for l in public.splitlines() if "action" in json.loads(l)][0]
-        self.assertEqual(first(with_skills)["action"], "request_evidence")
-        self.assertEqual(first(without)["action"], "propose_plan")
+        bound = bind(self.binding, "role1", load_library())
+        actions = {}
+        for label, skills in (("with", bound), ("without", None)):
+            agent = Agent(MockBackend(), self.scenario["allowed_actions"], "合作方负责人", "role2", "profile_only",
+                          skills=skills)
+            response = agent.step(StepRequest("role1", 1, "g", [cued_events()[0]], None, self.persona))
+            actions[label] = response.actions[0].intent_note
+        self.assertEqual(actions, {"with": "request_evidence", "without": "propose_plan"})
 
     def test_agent_rejects_nothing_when_no_skills_are_given(self):
-        env = ScriptedEnvironment(self.scenario, "role1")
-        event = next(env.scheduled())[1]
-        agent = Agent(MockBackend(), self.scenario["allowed_actions"], self.scenario["partner"])
+        event = cued_events()[0]
+        agent = Agent(MockBackend(), self.scenario["allowed_actions"], "合作方负责人", "role2")
         response = agent.step(StepRequest("role1", 1, self.scenario["background"], [event], None, self.persona))
         self.assertEqual(response.status, "ok")
         self.assertNotIn("skill_catalog", agent.last_payload)

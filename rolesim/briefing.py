@@ -16,6 +16,7 @@ KEYS = {"goal", "disclose", "conceal", "recap"}
 # Concealment strategies from decision library 6.7 that do not assert falsehoods.
 STRATEGIES = {"omission", "strategic_ambiguity"}
 RECAP_PREFIX = "recap:"
+EVENT_PREFIXES = ("speech:",)   # ids the environment gives to events
 
 
 def _markers(value, label):
@@ -43,7 +44,7 @@ def validate_briefing(briefing, reserved_ids=()):
                 raise ValueError(f"briefing {key} item: expected fields {sorted(fields)}")
             text(item["id"], f"briefing {key} id")
             text(item["text"], f"briefing {key} text")
-            if item["id"] in seen:
+            if item["id"] in seen or item["id"].startswith(EVENT_PREFIXES):
                 raise ValueError(f"briefing: duplicate or reserved id {item['id']!r}")
             seen.add(item["id"])
             if (key == "recap") != item["id"].startswith(RECAP_PREFIX):
