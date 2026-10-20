@@ -47,15 +47,16 @@ python3.11 -m unittest discover -s tests -v
 python3.11 -m rolesim list                       # 角色 role1、role2；剧情 test1、test2
 python3.11 -m rolesim validate role1
 python3.11 -m rolesim compile role1 --out outputs/role1-views.json
-python3.11 -m rolesim run --roles role1 role2 --scene test1 --out runs/test1
-python3.11 -m rolesim run --roles role1 role2 --scene test2 --out runs/test2
+python3.11 -m rolesim run --roles role1 role2 --scene test1      # → runs/<时间>_test1_mock/
+python3.11 -m rolesim run --roles role1 role2 --scene test2
 # 两个角色都不注入 skill 的对照
-python3.11 -m rolesim run --roles role1 role2 --scene test1 --no-skills --out runs/test1-noskills
+python3.11 -m rolesim run --roles role1 role2 --scene test1 --no-skills
+python3.11 -m rolesim readable runs/<运行目录>   # 重新生成 transcript.md
 ```
 
 一个角色一个文件：`roles/role1.json` 里是人物档案（persona schema 2.0，原样嵌入）、skill 列表和开场设定（目标、想透露 / 想隐瞒、前情提要）。一个剧情一个文件：`scenes/test1.json` 只写共享背景和两个座位，没有剧本，不给角色下指令；之后怎么谈由两个角色自己决定。都用编号命名，具体内容打开文件看；见 [docs/02-authoring.md](docs/02-authoring.md)。skill 库在 `library/skills/`。
 
-同一路径已有运行结果时程序拒绝覆盖。省略 `--out` 可生成 UTC 时间戳目录。
+运行目录默认是 `runs/<YYYYMMDD-HHMMSS>_<剧情>_<模型>/`，时间取 `TZ` 指定的本地时间（本机为北京时间），按名字排序就是按时间排序；`--out` 可指定其他路径。同一路径已有运行结果时程序拒绝覆盖。旧格式（单角色、事件脚本）的运行放在 `runs/legacy/`。
 
 示例采用虚构人物和人工设定参数：role1（林澄）坐项目组一方，role2（周越）坐合作方一方。`mock` 按关键词标线索、根据候选顺序选择行动、用固定台词表达，**只能用于工程验证**。两个人物的输出不同并不构成心理有效性证据。
 
@@ -67,7 +68,7 @@ python3.11 -m rolesim run --roles role1 role2 --scene test1 --no-skills --out ru
 export ROLE_SIM_BASE_URL='http://127.0.0.1:8000/v1'
 export ROLE_SIM_MODEL='your-served-model-name'
 # 仅在需要鉴权时，通过服务器环境安全注入 ROLE_SIM_API_KEY
-python3.11 -m rolesim run --backend chat --roles role1 role2 --scene test1 --out runs/model-first
+python3.11 -m rolesim run --backend chat --roles role1 role2 --scene test1 > /tmp/run.log 2>&1 &   # 目录名会先打印到日志
 ```
 
 `.env.example` 只提供变量说明，程序不会自动读取 `.env`。远程地址要求 HTTPS，本机回环地址允许 HTTP。请求失败或输出不合法即停止并记录失败，不会静默切回 mock。
@@ -76,7 +77,8 @@ python3.11 -m rolesim run --backend chat --roles role1 role2 --scene test1 --out
 
 | 文件 | 内容 | 用途 |
 |---|---|---|
-| `manifest.json` | 座位与角色、场景与机制哈希，模型与采样、模式、调用数、完成/失败状态；每个角色的画像哈希与 skill 信息 | 复核本次运行的配置与证据范围 |
+| `transcript.md` | 运行结束（成功或失败）后自动生成的可读版：概况、背景、两个角色的设定、逐句对话（每句前的感受、选的动作和理由、紧张与信任的变化，折叠的思考过程）、结果汇总 | 人工阅读；含双方的私有设定，不能放进评审包 |
+| `manifest.json` | 开始 / 结束时间，座位与角色、场景与机制哈希，模型与采样、模式、调用数、完成/失败状态；每个角色的画像哈希与 skill 信息 | 复核本次运行的配置与证据范围 |
 | `public.jsonl` | 开场旁白与双方台词（含各自选的动作） | 读对话 |
 | `environment_events.json` | 环境产生的全部合同 Event | 系统侧复现 |
 | `audit_report.json/.md` | 两个角色的自动审计汇总 | 一眼看是否通过 |

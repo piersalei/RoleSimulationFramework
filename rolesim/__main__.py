@@ -1,7 +1,7 @@
 import argparse
-import datetime
 import json
 import sys
+from pathlib import Path
 
 from .catalog import build_catalog, write_json
 from .persona import compile_views
@@ -9,11 +9,14 @@ from .providers import ChatBackend, MockBackend
 from .agent import MODES
 from .audit import write_report
 from .package import export_package
+from .readable import FILENAME, write_readable
 from .roles import ROLES_DIR, SCENES_DIR, available, fit_cast, load_role, load_scene, run
+from .runtime import run_name
 from .skills import load_library
 
 DEFAULT_ROLES = ["role1", "role2"]
 DEFAULT_SCENE = "test1"
+RUNS_DIR = Path("runs")
 
 
 def main():
@@ -45,7 +48,10 @@ def main():
     demo.add_argument("--no-skills", action="store_true", help="keep the roles' skills on record but out of the prompts")
     demo.add_argument("--backend", choices=["mock", "chat"], default="mock")
     demo.add_argument("--mode", choices=list(MODES), default="profile_state_mechanisms")
-    demo.add_argument("--out", default=None)
+    demo.add_argument("--out", default=None,
+                      help="run directory; default runs/<YYYYMMDD-HHMMSS>_<scene>_<model>")
+    readable = sub.add_parser("readable", help="(re)write transcript.md for finished run directories")
+    readable.add_argument("run_dirs", nargs="+")
     args = parser.parse_args()
     try:
         if args.command == "catalog":
@@ -72,12 +78,17 @@ def main():
             sys.exit(0 if report["passed"] else 2)
         elif args.command == "package":
             print(json.dumps(export_package(args.run_dirs, args.out, args.seed), ensure_ascii=False))
+        elif args.command == "readable":
+            for run_dir in args.run_dirs:
+                print(write_readable(run_dir))
         else:
             roles, scene = [load_role(r) for r in args.roles], load_scene(args.scene)
             backend = MockBackend() if args.backend == "mock" else ChatBackend()
-            output = args.out or "runs/" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            output = args.out or str(RUNS_DIR / run_name(scene["id"], backend.model))
+            print(f"run directory: {output}", file=sys.stderr, flush=True)
             result = run(roles, scene, backend, output, args.mode, not args.no_skills)
-            print(json.dumps({"output": str(output), **result}, ensure_ascii=False, indent=2))
+            print(json.dumps({"output": output, "transcript": str(Path(output) / FILENAME), **result},
+                             ensure_ascii=False, indent=2))
     except (ValueError, OSError, RuntimeError, KeyError, TypeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

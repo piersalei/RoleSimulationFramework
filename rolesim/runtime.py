@@ -5,8 +5,12 @@ scene, relays each role's speech to everyone present and stops after `max_turns`
 when a role closes the conversation. It never writes a line for a role and never
 invents an outcome: what one role says is the only new event the other receives.
 """
+import datetime
 import json
+import os
+import re
 import subprocess
+import zoneinfo
 from pathlib import Path
 
 from . import skills as sk
@@ -18,6 +22,8 @@ from .contract import (Event, PerceiveRequest, StepRequest, Visibility, to_dict,
                        validate_event as validate_contract_event)
 from .mechanisms import CARDS
 from .persona import compile_views, text, validate_persona
+from .providers import MockBackend
+from .readable import write_readable
 from .state import VERSIONS
 from .vocab import ACTIONS
 
@@ -162,7 +168,7 @@ def run_dialogue(cast, scenario, backend, output, mode="profile_state_mechanisms
         members[role] = {**member, "bound": bound, "fingerprint": digest(member["persona"])}
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
-    manifest = {"schema_version": "2.0", "status": "running", "backend": backend.label,
+    manifest = {"schema_version": "2.0", "status": "running", "started_at": _now(), "backend": backend.label,
                 "model": backend.model, "sampling": backend.sampling, "mode": mode,
                 "interface": "env-contract-v0 step/perceive", "versions": dict(VERSIONS),
                 "code_version": code_version(), "scene_id": scenario["id"], "scenario_hash": digest(scenario),
@@ -232,8 +238,8 @@ def run_dialogue(cast, scenario, backend, output, mode="profile_state_mechanisms
             for handle in files.values():
                 handle.close()
         write_json(output / "environment_events.json", [to_dict(e) for e in env.log])
-        manifest.update(status="completed", turns=turn, closed_by=env.closed_by, api_calls=backend.calls,
-                        model_served=sorted(backend.served_models))
+        manifest.update(status="completed", finished_at=_now(), turns=turn, closed_by=env.closed_by,
+                        api_calls=backend.calls, model_served=sorted(backend.served_models))
         for role, agent in agents.items():
             manifest["roles"][role].update(
                 turns=spoken[role], final_state_id=agent.state_id, visibility_warnings=agent.warnings,
@@ -245,13 +251,42 @@ def run_dialogue(cast, scenario, backend, output, mode="profile_state_mechanisms
                              "failed_checks": {r: [c["id"] for c in rep["checks"] if c["status"] != "pass"]
                                                for r, rep in report["roles"].items()}}
         write_json(output / "manifest.json", manifest)
+        _readable(output)
         return manifest
     except Exception as exc:
         for files in handles.values():
             for handle in files.values():
                 handle.close()
         write_json(output / "environment_events.json", [to_dict(e) for e in env.log])
-        manifest.update(status="failed", error_type=type(exc).__name__, error=str(exc)[:500], api_calls=backend.calls,
-                        model_served=sorted(backend.served_models))
+        manifest.update(status="failed", finished_at=_now(), error_type=type(exc).__name__, error=str(exc)[:500],
+                        api_calls=backend.calls, model_served=sorted(backend.served_models))
         write_json(output / "manifest.json", manifest)
+        _readable(output)
         raise
+
+
+def _zone():
+    # Some hosts set TZ without system zone files, where astimezone() silently falls back to UTC.
+    try:
+        return zoneinfo.ZoneInfo(os.environ["TZ"])
+    except (KeyError, ValueError, zoneinfo.ZoneInfoNotFoundError):
+        return None
+
+
+def _now():
+    return datetime.datetime.now(_zone()).astimezone(_zone()).isoformat(timespec="seconds")
+
+
+def run_name(scene_id, model, when=None):
+    """Directory name for a run: local start time first, so runs sort by time."""
+    when = when or datetime.datetime.now(_zone())
+    tag = re.sub(r"[^0-9A-Za-z.-]+", "-", "mock" if model == MockBackend.model else str(model)).strip("-")
+    return f"{when:%Y%m%d-%H%M%S}_{scene_id}_{tag}"
+
+
+def _readable(output):
+    """The Markdown transcript is a convenience view; failing to write it must not change the run's outcome."""
+    try:
+        write_readable(output)
+    except Exception as exc:
+        (output / "transcript_error.txt").write_text(f"{type(exc).__name__}: {exc}\n", encoding="utf-8")

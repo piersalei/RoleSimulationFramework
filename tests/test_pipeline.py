@@ -150,8 +150,12 @@ class PipelineTests(unittest.TestCase):
             a, b = Path(folder) / "a", Path(folder) / "b"
             for target in (a, b):
                 run_scene(target)
-            for name in ("public.jsonl", "roles/role1/audit.jsonl", "roles/role2/audit.jsonl", "manifest.json"):
+            for name in ("public.jsonl", "roles/role1/audit.jsonl", "roles/role2/audit.jsonl"):
                 self.assertEqual((a / name).read_bytes(), (b / name).read_bytes(), name)
+            clock = ("started_at", "finished_at")
+            manifests = [{k: v for k, v in json.loads((d / "manifest.json").read_text()).items() if k not in clock}
+                         for d in (a, b)]
+            self.assertEqual(manifests[0], manifests[1])
             with self.assertRaises(FileExistsError):
                 run_scene(a)
         self.assertEqual(self.persona, before)

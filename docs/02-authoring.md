@@ -80,8 +80,8 @@
 ```bash
 python3.11 -m rolesim list                                          # 列出全部角色和剧情
 python3.11 -m rolesim list --roles role1 role2 --scene test2        # 查一组入座
-python3.11 -m rolesim run --roles role1 role2 --scene test2 --out runs/x
-python3.11 -m rolesim run --roles role2 role1 --scene test1 --out runs/y   # 换座位
+python3.11 -m rolesim run --roles role1 role2 --scene test2
+python3.11 -m rolesim run --roles role2 role1 --scene test1   # 换座位
 ```
 
 `--roles` 按座位顺序写两个编号或文件路径，`--scene` 写一个。新增角色或剧情只需要放一个新文件，不用改代码。入座检查（`fit_cast`）里，错误会阻止运行（例如座位数不对、同一角色坐两个座位、机制先验与启用的机制卡不一致、开场设定用了环境保留的 id）；提示只报告，例如"这个 skill 在该剧情里永远不会被激活"。运行记录 `manifest.json` 的 `origin` 字段记下用了哪些角色文件和剧情文件及其哈希。

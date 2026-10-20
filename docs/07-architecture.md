@@ -6,7 +6,7 @@
 
 把心理学组整理的两份库和回复，落成一条**可审计的数据通道**：两个角色文件（稳定档案 + skills + 开场设定）+ 剧情文件（共享背景 + 座位）→ 两个角色轮流发言，环境只转发 → 每个角色对收到的话做感知评价 → 带证据的状态更新 → 决策与表达 → 全程落盘 → 自动审计 → 盲化评审包。
 
-通道已经打通，并有 142 项工程测试。2026-10-20 新增人格 skills、角色开场设定（交互目标、想透露 / 想隐瞒、前情提要）和记忆召回；输入整理成"一个角色一个文件、一个剧情一个文件"；随后去掉事件脚本，改为两个角色基于背景自主对话，并用本地 Qwen3-8B（思考模式）跑通。均不改动与两组约定的合同。**心理内容大多仍是空壳**：11 个更新算子只有写权限、没有幅度规则；机制卡数值是未校准的工程假设。所有验证都是工程层面的，没有心理有效性证据，mock 的输出差异也不能当证据。
+通道已经打通，并有 147 项工程测试。2026-10-20 新增人格 skills、角色开场设定（交互目标、想透露 / 想隐瞒、前情提要）和记忆召回；输入整理成"一个角色一个文件、一个剧情一个文件"；随后去掉事件脚本，改为两个角色基于背景自主对话，并用本地 Qwen3-8B（思考模式）跑通。均不改动与两组约定的合同。**心理内容大多仍是空壳**：11 个更新算子只有写权限、没有幅度规则；机制卡数值是未校准的工程假设。所有验证都是工程层面的，没有心理有效性证据，mock 的输出差异也不能当证据。
 
 ## 2. 总体结构
 
@@ -88,9 +88,10 @@ flowchart TB
 | 词表 | `vocab.py` | 七个交流动作、五种线索及其中文说明 | 完成 |
 | 环境与运行 | `runtime.py` | scene schema 2.0 校验、`DialogueEnvironment`、`run_dialogue`、按角色落盘、git SHA | 两个座位 |
 | 审计 | `audit.py` | 从落盘产物按角色重新推导七项自动检查 | 完成 |
+| 可读记录 | `readable.py` | 运行结束后自动把运行目录整理成 `transcript.md`（背景、角色、逐句对话、结果）；只读落盘文件，不重新计算 | 完成 |
 | 评审包 | `package.py` | 盲化评审包导出 | 完成 |
 | 角色与剧情文件 | `roles.py`、`roles/`、`scenes/` | 角色文件与剧情文件的读取校验、`fit` / `fit_cast` 入座检查、`seat` 为每个座位组装 Agent、`run` | 完成 |
-| 入口 | `__main__.py` | `catalog` `list` `validate` `compile` `skills` `run` `audit` `package` | 完成 |
+| 入口 | `__main__.py` | `catalog` `list` `validate` `compile` `skills` `run` `audit` `package` `readable` | 完成 |
 | 示例与重建 | `roles/`、`scenes/`、`scripts/bootstrap_examples.py` | 两个虚构角色 role1（林澄，项目组一方）、role2（周越，合作方一方）+ 两个剧情 test1（交付沟通）、test2（剩余数据跟进），各最多 8 次发言 | 虚构设定 |
 
 ## 4. 一轮发言怎么被处理
@@ -234,6 +235,7 @@ flowchart LR
   D --> F7["environment_events.json<br/>全部事件"]
   D --> RD["roles/&lt;id&gt;/（每个角色一份）<br/>inputs · views · states · mechanism_log<br/>audit.jsonl（评价/决策/表达输入输出 · 推理）"]
   D --> AR["audit_report.json / .md<br/>每个角色七项自动检查"]
+  D --> TR["transcript.md<br/>可读版：背景 · 角色 · 逐句对话 · 结果"]
   D --> PK["python -m rolesim package"]
   AR --> PK
   PK --> P1["R01/ evaluator_samples<br/>role_visible_trace<br/>counterpart_truth<br/>role_setup<br/>annotation_template"]
@@ -278,9 +280,10 @@ flowchart LR
 python3.11 -m unittest discover -s tests -v
 python3.11 -m rolesim list
 python3.11 -m rolesim validate role1
-python3.11 -m rolesim run --roles role1 role2 --scene test1 --mode profile_state --out runs/demo
-python3.11 -m rolesim run --roles role1 role2 --scene test2 --out runs/test2
-python3.11 -m rolesim run --roles role1 role2 --scene test1 --no-skills --out runs/no-skills
+python3.11 -m rolesim run --roles role1 role2 --scene test1 --mode profile_state   # → runs/<YYYYMMDD-HHMMSS>_test1_mock/
+python3.11 -m rolesim run --roles role1 role2 --scene test2
+python3.11 -m rolesim run --roles role1 role2 --scene test1 --no-skills
+python3.11 -m rolesim readable runs/<运行目录>
 python3.11 -m rolesim audit runs/demo
 python3.11 -m rolesim package runs/a runs/b --out outputs/review --seed 1
 PYTHONPATH=. python3.11 scripts/bootstrap_examples.py   # 重建 roles/ 与 scenes/ 示例
