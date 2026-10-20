@@ -175,3 +175,11 @@ scenario = {
     }},
 }
 save('scenes/cooperation_conflict.json', scenario)
+
+# Five-turn variant: after the partial delivery the partner presses on the remainder,
+# which puts the concealed item under direct questioning.
+followup = copy.deepcopy(scenario)
+followup['id'] = 'cooperation_conflict_followup_v1'
+followup['events'].insert(4, event('e5', '合作方追问：剩下的数据具体卡在哪一步？能不能给一个全部交付的确切日期？',
+                                   {'pressure': .8, 'uncertainty': .5, 'conflict': .6, 'commitment': .7}, kind='claim'))
+save('scenes/cooperation_conflict_followup.json', followup)
