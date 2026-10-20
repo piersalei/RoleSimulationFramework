@@ -1,12 +1,12 @@
 # 当前架构与实现总结
 
-本文档描述 2026-10-19 时仓库里**已经实现**的东西：分几层、数据怎么流、哪些地方做了隔离和校验、哪些还是空的。规划与分工见 [06-plan.md](06-plan.md)，设计动机见 [01-design.md](01-design.md)。
+本文档描述 2026-10-20 时仓库里**已经实现**的东西：分几层、数据怎么流、哪些地方做了隔离和校验、哪些还是空的。规划与分工见 [06-plan.md](06-plan.md)，设计动机见 [01-design.md](01-design.md)，skills 调研见 [08-persona-skills-survey.md](08-persona-skills-survey.md)。
 
 ## 1. 一句话概括
 
-把心理学组整理的两份库和回复，落成一条**可审计的数据通道**：人物档案（稳定）→ 角色可见事件 → 带证据的状态更新 → 决策与表达 → 环境裁决 → 全程落盘 → 自动审计 → 盲化评审包。
+把心理学组整理的两份库和回复，落成一条**可审计的数据通道**：人物包（稳定档案 + skill 绑定）+ 场景包（事件 + 角色简报）→ 角色可见事件与记忆 → 带证据的状态更新 → 决策与表达 → 环境裁决 → 全程落盘 → 自动审计 → 盲化评审包。
 
-通道已经打通，并有 96 项工程测试。**心理内容大多仍是空壳**：11 个更新算子只有写权限、没有幅度规则；机制卡数值是未校准的工程假设；真实模型还没跑过。所有验证都是工程层面的，没有心理有效性证据，mock 的输出差异也不能当证据。
+通道已经打通，并有 126 项工程测试。2026-10-20 新增人格 skills、角色简报（交互目标、想透露 / 想隐瞒、前情提要）和记忆召回，均不改动与两组约定的合同。**心理内容大多仍是空壳**：11 个更新算子只有写权限、没有幅度规则；机制卡数值是未校准的工程假设；真实模型还没跑过。所有验证都是工程层面的，没有心理有效性证据，mock 的输出差异也不能当证据。
 
 ## 2. 总体结构
 
@@ -14,8 +14,9 @@
 flowchart TB
   subgraph IN["输入层（只读、有来源）"]
     SRC["两份心理学库<br/>data/sources + catalog.json"]
-    PER["人物档案 persona 2.0<br/>examples/*.json"]
-    SCN["场景脚本<br/>examples/cooperation_conflict.json"]
+    PER["人物包 examples/personas/<br/>档案 persona 2.0 + skill 绑定"]
+    SKL["skill 库<br/>library/skills/*/SKILL.md"]
+    SCN["场景包 examples/scenes/<br/>事件 + 世界私有数据 + 角色简报"]
   end
 
   subgraph CORE["角色核心 rolesim/"]
@@ -23,6 +24,9 @@ flowchart TB
     AG["Agent agent.py<br/>step 提出行动 / perceive 接收结果"]
     ST["动态状态 state.py + modules.py<br/>六域 · 模块状态 · 11 个算子 · 分组原子提交"]
     MECH["机制卡 mechanisms.py<br/>5 张调度卡"]
+    SK["人格 skills skills.py<br/>三级加载 · 不写状态"]
+    MEM["记忆 memory.py<br/>只增 · 前情固定 · 相似度召回"]
+    BR["简报 briefing.py<br/>目标 · 想透露 · 想隐瞒 · 前情"]
     BK["模型后端 providers.py<br/>mock / 兼容 chat-completions"]
   end
 
@@ -37,10 +41,18 @@ flowchart TB
   end
 
   SRC -. 来源引用 .-> PER
+  SRC -. 来源引用 .-> SKL
   PER --> VIEW --> AG
+  PER --> SK
+  SKL --> SK
   SCN --> SE
+  SCN --> BR
+  BR --> AG
+  BR -- "前情提要" --> MEM
   SE -- "角色可见 Event" --> AG
   AG <--> ST
+  AG <--> MEM
+  AG <--> SK
   AG <--> MECH
   AG <--> BK
   AG -- "ProposedAction" --> SE
@@ -66,6 +78,9 @@ flowchart TB
 | 模块状态 | `modules.py` | 六种状态、状态与值一致性检查、转换审计；稳定与动态共用 | 完成 |
 | 动态状态 | `state.py` | 六个状态域、11 个算子写权限、`commit_phase`、三级错误、四类版本号 | 结构完成，规则很少 |
 | 机制 | `mechanisms.py` | 5 张调度卡、打分、取前 3 | 未校准 |
+| 人格 skills | `skills.py`、`library/skills/` | SKILL.md 解析校验（兼容 Agent Skills 规范）、人物绑定、按线索 / 简报激活取前 3、表达要点分发 | 9 个 skill，内容待审定 |
+| 角色简报 | `briefing.py` | 场景 1.1 的 `briefings` 校验；决策视图 / 表达视图分开；泄露关键词检测 | 完成 |
+| 记忆 | `memory.py` | 只增；前情固定在前；较早条目按字符二元组相似度 + 显著性召回；最近 12 条完整保留 | 完成，未接 Mem0 服务 |
 | 接口合同 | `contract.py` | Event / ProposedAction / AgentState / StateDelta 数据类与校验 | 完成（按环境组合同 v0） |
 | 角色 | `agent.py` | `step` / `perceive`、可见性二次校验、决策与表达编排、状态链 | 完成 |
 | 后端 | `providers.py` | mock 夹具；兼容 `/chat/completions` 的真实后端，失败不回退 | 完成，真实模型未跑 |
@@ -73,7 +88,7 @@ flowchart TB
 | 审计 | `audit.py` | 从落盘产物重新推导五项自动检查 | 完成 |
 | 评审包 | `package.py` | 盲化评审包导出 | 完成 |
 | 入口 | `__main__.py` | `catalog` `validate` `compile` `run` `audit` `package` | 完成 |
-| 示例与重建 | `examples/`、`scripts/bootstrap_examples.py` | 两个虚构人物 + 一个场景 | 虚构设定 |
+| 示例与重建 | `examples/personas/`、`examples/scenes/`、`scripts/bootstrap_examples.py` | 两个虚构人物（各带 skill 绑定）+ 一个带简报的场景 | 虚构设定 |
 
 ## 4. 一个事件怎么被处理
 
@@ -88,11 +103,12 @@ sequenceDiagram
   A->>A: 二次校验可见性，audience 不含自己则丢弃并告警
   A->>S: 候选变化（紧张、信任）+ 证据 event_id
   S-->>A: 采纳 / 拒绝，写 mechanism_log
-  A->>A: 按消融档位组装决策提示（可含 current_state、机制卡）
+  A->>A: 召回记忆（前情 + 相关旧条目 + 最近 12 条），激活 skill
+  A->>A: 按消融档位组装决策提示（简报、skill 各档都有；可含 current_state、机制卡）
   A->>M: decide
   M-->>A: action + evidence_ids + brief_reason
   A->>A: 校验：动作可行、证据可见
-  A->>M: express（只给自知、风格约束、动作、可见历史）
+  A->>M: express（只给自知、风格约束、skill 表达要点、可透露信息、动作、可见历史）
   M-->>A: speech
   A-->>E: ProposedAction（speech）+ 新状态快照
   E->>E: 裁决，产生 outcome 事件（只给行动者）
@@ -188,10 +204,15 @@ flowchart TB
 | 机制卡与控制器提示 | 仅 `profile_state_mechanisms` | 否 | 否（提示不导出，避免暴露档位） | 否 |
 | 模型输出与推理摘要 | — | — | 是 | 否 |
 | 世界私有数据、角色不可见事件 | 否 | 否 | 仅在单独的对照文件 | 否 |
+| 简报：交互目标、想让对方知道的信息 | 是 | 是 | 是（`role_setup.json`） | 否 |
+| 简报：不想让对方知道的信息 | 是（`keep_private`） | **否** | 是（`role_setup.json`） | 否 |
+| 前情提要 | 是（记忆首条，可作证据） | 是 | 是（`role_setup.json`） | 否 |
+| skill 名称与描述、决策要点、反模式 | 是 | 否 | 否（只列已绑定 skill 名，不写是否启用） | 否 |
+| skill 表达要点 | 否 | 是（仅已激活的） | 否 | 否 |
 
 **已知缺口：评测版样本目前不带稳定画像**（自我理解、特质、价值、目标）。评"稳定一致性""角色可区分性"需要它，导出时要补，补的时候仍须与方法标签分开。
 
-三档消融入口：`profile_only`（相同历史，不注入状态与机制）、`profile_state`（加动态状态）、`profile_state_mechanisms`（再加机制卡，默认）。**状态在三档下都计算并记录**，档位只改变控制器提示。
+三档消融入口：`profile_only`（相同历史，不注入状态与机制）、`profile_state`（加动态状态）、`profile_state_mechanisms`（再加机制卡，默认）。**状态在三档下都计算并记录**，档位只改变控制器提示。skill 属于人物画像，三档都注入；另有独立开关 `--no-skills`，保留绑定记录但不注入，用于 skill 的对照。
 
 ## 8. 运行产物与评审链路
 
@@ -205,14 +226,14 @@ flowchart LR
   D --> F5["audit.jsonl<br/>模型输入输出 · 增量"]
   D --> F6["public.jsonl<br/>公开轨迹"]
   D --> F7["environment_events.json<br/>全部事件（含私有）"]
-  D --> AR["audit_report.json / .md<br/>五项自动检查"]
+  D --> AR["audit_report.json / .md<br/>六项自动检查"]
   D --> PK["python -m rolesim package"]
   AR --> PK
-  PK --> P1["R01/ evaluator_samples<br/>role_visible_trace<br/>counterpart_truth<br/>annotation_template"]
+  PK --> P1["R01/ evaluator_samples<br/>role_visible_trace<br/>counterpart_truth<br/>role_setup<br/>annotation_template"]
   PK --> P2["blind_key.json<br/>方法标签，不给评审者"]
 ```
 
-- **自动审计**从落盘文件重新推导，不信任引擎自己的记录：字段有效性、证据与可见性、写权限、stable 一致、轨迹可追溯；另外单列软约束、豁免、被拒依赖组、模块覆盖。其余维度只标注"需人工评分"。
+- **自动审计**从落盘文件重新推导，不信任引擎自己的记录：字段有效性、证据与可见性、写权限、stable 一致、轨迹可追溯、隐瞒信息未泄露（隐瞒原文不进表达提示，关键词不出现在台词）；另外单列软约束、豁免、被拒依赖组、模块覆盖、主动透露次数。其余维度只标注"需人工评分"。
 - **评审包**每个运行一个盲化编号；模式、后端、模型、代码版本只在 `blind_key.json`。对方真实状态单独成文件，只供对照。
 - 每次运行自带四类版本号：`construct_definition_version`（未登记）、`state_schema_version`、`update_rule_version`、`evaluation_protocol_version`（未冻结）。
 
@@ -223,18 +244,21 @@ flowchart LR
 1. `stable` 在一个轨迹内不可变；`StateDelta` 的路径以 `stable` 开头一律拒绝，运行中每轮还用哈希复核。
 2. 每条状态变化必须带**本角色可见**的证据，且只能写 `active` 模块、自己算子白名单内的路径。
 3. 数值越界直接拒绝，不截断；未知用 `null`，不用中性值代替。
-4. 世界私有数据和他人的隐藏心理字段不进入任何模型调用；角色不可见的事件在入口被丢弃。
-5. 他人的口头承诺不算"已兑现"的证据，只有叙述事实和环境裁决的结果可以改变可靠性判断。
-6. 模型调用失败就停下并记录，**不静默回退 mock**。
-7. 旧 schema 的档案和轨迹被拒绝，不做静默转换。
+4. 世界私有数据和他人的隐藏心理字段不进入任何模型调用；角色不可见的事件在入口被丢弃。角色自己要隐瞒的信息只进决策提示，不进表达提示。
+5. skill 只影响提示内容，不产生状态变化；记忆只增不改。
+6. 他人的口头承诺不算"已兑现"的证据，只有叙述事实和环境裁决的结果可以改变可靠性判断。
+7. 模型调用失败就停下并记录，**不静默回退 mock**。
+8. 旧 schema 的档案和轨迹被拒绝，不做静默转换（场景 1.0 / 1.1 都是显式版本，1.0 不带简报）。
 
 ## 10. 完成度与未做
 
 | 方面 | 已有 | 没有 |
 |---|---|---|
 | 画像 | schema 2.0，20 个稳定模块带状态，P1 30 分面，施瓦兹 19 项，核心目标 | P2/P3 及三方案比较；分面级 unknown；其余 26 个分面的行为投影；71 维；stable 变更的版本迁移结构 |
+| 人格 skills | 9 个 SKILL.md、人物绑定、三级加载、`--no-skills` 对照 | 心理学组审定内容；从语料蒸馏 skill；纠正层与 skill 版本；由模型读描述自主激活的档位 |
+| 简报与记忆 | 场景 1.1 简报（目标、透露、隐瞒、前情）；只增记忆与召回；隐瞒泄露审计 | 接入 Mem0 服务；换说法的泄露检测；记忆更新人格（需与心理学组对齐） |
 | 动态状态 | 六域骨架，原子提交，三级错误，日志与版本 | 11 个算子的机制卡数值；信念、目标、他人模型的更新规则；时间事件与衰减规则 |
-| 环境 | 单焦点角色 + 四轮脚本 | 多角色调度；真实场景；环境组对合同的回复 |
+| 环境 | 单焦点角色 + 四轮脚本；合同 v0 已与环境组对接 | 多角色调度；真实场景；时间轴与打断（设计见 [09](09-timeline-and-interruption.md)） |
 | 模型 | 两阶段接口、严格 JSON、本机回环不走代理 | 真实模型运行（需要可用的服务） |
 | 评测 | 三档消融，自动审计，盲化评审包，标注模板 | 评审包带稳定画像；评测协议冻结；标注工具；复标统计；回放工具；真人基线 |
 
@@ -244,8 +268,11 @@ flowchart LR
 # 项目要求 Python 3.11+（CI 用 3.11）。本机用 ~/venvs/rolesim（Python 3.11.15，仅标准库）；
 # 在新会话里 Claude 的 PATH 由 .claude/settings.local.json 指向它，自己的终端可 source ~/venvs/rolesim/bin/activate
 python3.11 -m unittest discover -s tests -v
-python3.11 -m rolesim validate examples/cautious.json
+python3.11 -m rolesim validate examples/personas/cautious.json
+python3.11 -m rolesim skills examples/personas/cautious.skills.json --persona examples/personas/cautious.json
 python3.11 -m rolesim run --mode profile_state --out runs/demo
+python3.11 -m rolesim run --skills examples/personas/cautious.skills.json --out runs/skills
+python3.11 -m rolesim run --skills examples/personas/cautious.skills.json --no-skills --out runs/no-skills
 python3.11 -m rolesim audit runs/demo
 python3.11 -m rolesim package runs/a runs/b --out outputs/review --seed 1
 PYTHONPATH=. python3.11 scripts/bootstrap_examples.py   # 重建示例档案

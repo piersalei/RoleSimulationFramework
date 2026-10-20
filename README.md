@@ -13,6 +13,8 @@
 - [GitHub、本机与服务器同步](docs/05-github-server.md)
 - [模块划分与实现计划](docs/06-plan.md)
 - [当前架构与实现总结（含图示）](docs/07-architecture.md)
+- [人格 skills 调研与路线选择](docs/08-persona-skills-survey.md)
+- [时间轴与打断：设计说明](docs/09-timeline-and-interruption.md)
 
 ## 基本思路
 
@@ -42,11 +44,17 @@ flowchart LR
 
 ```bash
 python3.11 -m unittest discover -s tests -v
-python3.11 -m rolesim validate examples/cautious.json
-python3.11 -m rolesim compile examples/cautious.json --out outputs/cautious-views.json
-python3.11 -m rolesim run --persona examples/cautious.json --out runs/cautious-demo
-python3.11 -m rolesim run --persona examples/assertive.json --out runs/assertive-demo
+python3.11 -m rolesim validate examples/personas/cautious.json
+python3.11 -m rolesim compile examples/personas/cautious.json --out outputs/cautious-views.json
+python3.11 -m rolesim run --persona examples/personas/cautious.json --out runs/cautious-demo
+python3.11 -m rolesim run --persona examples/personas/assertive.json --out runs/assertive-demo
+# 带人格 skills 运行；加 --no-skills 得到同一绑定、不注入 skill 的对照
+python3.11 -m rolesim skills examples/personas/cautious.skills.json --persona examples/personas/cautious.json
+python3.11 -m rolesim run --persona examples/personas/cautious.json \
+  --skills examples/personas/cautious.skills.json --out runs/cautious-skills
 ```
+
+示例分两个数据包：人物包在 `examples/personas/`（档案 + skill 绑定），场景包在 `examples/scenes/`（事件、世界私有数据、每个角色的开场简报）。skill 库在 `library/skills/`。
 
 同一路径已有运行结果时程序拒绝覆盖。省略 `--out` 可生成 UTC 时间戳目录。
 
@@ -91,12 +99,15 @@ python3.11 -m rolesim run --backend chat --out runs/model-first
 | 依恋 | 保存基线，尚未实现关系特异激活 |
 | 社会心智 71 维 | 缺少原引用定义，模块状态为 not_modeled；校验拒绝把它设为 active，未伪造维度与能力分数 |
 | 机制 | 核查、事件评价、信任、修复、边界五张卡；参数为待校准工程假设 |
+| 人格 skills | `library/skills/` 下 9 个兼容 Agent Skills 规范的 SKILL.md（决策、表达、披露三类）；人物通过 `<id>.skills.json` 绑定并给优先级；运行时三级加载：目录（名称 + 描述）→ 按事件线索或简报激活的正文进入决策提示 → 只有"表达要点"进入表达提示。skill 不写状态。内容为工程侧拟写，待心理学组审定 |
+| 场景简报 | 场景 schema 1.1 的 `briefings`：交互目标、想让对方知道的信息、不想让对方知道的信息（只允许遗漏或战略模糊）、前情提要。隐瞒内容只进决策提示，表达提示拿不到原文；审计按关键词检查是否泄露 |
+| 记忆 | 本地、仿 Mem0 的只增记忆：前情提要固定在前，较早条目按与当前事件和目标的相似度及显著性召回，最近 12 条完整保留；短剧本下与全量历史一致。未接入 Mem0 服务本身 |
 | 状态 | state-v1：六个状态域、模块状态枚举（active / unknown / not_modeled 等）、11 个更新算子的写权限、按依赖组原子提交、硬错/软错/豁免三级处理、`mechanism_log` 与四类版本号；当前更新规则只写紧张（`affect_state.emotion.intensity`）与对合作方的信任，其余模块为 unknown 或 not_modeled，规则卡数值待心理学组交付 |
 | 环境 | 已按环境组合同 v0 实现 `Agent.step` / `perceive`；脚本环境是其中一种裁决器（单焦点角色 + 有限动作 + 四轮反馈）；多角色调度与自由多智能体环境待实现 |
 | 模型接口 | 两阶段兼容接口；已做本机 HTTP 模拟测试，真实模型待接入 |
 | 对照入口 | `--mode` 三档：`profile_only`（相同历史，不注入状态与机制）、`profile_state`（加动态状态）、`profile_state_mechanisms`（再加机制卡，默认）。状态在三档下都计算并记录，档位只决定控制器提示内容；尚无对照效果结果 |
-| 评审包 | `python3.11 -m rolesim package RUN... --out DIR` 导出盲化样本包：评测版样本、角色可见轨迹、对方真实状态（仅供对照）、标注模板；方法标签只在 `blind_key.json`。评测协议尚未冻结 |
-| 自动审计 | 每次运行产出 `audit_report.json/.md`（字段有效性、证据与可见性、写权限、stable 一致、轨迹可追溯），可用 `python3.11 -m rolesim audit <run_dir>` 重审；通过不代表心理有效 |
+| 评审包 | `python3.11 -m rolesim package RUN... --out DIR` 导出盲化样本包：评测版样本、角色可见轨迹、对方真实状态（仅供对照）、角色开场设定（简报与已绑定 skill）、标注模板；方法标签（含是否启用 skill）只在 `blind_key.json`。评测协议尚未冻结 |
+| 自动审计 | 每次运行产出 `audit_report.json/.md`（字段有效性、证据与可见性、写权限、stable 一致、轨迹可追溯、隐瞒信息未泄露），可用 `python3.11 -m rolesim audit <run_dir>` 重审；通过不代表心理有效 |
 | GitHub CI | 已提供工作流；执行结果以实际仓库 Actions 为准 |
 
 下一步优先让心理学同学审定少量“人物—触发—行为锚点”样例，再接真实模型做反事实情境对照。不要先把全部理论变成一张任意赋值的大表。

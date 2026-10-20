@@ -4,7 +4,7 @@
 
 ## 人物制作
 
-复制 `examples/cautious.json`（persona schema 2.0），修改人物身份、公开描述、自我理解、相关分面、动机基线、价值权重和核心目标。`stable.module_status` 必须列出全部登记模块：有值的写 `active` 并在 `provenance` 里给来源；没有资料的写 `unknown` 且值为 `null`，不要写成 0 或中性值；本版没有建模的写 `not_modeled` 并说明原因。运行 `validate` 后再 `compile` 检查视图。模板内的数值是虚构示例，应逐项审定，不是默认人群常模。示例由 `PYTHONPATH=. python3.11 scripts/bootstrap_examples.py` 重建。
+复制 `examples/personas/cautious.json`（persona schema 2.0），修改人物身份、公开描述、自我理解、相关分面、动机基线、价值权重和核心目标。`stable.module_status` 必须列出全部登记模块：有值的写 `active` 并在 `provenance` 里给来源；没有资料的写 `unknown` 且值为 `null`，不要写成 0 或中性值；本版没有建模的写 `not_modeled` 并说明原因。运行 `validate` 后再 `compile` 检查视图。模板内的数值是虚构示例，应逐项审定，不是默认人群常模。示例由 `PYTHONPATH=. python3.11 scripts/bootstrap_examples.py` 重建。
 
 字段规则：
 
@@ -26,6 +26,33 @@
 | 不应出现 | 可证伪的错误表现 | “未收到记录便宣告对方已兑现” |
 
 未知数值保留缺失理由。P1 的 30 分面仍要求全部赋值；示例未重点设定项为显式合成中性 `0`，与 71 维的“定义缺失、未赋值”不同。模块级的缺失已能用 `unknown`（null）表达，但分面级还不能；未来材料抽取模式需扩展分面级的 nullable 与缺失策略，不能将缺失测量静默写成中性。
+
+### 人物包：档案 + skill 绑定
+
+人物包由两个文件组成，放在 `examples/personas/`：
+
+- `<id>.json`：上面的人物档案（schema 2.0，合同约定的格式，不因 skill 改动）。
+- `<id>.skills.json`：这个人物会用哪些 skill、优先级多少（0–1）、为什么（`note`）。skill 本身在 `library/skills/<name>/SKILL.md`，格式见 [08-persona-skills-survey.md](08-persona-skills-survey.md) 第 4 节。
+
+```json
+{"schema_version": "skills-binding-1.0", "persona_id": "cautious",
+ "skills": [{"name": "verify-before-commit", "priority": 0.95, "note": "核查偏好高、审慎分面高"}]}
+```
+
+用 `python3.11 -m rolesim skills examples/personas/cautious.skills.json --persona examples/personas/cautious.json` 检查绑定。新写一个 skill：在 `library/skills/` 下建同名目录和 `SKILL.md`，`rolesim-source` 必须引用 `data/catalog.json` 里存在的章节，正文必须有"决策要点 / 表达要点 / 不会做的事 / 边界"四节（纯表达类可省略决策要点）。
+
+## 场景包与角色简报
+
+场景放在 `examples/scenes/`，和人物包分开。schema 1.1 在原有事件、私有数据之外增加 `briefings`：按角色 id 给每个角色一份开场简报，`"*"` 表示适用于任何填入焦点位置的角色。
+
+| 字段 | 含义 | 去向 |
+|---|---|---|
+| `goal` | 本角色在这场互动里的目标 | 决策提示；表达提示 |
+| `disclose` | 想让对方知道的信息（`id`、`text`、`markers`） | 决策提示（`want_known`）；表达提示（`may_share`） |
+| `conceal` | 角色知道、但不想让对方知道的信息；`strategy` 只能是 `omission`（遗漏）或 `strategic_ambiguity`（战略模糊），不支持直接说谎 | **只进决策提示**（`keep_private`），表达提示拿不到原文 |
+| `recap` | 前情提要，id 以 `recap:` 开头 | 作为记忆的第一批条目，可被决策引用为证据 |
+
+`markers` 是自动审计用来检测"说出来了"的关键词（至少两个字）。前情提要里不能出现隐瞒条目的关键词，因为前情会进入表达提示。审计项 `concealed_info_withheld` 检查隐瞒内容没有进入表达提示、没有被说出；`disclose` 条目被说出只统计不判错。关键词检测抓不到换了说法的泄露，这部分仍需人工评分。
 
 ## 机制卡审定模板
 
