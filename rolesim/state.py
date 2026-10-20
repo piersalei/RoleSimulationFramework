@@ -1,6 +1,6 @@
 """Dynamic state (state-v1): six domains, update operators and staged atomic commits.
 
-Structure and processes follow the psychology group's reply (docs/06-plan.md, section 1).
+Structure and processes follow the psychology group's reply (plan/01-roadmap.md, section 1).
 The reply fixes structure, operator list and error policy but not rule-card numbers; the
 numeric parameters below are engineering placeholders, not fitted values.
 """
