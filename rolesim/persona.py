@@ -218,6 +218,12 @@ def validate_persona(persona):
     return persona
 
 
+def _when_clause(when):
+    """A situation as a clause ending in 时, whether the author wrote "被催促" or "被催促时"."""
+    when = when.strip()
+    return when if when.endswith("时") else when + "时"
+
+
 def conditional_rules(persona):
     """A small explicit compiler, not an unvalidated psychological score estimator."""
     s = persona["stable"]
@@ -243,7 +249,7 @@ def conditional_rules(persona):
                   if directness >= .5 else
                   "通常先承认对方处境，再委婉提出条件；紧急时可以直说。"})
     for rule in s["speech_style"]["situational_rules"] or []:
-        rules.append({"source_field": "speech_style.situational_rules", "rule": f"{rule['when']}时：{rule['style']}"})
+        rules.append({"source_field": "speech_style.situational_rules", "rule": f"{_when_clause(rule['when'])}：{rule['style']}"})
     return rules
 
 
