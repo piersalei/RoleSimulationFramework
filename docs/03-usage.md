@@ -22,6 +22,7 @@ python3.11 -m rolesim run --roles role1 role2 --scene test1 --no-skills   # 不�
 python3.11 -m rolesim run --roles role1 role2 --scene test1 --mode profile_state   # 换消融档位
 python3.11 -m rolesim run --roles role1 role2 --scene test1 --appraise-state off   # 感知评价不看状态的对照
 python3.11 -m rolesim run --roles role1 role2 role3 --scene test3   # 三个角色 + 环境 agent
+python3.11 -m rolesim run --roles role1 role2 role3 --scene test3 --interface agent-api   # 走接口定义 v1（本地参考运行器）
 ```
 
 `mock` 按关键词标线索、按候选顺序选动作、用固定台词表达，**只能用来验证流程**（紧张为"高"时会在台词前加一句"我有点担心"，用来检查状态确实传到了表达）。角色输出不同不构成心理有效性证据。
@@ -36,6 +37,7 @@ python3.11 -m rolesim run --roles role1 role2 role3 --scene test3   # 三个角�
 | `--mode` | `profile_only` / `profile_state` / `profile_state_mechanisms` | `profile_state_mechanisms` |
 | `--appraise-state` | `off` 时感知评价提示不含状态（对照用），记入 `manifest.appraise_state` | `on` |
 | `--no-skills` | 保留 skill 绑定记录但不注入提示（对照用） | 关 |
+| `--interface` | `env-contract`：原来的 `step` / `perceive` 流程；`agent-api`：角色放在接口定义 v1 后面，由本地参考运行器驱动（见 [06-runtime-flow.md](06-runtime-flow.md) 第 12 节） | `env-contract` |
 | `--out` | 运行目录 | `runs/<YYYYMMDD-HHMMSS>_<剧情>_<模型>/` |
 
 运行目录的时间取 `TZ` 指定的本地时间，按名字排序即按时间排序；同一路径已有结果时程序拒绝覆盖。换角色、换剧情、新增文件的方法见 [04-authoring.md](04-authoring.md)。

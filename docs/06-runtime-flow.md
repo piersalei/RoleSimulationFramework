@@ -61,6 +61,10 @@ flowchart TB
 | `roles.py` | 读取并校验两类输入；`fit_cast` 检查搭配；`run` 组装后交给 `run_dialogue` |
 | `runtime.py` | `validate_scenario`（scene 3.0）、`WorldAgent`（规则驱动的环境 agent）、`DialogueEnvironment`（开场、轮流、环境 tick、转发）、`make_agent`、`run_dialogue`（主循环与落盘） |
 | `contract.py` | 与环境组约定的数据类：`Event`、`Visibility`、`ProposedAction`、`StepRequest/Response`、`PerceiveRequest/Response` |
+| `agent_api.py` | 接口定义 v1（[Agent接口定义_v1.md](../data/sources/contracts/Agent接口定义_v1.md)）：`CharacterView` 等类型、校验函数、`split` / `deliveries` / `environment_history` |
+| `adapter.py` | `RoleAgentAdapter`：在接口定义 v1 的 `act` / `perceive` 后面，每个角色一个有状态的 `Agent`；只把没见过的记录转成事件交给它 |
+| `cognition.py` | 把角色状态写成五段认知文字（模板，不调模型） |
+| `loop.py` | 本地参考运行器 `LocalRunner`、环境替身 `EchoEnvironment`、`run_agent_api`（`--interface agent-api`） |
 | `agent.py` | `Agent.step` / `perceive`；感知评价、状态更新 `observe`、决策与表达的提示组装与校验 |
 | `persona.py` | `validate_persona`、`compile_views`（系统真值 / 角色自知 / 他者可见 / 控制器约束） |
 | `state.py`、`modules.py` | 动态状态结构、11 个算子写权限、`commit_phase` 原子提交、模块状态 |
@@ -267,3 +271,32 @@ flowchart TB
 - 审计没过：`audit_report.md`，每项失败带原因。
 - 环境什么时候做了什么：`world.jsonl` 与 `environment_events.json` 里 `world:` 开头的事件。
 - 运行失败：`manifest.json` 的 `error_type`、`error`。
+
+## 12. 另一条路径：接口定义 v1（`--interface agent-api`）
+
+环境组的运行器还没写好，这条路径用本地参考运行器按[接口定义 v1](../data/sources/contracts/Agent接口定义_v1.md)跑同样的角色与剧情。角色内部（评价 → 机制卡 → 决策 → 表达、状态链、审计记录）和上面完全相同，只是外面换了一层。
+
+```
+loop.run_agent_api
+  episode(roles, scene)      角色名 = 人物 name；运行器角色 ID = 剧情座位 ID；背景 → trigger_facts
+  LocalRunner.run()          每轮：
+    导演指令                  第 1 轮是开场；之后每个大轮开头由 WorldAgent 规则产生（报时、世界事件及其可见范围）
+      EchoEnvironment.act    指令原样作为环境 action（环境组实现前的替身）
+      split → deliveries     看到的角色各 perceive 一次
+    行动者 act               RoleAgentAdapter.act
+      validate_action_result → split → 行动者视角直接追加 → 其他看到的角色各 perceive 一次
+    行动者的动作是 close 时停止（只在本地；接口还没有结束信号）
+```
+
+`RoleAgentAdapter` 每次调用：
+
+1. 校验输入（`agent_api`），同一 `request_id` 重发直接返回缓存结果。
+2. 按 `name` 找到角色；第一次见到时建 `Agent`，在场角色从此固定。
+3. 视角里没见过的记录（包括自己上一次的发言）转成事件，编号 `action_id#order_index`；自己的思考跳过。
+4. `act` 调 `Agent.step`，返回 `{thought: null, speech: 台词, action: null, order: ["speech"]}`；`perceive` 调 `Agent.perceive`。
+5. 用 `cognition.project` 把状态写成五段认知返回。运行器传回的认知与上次返回的不一致时只记告警。
+
+出错时抛异常（`AgentCallError`），本次没有提交任何状态，换一个 `request_id` 可以重来。
+
+输出目录：`manifest.json`（`interface: agent-api-v1`）、`records.jsonl`（运行器视角的全部记录）、`calls.jsonl`（每次调用的完整输入与输出）、`roles/<id>/audit.jsonl`、`states.jsonl`、`mechanism_log.jsonl`、`transcript.md`（按记录生成的简版）。这条路径暂不生成 `audit_report`，也不能用 `rolesim package` 打包，因为两者读取的是原路径的目录格式。
+

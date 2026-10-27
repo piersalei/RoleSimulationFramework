@@ -19,6 +19,7 @@
 | [04-verification-log.md](04-verification-log.md) | 已经做过的验证检查：日期、命令、结果、没覆盖的部分 |
 | [05-session-memory-and-speed.md](05-session-memory-and-speed.md) | 待定：角色的持续对话（会话记忆）与运行提速；含现状实测与必须守住的隔离约束 |
 | [06-psychology-decisions.md](06-psychology-decisions.md) | 待心理学组裁定的问题：人格双重计数、线索含义与用途、对话中的信任、公式与初始值、隐瞒方式；以及此前未答复事项的汇总。给对方的一页说明在 [docs/12-psychology-brief.md](../docs/12-psychology-brief.md) |
+| [07-agent-adapter-integration.md](07-agent-adapter-integration.md) | 对接环境组新的 Agent 接口（`act` / `perceive` / 环境 `act`）：与合同 v0 的差异、已定事项、接口定义 v1、角色适配器与本地交互循环（均已实现）、限制与待定问题 |
 
 ## 进度总览
 
@@ -40,6 +41,7 @@
 |---|---|---|
 | plan/02 第 5 节的 7 个待定项 | 开工时按工程默认处理（保留评价开关、固定轮转、只做规则驱动环境、上限 6 个角色、三档等分、占位数值、未通知环境组），**待作者确认或改** | 02 第 5、7 节 |
 | 把"环境本身有 agent"同步给环境组 | 未做 | 02 第 5 节第 7 项 |
+| 对接环境组新的 Agent 接口 | 接口定义 v1、角色适配器、认知投影、本地参考运行器（`--interface agent-api`）已完成，mock 跑通；只出台词；人物配置字段、分支、结束对话等待定 | 07 第 6 节 |
 
 ### 将来（已排但没做）
 

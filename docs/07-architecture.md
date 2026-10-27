@@ -90,6 +90,9 @@ flowchart TB
 | 开场设定 | `briefing.py` | 角色文件 `setup` 的校验；决策视图 / 表达视图分开；泄露关键词检测 | 完成 |
 | 记忆 | `memory.py` | 只增；前情固定在前；较早条目按字符二元组相似度 + 显著性召回；最近 12 条完整保留 | 完成，未接 Mem0 服务 |
 | 接口合同 | `contract.py` | Event / ProposedAction / AgentState / StateDelta 数据类与校验 | 完成（按环境组合同 v0） |
+| 接口定义 v1 | `agent_api.py` | 运行器 ⇄ 角色 / 环境的 `act` / `perceive` 数据类型、双方校验、记录拆分与分发、name 路由（`Directory`） | 完成（[plan/07](../plan/07-agent-adapter-integration.md)） |
+| 角色适配器 | `adapter.py` + `cognition.py` | 把 `Agent` 放到 `act` / `perceive` 后面；name 路由、记录转事件、请求幂等、认知投影 | 完成；只出台词，无思考与外显行动 |
+| 本地参考运行器 | `loop.py` | 按接口定义 v1 第 3 节跑一场；环境用 `EchoEnvironment` 替身 | 完成；不生成审计报告 |
 | 角色 | `agent.py` | `step` / `perceive`、可见性二次校验、决策与表达编排、状态链 | 完成 |
 | 后端 | `providers.py` | mock 夹具；兼容 `/chat/completions` 的真实后端（评价、决策、表达三类调用；思考模式开启，推理只进运行记录），失败不回退 | 完成，已接本地 Qwen3-8B |
 | 词表 | `vocab.py` | 七个交流动作、五种线索及其中文说明 | 完成 |
