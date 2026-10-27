@@ -50,6 +50,8 @@ def main():
     demo.add_argument("--mode", choices=list(MODES), default="profile_state_mechanisms")
     demo.add_argument("--appraise-state", choices=["on", "off"], default="on",
                       help="off keeps the role's state out of the appraisal prompt (control)")
+    demo.add_argument("--interface", choices=["env-contract", "agent-api"], default="env-contract",
+                      help="agent-api runs the roles behind the agent interface v1 with the local runner")
     demo.add_argument("--out", default=None,
                       help="run directory; default runs/<YYYYMMDD-HHMMSS>_<scene>_<model>")
     readable = sub.add_parser("readable", help="(re)write transcript.md for finished run directories")
@@ -88,7 +90,13 @@ def main():
             backend = MockBackend() if args.backend == "mock" else ChatBackend()
             output = args.out or str(RUNS_DIR / run_name(scene["id"], backend.model))
             print(f"run directory: {output}", file=sys.stderr, flush=True)
-            result = run(roles, scene, backend, output, args.mode, not args.no_skills, args.appraise_state == "on")
+            if args.interface == "agent-api":
+                from .loop import run_agent_api
+                result = run_agent_api(roles, scene, backend, output, args.mode, not args.no_skills,
+                                       args.appraise_state == "on")
+            else:
+                result = run(roles, scene, backend, output, args.mode, not args.no_skills,
+                             args.appraise_state == "on")
             print(json.dumps({"output": output, "transcript": str(Path(output) / FILENAME), **result},
                              ensure_ascii=False, indent=2))
     except (ValueError, OSError, RuntimeError, KeyError, TypeError) as exc:
