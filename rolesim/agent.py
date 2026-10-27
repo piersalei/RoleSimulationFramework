@@ -193,17 +193,24 @@ class Agent:
         self.last_appraisals, self.last_reasoning = [], {}
 
     # -- helpers -----------------------------------------------------------
+    def begin(self, profile):
+        """Take the stable profile and build the initial state. The env contract does this on
+        the first `step`; the agent interface v1 may call `perceive` first, so it calls this."""
+        if self.persona is not None:
+            raise ValueError("the agent has already begun")
+        validate_persona(profile)
+        if set(profile["stable"]["mechanism_priors"]) != {c["id"] for c in CARDS}:
+            raise ValueError("mechanism priors must match the enabled card registry")
+        if profile["id"] in self.others:
+            raise ValueError("a role cannot be among its own others")
+        self.persona = copy.deepcopy(profile)
+        self.state = initial_state(self.briefing, list(self.others))
+
     def _check(self, role_id, prev_state_id, profile):
         if self.persona is None:
             if profile is None:
                 raise ValueError("role_profile is required on the first call")
-            validate_persona(profile)
-            if set(profile["stable"]["mechanism_priors"]) != {c["id"] for c in CARDS}:
-                raise ValueError("mechanism priors must match the enabled card registry")
-            if profile["id"] in self.others:
-                raise ValueError("a role cannot be among its own others")
-            self.persona = copy.deepcopy(profile)
-            self.state = initial_state(self.briefing, list(self.others))
+            self.begin(profile)
         elif profile is not None and profile != self.persona:
             raise ValueError("stable persona cannot change within an episode")
         if role_id != self.persona["id"]:
