@@ -83,7 +83,7 @@ flowchart TB
 | 来源 | `catalog.py`、`data/` | 两份库的快照、章节索引（196 条）、哈希；其中的指令性文字没有执行权限 | 完成 |
 | 画像 | `persona.py` | schema 2.0 校验、四种视图编译、条件化行为语句 | 结构完成，仅 P1 |
 | 模块状态 | `modules.py` | 六种状态、状态与值一致性检查、转换审计；稳定与动态共用 | 完成 |
-| 动态状态 | `state.py` | 六个状态域、11 个算子写权限、`commit_phase`、三级错误、四类版本号 | 结构完成，规则很少 |
+| 动态状态 | `state.py` | 六个状态域、11 个算子写权限、`commit_phase`、三级错误、四类版本号 | 旧路径（`Agent.step` 在用），第 5 步由下面的 `IStateStore` 取代 |
 | 机制 | `mechanisms.py` | 5 张机制卡（card schema 2.0）：触发条件读线索 / 状态 / 状态变化；`effects` 指向状态规则（`tension_v1`、`trust_v1`，参数在卡上）；动作倾向打分取前 3 | 只有 2 张卡有状态规则；数值未校准 |
 | 状态视图 | `stateview.py` | 状态换成三档文字（取值范围三等分）+ 自上次发言以来的净变化；决策另带数值与算子名 | 切分是工程假设 |
 | 人格 skills | `skills.py`、`library/skills/` | SKILL.md 解析校验（兼容 Agent Skills 规范）、人物绑定、按线索 / 开场设定激活取前 3、表达要点分发 | 9 个 skill，内容待审定 |
@@ -92,6 +92,7 @@ flowchart TB
 | 接口合同 | `contract.py` | Event / ProposedAction / AgentState / StateDelta 数据类与校验 | 完成（按环境组合同 v0） |
 | 接口 v2 | `agent_api.py` | 环境组 2026-11-07 版：`initialize` / `act` / 环境 `act` 的数据类型、双方校验、记录拆分与可见性 | 完成（[plan/08](../plan/08-framework-oop-design.md) 第 8 节） |
 | 心理学登记 | `registry.py`、`data/registry.json` | `IRegistry`：从心理学组 v1 文件生成 87 个构念、75 个决策过程、11 个算子规则（写入白名单、阶段权限、依赖组），每项带原文出处；原文改动而未重新生成时测试失败 | 完成；`review` 清单待心理学组确认 |
+| 状态写入（新） | `slots.py`、`magnitude.py`、`validator.py`、`operators.py`、`store.py` | [plan/10](../plan/10-interfaces.md) 第 4 节的 `IStateStore` / `IUpdateOperator` / `IMagnitude` / `IValidator`：状态按构念 ID 存（45 个 dynamic / memory 构念的布局），写入白名单、阶段权限、依赖组来自登记表，事件等级定幅度档、证据渠道封顶、人格敏感度移档，硬错整组拒绝、软异常标记，重试幂等 | 完成并有测试；尚未接入运行路径 |
 | 关键接口 | `interfaces.py` | [plan/10](../plan/10-interfaces.md) 的 4 个顶层接口与子接口：Protocol 签名、数据类型（产物、画像、状态、变化不可变）及其最基本的不变量检查 | 只有契约，尚无按这些接口的实现（`adapter.py` 满足 `IRoleAgent`） |
 | 角色适配器 | `adapter.py` | 把 `Agent` 放到 `initialize` / `act` 后面；`interaction_id + character_id` 路由、记录转事件、请求幂等、中途到场建关系 | 完成；只出台词，无思考与外显行动 |
 | 本地参考运行器 | `loop.py` | 按接口 v2 跑一场：先 initialize，再轮流 act，运行器保存观察记录；环境用 `EchoEnvironment` 替身 | 完成；不生成审计报告 |

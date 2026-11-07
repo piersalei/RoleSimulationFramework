@@ -20,7 +20,7 @@ tuple fields. Full field lists are in plan/09-interface-and-field-spec.md.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Generic, Literal, Mapping, Optional, Protocol, TypeVar, runtime_checkable
+from typing import Any, Generic, Literal, Mapping, Optional, Protocol, Sequence, TypeVar, Union, runtime_checkable
 
 from .agent_api import (AgentActionContent, CharacterBootstrap, IEnvironment, InteractionRecord,
                         InterfaceError, IRoleAgent, Present)
@@ -30,7 +30,7 @@ __all__ = [
     "InterfaceError", "AgentCallError", "StageError",
     # vocabularies
     "STAGES", "CHANNELS", "SOURCE_KINDS", "TEMPOS", "BANDS", "JUDGMENT_STATES", "PHASE_KINDS",
-    "OPERATOR_NAMES", "LAYERS", "SELF_VISIBILITY",
+    "OPERATOR_NAMES", "LAYERS", "SELF_VISIBILITY", "STAGE_OF_KIND", "STATUSES", "UNWRITABLE",
     # 1
     "IRoleAgent", "IEnvironment", "ITurnRunner", "ITrace", "SessionKey", "PhaseLog", "ModelCallRecord",
     # 2
@@ -84,6 +84,11 @@ JUDGMENT_STATES: tuple[JudgmentState, ...] = ("settled", "multiple", "suspended"
 # event: a group of new records (S1, maybe S3); plan: the closing S2 phase of one act
 PhaseKind = Literal["event", "feedback", "plan"]
 PHASE_KINDS: tuple[PhaseKind, ...] = ("event", "feedback", "plan")
+STAGE_OF_KIND: Mapping[str, str] = {"event": "S1", "plan": "S2", "feedback": "S3"}
+
+# 状态标记 (心理构念登记 §3.2); only the last three block writes
+STATUSES = ("active", "unknown", "inactive", "disabled", "not_modeled", "not_applicable")
+UNWRITABLE = ("disabled", "not_modeled", "not_applicable")
 
 OPERATOR_NAMES: tuple[str, ...] = (
     "emotion_update", "belief_revision", "other_model_update", "self_state_update",
@@ -205,13 +210,20 @@ class EnableConfig:
 
 @dataclass(frozen=True)
 class AgentState:
-    """One committed state. Only IStateStore.commit creates a new one."""
+    """One committed state. Only IStateStore.commit creates a new one (entry: IRoleRepository.enter).
+
+    `dynamic` / `memory` map each d.* / m.* construct id to its value, shaped as rolesim/slots.py
+    says (e.g. d.relation.trust -> {partner: {"value": u}}). `status` maps a construct id, or
+    "construct_id/key" for one instance, to its status mark (active, unknown, inactive, disabled,
+    not_modeled, not_applicable).
+    """
     state_id: str
     prev_state_id: Optional[str]
     stable_snapshot_id: str
-    dynamic: Mapping[str, Any]              # d.* values, keyed by construct id (and partner key)
-    memory: tuple[Any, ...]                 # m.* entries, append-only
+    dynamic: Mapping[str, Any]
+    memory: Mapping[str, Any]
     versions: Mapping[str, str] = field(default_factory=dict)
+    status: Mapping[str, str] = field(default_factory=dict)
 
 
 class IRoleRepository(Protocol):
@@ -291,12 +303,23 @@ class Judgment:
 
 @dataclass(frozen=True)
 class ChangeProposal:
-    """What a stage may produce instead of writing state."""
+    """What a stage may produce instead of writing state.
+
+    Address: `key` picks the instance ("/"-joined when a construct has two key levels, e.g.
+    "c2/h1" for one harm event towards c2); `field` is a "."-path inside it; None writes the
+    whole instance. `grade` is this role's event grade for this dimension (needed for numeric
+    changes); `evidence` / `mechanisms` say what the change rests on (default: the judgments
+    handed to the operator); `operator` defaults to the construct's primary writer.
+    """
     construct_id: str
-    key: Optional[str]                      # partner id / goal id / ...; None for scalars
+    key: Optional[str]
     field: Optional[str]
     after: Any
     reason: str
+    grade: Optional[int] = None
+    evidence: tuple[EvidenceRef, ...] = ()
+    mechanisms: tuple[str, ...] = ()
+    operator: Optional[str] = None
 
 
 # -- S1 SituationInterpretation ---------------------------------------------
@@ -419,6 +442,7 @@ class StageOutput(Generic[P]):
     product: P
     proposals: tuple[ChangeProposal, ...] = ()
     judgments: tuple[Judgment, ...] = ()
+    evidence: EvidenceSet = field(default_factory=lambda: EvidenceSet(()))   # what the stage could see
 
 
 @runtime_checkable
@@ -477,9 +501,15 @@ class IExpresser(Protocol):
 # ============================================================================
 @dataclass(frozen=True)
 class Band:
+    """Legal range for |after - before| of one numeric field (状态变化规则 §5.0, §七).
+
+    `extended` is set only for a grade-4 event: values in (high, extended] are written with the
+    soft flag "extended_range" (重大事件扩展区间), anything beyond is rejected.
+    """
     name: BandName
     low: float
     high: float
+    extended: Optional[float] = None
 
     def __post_init__(self):
         if self.name not in BANDS or not self.low <= self.high:
@@ -505,6 +535,7 @@ class StateChange:
     group: str
     reason: str
     flag: Optional[str] = None              # soft anomaly code, written and flagged
+    grade: Optional[int] = None             # event grade the band was taken from
 
     def __post_init__(self):
         if not self.evidence:
@@ -524,7 +555,7 @@ class Violation:
 
 @dataclass(frozen=True)
 class RejectedChange:
-    change: StateChange
+    change: Union[StateChange, ChangeProposal]   # the proposal when no change could be drafted
     group: str
     error: Violation
 
@@ -538,14 +569,18 @@ class CommitResult:
 
 
 class IStateStore(Protocol):
+    def open(self, key: SessionKey, state: AgentState) -> None:
+        """Start a session from its entry state (IRoleRepository.enter)."""
+        ...
+
     def snapshot(self, key: SessionKey) -> AgentState: ...
 
-    def commit(self, ctx: StageContext, proposals: list[ChangeProposal],
-               judgments: list[Judgment]) -> CommitResult:
+    def commit(self, ctx: StageContext, output: StageOutput) -> CommitResult:
         """Proposal -> operator -> band -> validator -> atomic commit per dependency group.
 
-        A hard error rejects its whole group; other groups commit. Retrying the same
-        (character, event, phase, commit number) is a no-op. Stable is never written.
+        `ctx.state` must be the current snapshot. A hard error rejects its whole group; other
+        groups commit. Retrying the same (character, event, phase, kind) is a no-op. Stable is
+        never written.
         """
         ...
 
@@ -554,16 +589,19 @@ class IUpdateOperator(Protocol):
     name: str                               # one of OPERATOR_NAMES
 
     def propose(self, ctx: StageContext, proposals: list[ChangeProposal],
-                judgments: list[Judgment]) -> list[StateChange]:
-        """Whitelisted proposals only; fills before / evidence / mechanisms / band / group."""
+                judgments: list[Judgment]) -> tuple[list[StateChange], list[RejectedChange]]:
+        """Whitelisted proposals only; fills before / evidence / mechanisms / band / group.
+        Proposals it cannot draft (no evidence, conflicting values, ...) come back rejected."""
         ...
 
 
 class IMagnitude(Protocol):
-    def range(self, construct: Construct, grade: int, evidence: list[EvidenceRef],
-              stable: StableProfile) -> Band:
-        """Base band by event grade 1-4; personality shifts at most one band;
-        hearsay-only caps at medium, inferred-only at small."""
+    def range(self, construct: Construct, field: Optional[str], grade: int, direction: int,
+              evidence: Sequence[EvidenceRef], stable: StableProfile,
+              instance: Any = None) -> Optional[Band]:
+        """Legal band for one numeric field, or None when the field has none. Base band by event
+        grade 1-4; personality shifts at most one band; hearsay-only caps at medium,
+        inferred-only at small. `direction` is +1 / -1; `instance` is the value after the change."""
         ...
 
 

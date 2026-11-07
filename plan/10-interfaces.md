@@ -96,7 +96,7 @@ class IRoleRepository(Protocol):
 |---|---|
 | `load` | 按角色库 ID 取稳定画像快照；同一 ID 同一版本永远返回同一对象 |
 | `enter` | 生成入场状态：dynamic 按"档案入场状态 → bootstrap / 场景 → 先验"取值，`core_goals` 文本 → 当前目标，`history_memory` → 入场记忆；没有依据的字段为 unknown |
-| 关键类型 | `StableProfile`：snapshot_id、modules（`{construct_id: StableModule}`，每个带 status / source_kind / confidence / needs_review）。`AgentState`：state_id、prev_state_id、stable_snapshot_id、dynamic、memory、versions。`EnableConfig`：每个模块 / 字段 / 决策过程是否启用 |
+| 关键类型 | `StableProfile`：snapshot_id、modules（`{construct_id: StableModule}`，每个带 status / source_kind / confidence / needs_review）。`AgentState`：state_id、prev_state_id、stable_snapshot_id、dynamic、memory（都按构念 ID 存，形状见 `rolesim/slots.py`）、versions、status（每个构念或实例的状态标记）。`EnableConfig`：每个模块 / 字段 / 决策过程是否启用 |
 | 出错 | 角色不存在、档案结构错 → 抛错；缺证据不报错，写 unknown |
 
 ### 2.1 `IProfileCompiler`：档案 → 稳定画像
@@ -152,8 +152,8 @@ class IStage(Protocol[P]):
 | 类型 | 关键字段 |
 |---|---|
 | `StageContext` | phase（event_id、phase_no、kind）、state（本阶段唯一读的快照）、stable、records（本阶段的记录组）、upstream（已提交的上游产物：S2 拿到最新的 S1 产物和上次 ActionPlan，S3 拿到 ActionPlan 和反馈的 S1 产物）、present |
-| `StageOutput[P]` | product: P、proposals（[ChangeProposal]）、judgments（[Judgment]） |
-| `ChangeProposal` | construct_id、key、field、after、reason：阶段只能**提议**，不写状态 |
+| `StageOutput[P]` | product: P、proposals（[ChangeProposal]）、judgments（[Judgment]）、evidence（本阶段能用的 EvidenceSet，提交时据此核对证据可见） |
+| `ChangeProposal` | construct_id、key、field、after、reason、grade（本角色对这一维度的事件等级，数值变化必填）、evidence / mechanisms（这条变化依据的证据和决策过程；不填则取交给该算子的判断）、operator（不填即主写入算子；衰减要写明 `decay_or_recovery`）：阶段只能**提议**，不写状态 |
 
 三个产物的必备字段：
 
@@ -222,25 +222,27 @@ class IExpresser(Protocol):
 
 ---
 
-## 4 `IStateStore`：状态的唯一写入口
+## 4 `IStateStore`：状态的唯一写入口（已实现）
 
 ```python
 class IStateStore(Protocol):
+    def open(self, key: SessionKey, state: AgentState) -> None: ...      # 入场状态
     def snapshot(self, key: SessionKey) -> AgentState: ...
-    def commit(self, ctx: StageContext, proposals: list[ChangeProposal],
-               judgments: list[Judgment]) -> CommitResult: ...
+    def commit(self, ctx: StageContext, output: StageOutput) -> CommitResult: ...
 ```
 
 | 类型 | 关键字段 |
 |---|---|
-| `CommitResult` | output_state_id、accepted（[StateChange]）、rejected（[{change, group, error}]）、soft_flags |
-| `StateChange` | construct_id、key、field、before、after、evidence（非空）、update_operator、decision_mechanisms、stage、band、group、reason、flag |
+| `CommitResult` | output_state_id、accepted（[StateChange]）、rejected（[{change, group, error}]，change 在无法起草时是原提议）、soft_flags |
+| `StateChange` | construct_id、key、field、before、after、evidence（非空）、update_operator、decision_mechanisms、stage、band、group、reason、flag、grade |
 
 | | 内容 |
 |---|---|
-| 流程 | 提议 → 交给对应构念的 `IUpdateOperator` 补全为 `StateChange` → `IMagnitude` 给区间 → `IValidator` 检查 → 按依赖组原子提交 |
-| 保证 | 只有这里能产生新 `AgentState`；stable 永远不写；同一 `(角色, 事件, 阶段, 提交号)` 重试是空操作 |
-| 出错 | 某依赖组有硬错 → 整组拒绝，其他组照常提交；软异常照写并标记 |
+| 实现 | `rolesim/store.py` `ConstructStore`；状态布局 `rolesim/slots.py`（45 个 dynamic / memory 构念的键、字段、取值形式、哪些字段有幅度档、只追加 / 固定事实，字段名按 09 §3.4—3.5） |
+| 流程 | 提议 → 交给对应构念的 `IUpdateOperator` 补全为 `StateChange` → `IMagnitude` 给区间 → `IValidator` 检查 → 按依赖组原子提交；没变的值丢弃；同一阶段别的算子已写的地址，衰减不再处理 |
+| 保证 | 只有这里能产生新 `AgentState`；stable 永远不写；`ctx.state` 必须是当前快照；同一 `(角色, 事件, 阶段, kind)` 重试返回第一次的结果，载荷不同则拒绝；交出去的快照是副本；写入过的 unknown 构念转为 active |
+| 出错 | 某依赖组有硬错 → 整组拒绝，其他组照常提交；软异常照写并标记。另有两项要看历史或多条变化的软检查：无新证据却反复翻转、四个关系维度同比例变化 |
+| 还没做 | 跨阶段累计上限和快变构念的习惯化（要等场景时间单位，F3）；按经过时间计算衰减值（同上；现在衰减值由阶段提出，只查方向） |
 
 ### 4.1 `IUpdateOperator`：11 个更新算子
 
@@ -248,20 +250,20 @@ class IStateStore(Protocol):
 class IUpdateOperator(Protocol):
     name: str                         # emotion_update、belief_revision、… 共 11 个
     def propose(self, ctx: StageContext, proposals: list[ChangeProposal],
-                judgments: list[Judgment]) -> list[StateChange]: ...
+                judgments: list[Judgment]) -> tuple[list[StateChange], list[RejectedChange]]: ...
 ```
 
-每个算子只接收白名单内构念的提议，补上 before、evidence、decision_mechanisms、band、group。阶段权限由 `OperatorRule.stages` 决定（例如 relation_update 只能在 S3）。`decay_or_recovery` 只在时间推进或阶段末运行。
+每个算子只接收白名单内构念的提议，补上 before、evidence、decision_mechanisms、band、group；没有证据、地址不对、同一地址给出不同值的提议退回（同值的合并，证据去重）。阶段权限由 `OperatorRule.stages` 决定（例如 relation_update 只能在 S3）。`decay_or_recovery` 只在时间推进或阶段末运行。实现：`rolesim/operators.py`，11 个算子是同一个类，差别全部来自登记表的写入白名单、阶段权限和依赖组。
 
 ### 4.2 `IMagnitude`：合法变化区间
 
 ```python
 class IMagnitude(Protocol):
-    def range(self, construct: Construct, grade: int, evidence: list[EvidenceRef],
-              stable: StableProfile) -> Band: ...
+    def range(self, construct: Construct, field: Optional[str], grade: int, direction: int,
+              evidence: Sequence[EvidenceRef], stable: StableProfile, instance: Any = None) -> Optional[Band]: ...
 ```
 
-`Band`：name（微小 / 小 / 中 / 大 / 扩展）、low、high。按事件等级取基准区间，人格调节最多移一档，证据只有听说的最多到"中"、只有推断的最多到"小"。模型的取值必须落在区间内，越界拒绝不截断。
+`Band`：name（微小 / 小 / 中 / 大 / 扩展）、low、high、extended（只有四级事件有：落在 (high, extended] 的值照写并标软异常 `extended_range`）。按事件等级取基准区间（效价 ×2、当前自我评价 ×4），人格调节最多移一档（敏感度分面合并后 |z| ≥ 1.5 时移到相邻档的半区），证据只有听说的最多到"中"、只有推断的最多到"小"。模型的取值必须落在区间内，越界拒绝不截断。不属于幅度档的字段（类别、文字、登记表未归快慢变的构念）返回 None。实现：`rolesim/magnitude.py`；人格敏感度目前只接 P1 分面、依恋焦虑、认知灵活性这几条无条件的映射，其余（P2 / P3、违约后的尽责性、自尊不稳定性）等档案形状确定后再接。
 
 ### 4.3 `IValidator`：硬错 / 软异常检查
 
@@ -272,6 +274,8 @@ class IValidator(Protocol):
 ```
 
 `Violation`：kind（hard / soft）、code、detail。硬错包括：证据为空或不可见、越出算子白名单或阶段权限、写 stable、写非 active 字段、before 与快照不一致、删除伤害事实或记忆、含对方真实隐状态、心理理论阶数超限、数值越界。软异常包括：超出典型区间、维度同比例联动、无新证据却反复翻转、累计超限。
+
+实现：`rolesim/validator.py`，每条规则一个 code（完整清单在模块说明里），例如 `stage_not_allowed`、`over_band`、`rewrites_fact`、`tom_order_exceeded`、`unregistered_option`。"含对方真实隐状态"在本方无法检查（本方从不持有别的角色的隐状态），以"证据必须可见"作为结构上的替代。
 
 ---
 
@@ -309,10 +313,10 @@ IRoleAgent.act
 | 3.2 IMechanism | ◐ | `mechanisms.py` 5 张卡（verify / appraise / trust / repair / boundary），标为未校准的工程假设 | 统一输出 `Judgment`；其余决策过程。每个过程的输出字段要等 F2 |
 | 3.3 IModel | ◐ | `providers.ChatBackend` / `MockBackend`，固定三个方法 appraise / decide / express | 改成通用的 `complete(stage, view, schema)`；mock 要能给三个阶段产出合规的产物 |
 | 3.4 IExpresser | ◐ | `Agent._express_payload` + `backend.express`，已做按需可见过滤 | 输入换成 `ActionPlan`；产出思考（只给本人）和外显行动 |
-| **4 IStateStore** | ◐ | `state.commit_phase`：按依赖组原子提交、提交号幂等 | 状态按路径存（`dynamic.affect_state…`），要改成按构念 ID（`d.*`）；不知道"阶段"；没有 `CommitResult` |
-| 4.1 IUpdateOperator | ◐ | 只有算子名和可写路径白名单 | 11 个算子的规则；阶段权限（如 relation_update 只能在 S3）。现在真正会写状态的只有两条规则：紧张度、信任 |
-| 4.2 IMagnitude | ✗ | `mechanisms.DELTA_SCALE` 固定 0.3 | 按事件等级取区间、人格移档、证据渠道封顶。另外旧规则是**截断**，新接口要求**越界拒绝** |
-| 4.3 IValidator | ◐ | `state.check_change`：证据为空或不可见、越出算子白名单、写非 active 字段、越界、before 过期；1 条软规则（信任单步 0.3） | 阶段权限、写 stable、删除伤害事实、含对方真实隐状态、心理理论阶数；软异常里的联动、无证据反复翻转、累计超限 |
+| **4 IStateStore** | ✅ | `store.ConstructStore` + `slots.py` | 尚未接入运行路径：旧的 `Agent.step` 仍用 `state.commit_phase`（第 5 步替换）；跨阶段累计上限、习惯化、按时间衰减要等场景时间单位（F3） |
+| 4.1 IUpdateOperator | ✅ | `operators.Operator`（11 个，规则来自登记表） | 规则卡里要判断事件的部分（情绪方向、习惯化）由阶段提出、验证器检查，不在算子里计算 |
+| 4.2 IMagnitude | ✅ | `magnitude.Magnitude` | 人格敏感度只接了无条件映射（P1 分面、依恋焦虑、认知灵活性）；P2 / P3、违约后的尽责性、自尊不稳定性要等档案形状（第 6 步） |
+| 4.3 IValidator | ✅ | `validator.Validator` | “含对方真实隐状态”本方无法检查；规则卡里的单条软规则（如“无调节过程而强度大幅下降”）未收 |
 
 ### 6.1 旧代码里没有对应接口的部分
 
@@ -332,7 +336,7 @@ F1—F5（见 [09 §7](09-interface-and-field-spec.md)）：〔工程〕结构�
 ### 6.3 建议顺序
 
 1. ~~`IRegistry`：抽取脚本 + 只读查询。其余接口都要查它。~~ 已完成（2026-11-07）。
-2. `IStateStore` + `IUpdateOperator` + `IValidator` + `IMagnitude`：状态改成按构念 ID，按登记表做权限和区间。
+2. ~~`IStateStore` + `IUpdateOperator` + `IValidator` + `IMagnitude`：状态改成按构念 ID，按登记表做权限和区间。~~ 已完成（2026-11-07），尚未接入运行路径。
 3. `IModel` 通用化，mock 能产出三个阶段的合规产物。
 4. `IEvidenceGate` + 三个 `IStage` + `IExpresser`。
 5. `ITurnRunner` 替换 `Agent.step`；`ITrace` 自己落盘。

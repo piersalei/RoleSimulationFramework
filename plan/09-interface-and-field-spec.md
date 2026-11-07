@@ -295,6 +295,8 @@ memory 条目使用同一套元数据。
 
 ### 3.4 `DynamicState`
 
+> 2026-11-07：本节与 3.5 已落成 `rolesim/slots.py`（状态布局，由 `IStateStore` 使用）。与下表的差异：`d.policy.mechanism_preference_state` 改为按 `entry_id` 的条目，便于定位；`d.policy.action_commitment` 的阶段暂不收〔工程〕的“延误”“重新协商”（待 F1）；1.2 的逐字段元数据（source、confidence、last_updated_event、version）还没有放进状态，变化的来源与证据记在 `StateChange` 和提交历史里。
+
 每条都带 1.2 的元数据。"维护方"是唯一主写入算子；`decay_or_recovery` 只回落标出的字段。
 
 **affect_state**

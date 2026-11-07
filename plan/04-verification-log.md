@@ -58,6 +58,14 @@ HTTP 测试使用本机临时回环服务器，返回固定结果。它验证传
 
 没覆盖：抽取结果是否符合心理学组的本意，要由他们核对 `review` 清单（5 类）和对照表；尚无任何运行时代码使用本接口（`state.OPERATORS` 仍是旧表）。
 
+## 2026-11-07：状态写入（IStateStore / IUpdateOperator / IMagnitude / IValidator）
+
+新增 `rolesim/slots.py`（45 个 dynamic / memory 构念的状态布局：键、字段、取值形式、幅度档字段、只追加与固定事实，字段名按 plan/09 §3.4—3.5）、`magnitude.py`、`validator.py`、`operators.py`、`store.py`。写入白名单、阶段权限、依赖组全部来自登记表；幅度档按状态变化规则 §5.0 / §七（事件等级、效价 ×2、自我评价 ×4、听说 / 推断封顶、四级扩展区间、人格敏感度最多移一档）。为落地调整了接口：`commit(ctx, output)`（输出带 EvidenceSet）、`ChangeProposal` 加 grade / evidence / mechanisms / operator、`AgentState` 加 status 且 memory 改为按构念 ID、`Band` 加 extended、`IStateStore.open`、`IMagnitude.range` 加字段与方向。
+
+`tests/test_store.py` 35 项：布局与登记表一致（含"有幅度档的字段 ⇔ 登记表归入快慢变"）、幅度档数值与原文一致、各档 / 缩放 / 证据封顶 / 人格移档、提交流程（阶段权限、整组拒绝、判断提供证据、合并与冲突、unknown→active、重试幂等、过期快照、快照是副本）、每条硬错与软异常各至少一例。另做了 3 处变异检查（关掉整组拒绝、阶段权限、证据封顶），对应测试都会失败。`python3 -m unittest discover -s tests`（Python 3.13.12；本机没有 `python3.11`）：**276 项通过**。
+
+没覆盖：新状态写入尚未接入运行路径（`Agent.step` 仍用旧的 `state.commit_phase`）；跨阶段累计上限、习惯化、按时间衰减等场景时间单位（F3）；"含对方真实隐状态"本方无法检查；数值都是心理学组的初始值，未标定。
+
 ## 维护方式
 
 每次做出新的验证（测试数变化、新的模型运行、人工评审）就在这里加一节，写明日期、命令、结果、没覆盖的部分。测试数请以实际运行输出为准，上表来自计划文档的记录，不是本次重新统计。

@@ -21,7 +21,7 @@ def profile():
 
 
 def state(sid="st0", prev=None, dynamic=None):
-    return I.AgentState(sid, prev, "snap1", dynamic or {"d.affect.emotion": 0.0}, ())
+    return I.AgentState(sid, prev, "snap1", dynamic or {"d.affect.emotion": 0.0}, {})
 
 
 def ctx(kind="event", st=None, upstream=None):
@@ -70,7 +70,7 @@ class Hierarchy(unittest.TestCase):
         "IRegistry": ["construct", "mechanism", "operator"],
         "IStage": ["run"], "IEvidenceGate": ["build"], "IMechanism": ["evaluate"], "IModel": ["complete"],
         "IExpresser": ["realize"],
-        "IStateStore": ["snapshot", "commit"], "IUpdateOperator": ["propose"], "IMagnitude": ["range"],
+        "IStateStore": ["open", "snapshot", "commit"], "IUpdateOperator": ["propose"], "IMagnitude": ["range"],
         "IValidator": ["check"],
     }
 
@@ -172,11 +172,14 @@ class Store:
         self.states = {("i1", "c1"): state()}
         self.n = 0
 
+    def open(self, key, state):
+        self.states[key] = state
+
     def snapshot(self, key):
         return self.states[key]
 
-    def commit(self, ctx, proposals, judgments):
-        changes = tuple(change(before=ctx.state.dynamic[p.construct_id], after=p.after) for p in proposals)
+    def commit(self, ctx, output):
+        changes = tuple(change(before=ctx.state.dynamic[p.construct_id], after=p.after) for p in output.proposals)
         self.n += 1
         dynamic = {**ctx.state.dynamic, **{c.construct_id: c.after for c in changes}}
         new = state(f"st{self.n}", ctx.state.state_id, dynamic)
@@ -199,11 +202,11 @@ class Runner:
         st = self.store.snapshot(key)
         c = I.StageContext(I.Phase("a1", 1, "event"), st, profile(), (), {}, present, key)
         out = S1().run(c)
-        self.store.commit(c, list(out.proposals), list(out.judgments))
+        self.store.commit(c, out)
         upstream["S1"] = out.product
         c = I.StageContext(I.Phase("plan:q1", 2, "plan"), self.store.snapshot(key), profile(), (), upstream, present, key)
         out2 = S2().run(c)
-        self.store.commit(c, list(out2.proposals), list(out2.judgments))
+        self.store.commit(c, out2)
         return Expresser().realize(out2.product, c), self.store.snapshot(key)
 
 
