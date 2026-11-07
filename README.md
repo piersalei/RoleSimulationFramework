@@ -87,7 +87,7 @@ python3.11 -m rolesim run --roles role1 role2 role3 --scene test3 # 三个角色
 | `roles/` | 角色文件，一个角色一个文件（`role1.json`、`role2.json`） |
 | `scenes/` | 剧情文件，一个剧情一个文件（`test1.json`、`test2.json`） |
 | `library/skills/` | 人格 skill 库（兼容 Agent Skills 规范的 `SKILL.md`） |
-| `data/` | 两份心理学库原文（`sources/`）、章节索引（`catalog.json`）、与心理学组和环境组的接口合同（`sources/contracts/`） |
+| `data/` | 两份心理学库原文（`sources/`）、章节索引（`catalog.json`）、与心理学组和环境组的接口合同（`sources/contracts/`）、心理学组 v1 接口文件与三个心理流程 skill（`sources/psychology_v1/`） |
 | `docs/` | 框架说明 |
 | `plan/` | 计划与进度 |
 | `tests/` | 测试 |

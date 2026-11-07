@@ -19,7 +19,10 @@
 | [04-verification-log.md](04-verification-log.md) | 已经做过的验证检查：日期、命令、结果、没覆盖的部分 |
 | [05-session-memory-and-speed.md](05-session-memory-and-speed.md) | 待定：角色的持续对话（会话记忆）与运行提速；含现状实测与必须守住的隔离约束 |
 | [06-psychology-decisions.md](06-psychology-decisions.md) | 待心理学组裁定的问题：人格双重计数、线索含义与用途、对话中的信任、公式与初始值、隐瞒方式；以及此前未答复事项的汇总。给对方的一页说明在 [docs/12-psychology-brief.md](../docs/12-psychology-brief.md) |
-| [07-agent-adapter-integration.md](07-agent-adapter-integration.md) | 对接环境组新的 Agent 接口（`act` / `perceive` / 环境 `act`）：与合同 v0 的差异、已定事项、接口定义 v1、角色适配器与本地交互循环（均已实现）、限制与待定问题 |
+| [07-agent-adapter-integration.md](07-agent-adapter-integration.md) | （已被 08 第 8.1 节的接口 v2 取代）对接环境组新的 Agent 接口（`act` / `perceive` / 环境 `act`）：与合同 v0 的差异、已定事项、接口定义 v1、角色适配器与本地交互循环（均已实现）、限制与待定问题 |
+| [08-framework-oop-design.md](08-framework-oop-design.md) | 按心理学组 v1 材料重审框架：对象模型、心理学字段清单（stable 42 / dynamic 42 / memory 3）、过程对象、内部接口（三阶段 × 11 算子）、对外接口；已按环境组 2026-11-07 接口说明对齐（接口 v2），列出差异与剩余待确认问题（草案） |
+| [09-interface-and-field-spec.md](09-interface-and-field-spec.md) | 接口与维护字段规格 v1（草案）：记法与元数据、对外接口字段、stable / dynamic / memory 每个构念的字段与维护方、过程对象与日志字段、内部接口；第 7 节是待确认项，确认后冻结 |
+| [10-interfaces.md](10-interfaces.md) | 关键接口：4 个顶层接口（IRoleAgent / IRoleRepository / IStage / IStateStore），各带 2—4 个子接口，每个给出签名、关键类型、前置条件、保证与出错方式；附一次 act 的调用链，以及逐个接口的实现进度、缺口和建议顺序（第 6 节） |
 
 ## 进度总览
 
@@ -41,7 +44,9 @@
 |---|---|---|
 | plan/02 第 5 节的 7 个待定项 | 开工时按工程默认处理（保留评价开关、固定轮转、只做规则驱动环境、上限 6 个角色、三档等分、占位数值、未通知环境组），**待作者确认或改** | 02 第 5、7 节 |
 | 把"环境本身有 agent"同步给环境组 | 未做 | 02 第 5 节第 7 项 |
-| 对接环境组新的 Agent 接口 | 接口定义 v1、角色适配器、认知投影、本地参考运行器（`--interface agent-api`）已完成，mock 跑通；只出台词；人物配置字段、分支、结束对话等待定 | 07 第 6 节 |
+| 对接环境组新的 Agent 接口 | v1（act / perceive）已被环境组 2026-11-07 的接口说明取代，代码已改为 v2，见 08 第 8.1 节 | 07、08 |
+| 按心理学组 v1 材料重审框架（面向对象设计） | 草案已写；材料存于 `data/sources/psychology_v1/`。已按环境组 2026-11-07 接口说明对齐第 7.3、8.1 节，外部接口层代码改为接口 v2（initialize / act，无 perceive、无认知）；内部三阶段与状态重建未开始；2026-11-07 已确认：角色 ID 即角色库 ID 且跨互动不变、在场含本人、不行动不更新、亲见/转述由文字表达、配置字段按我们的提议；场景时间待环境组定 | 08 |
+| 关键接口与字段规格（最优先） | 接口清单 10 已写（面向接口编程的分层）；逐字段规格 09 作附录；待确认后冻结并按接口重建代码 | 10、09 |
 
 ### 将来（已排但没做）
 

@@ -51,7 +51,7 @@ def main():
     demo.add_argument("--appraise-state", choices=["on", "off"], default="on",
                       help="off keeps the role's state out of the appraisal prompt (control)")
     demo.add_argument("--interface", choices=["env-contract", "agent-api"], default="env-contract",
-                      help="agent-api runs the roles behind the agent interface v1 with the local runner")
+                      help="agent-api runs the roles behind the agent interface v2 (initialize / act) with the local runner")
     demo.add_argument("--out", default=None,
                       help="run directory; default runs/<YYYYMMDD-HHMMSS>_<scene>_<model>")
     readable = sub.add_parser("readable", help="(re)write transcript.md for finished run directories")

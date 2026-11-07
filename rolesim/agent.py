@@ -18,7 +18,7 @@ from .contract import (PerceiveRequest, PerceiveResponse, ProposedAction, StepRe
                        StepResponse, Visibility, validate_event)
 from .mechanisms import CARDS, candidate_changes, context, select_cards, triggered
 from .persona import bounded, compile_views, text, validate_persona
-from .state import (PSYCHOLOGY_VERSION, SCHEMA_VERSION, VERSIONS, activate, commit_phase,
+from .state import (PSYCHOLOGY_VERSION, SCHEMA_VERSION, VERSIONS, activate, add_partner, commit_phase,
                     new_dynamic, validate_dynamic)
 from .stateview import state_view
 from .vocab import ACTION_TEXT, CUE_TEXT, CUES
@@ -195,7 +195,7 @@ class Agent:
     # -- helpers -----------------------------------------------------------
     def begin(self, profile):
         """Take the stable profile and build the initial state. The env contract does this on
-        the first `step`; the agent interface v1 may call `perceive` first, so it calls this."""
+        the first `step`; the agent-interface adapter calls this at a character's first act."""
         if self.persona is not None:
             raise ValueError("the agent has already begun")
         validate_persona(profile)
@@ -205,6 +205,23 @@ class Agent:
             raise ValueError("a role cannot be among its own others")
         self.persona = copy.deepcopy(profile)
         self.state = initial_state(self.briefing, list(self.others))
+
+    def meet(self, role_id, title):
+        """A character joins after this role began (agent interface v2: presence can change).
+        Its relation state is created on first meeting, with the same prototype start as the
+        roles present from the beginning; the step is kept in the status log."""
+        if self.persona is None:
+            raise ValueError("the agent has not begun")
+        if role_id == self.persona["id"]:
+            raise ValueError("a role cannot meet itself")
+        if role_id in self.others:
+            return False
+        self.others[role_id] = title
+        dynamic, status = self.state["dynamic"], self.state["module_status"]
+        add_partner(dynamic, status, role_id)
+        activate(dynamic, status, self.state["status_log"], f"dynamic.relation_state.{role_id}.trust", .55,
+                 "prototype starting value on first meeting, not a measurement", ["engineering_default"])
+        return True
 
     def _check(self, role_id, prev_state_id, profile):
         if self.persona is None:
