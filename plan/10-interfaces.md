@@ -112,22 +112,30 @@ class IProfileCompiler(Protocol):
 | 输出 | 画像 + 待审核清单（`ReviewItem`：construct_id、value、source_kind、原文依据、原因） |
 | 规则 | 明写 → explicit；规则推断 → inferred；模型推断 → model_inferred（必须带原文）；无依据 → unknown，不随机补值。按登记表的装配顺序生成，派生字段最后计算 |
 
-### 2.2 `IRegistry`：心理学登记表查询
+### 2.2 `IRegistry`：心理学登记表查询（已实现）
 
 ```python
 class IRegistry(Protocol):
     def construct(self, construct_id: str) -> Construct: ...
     def mechanism(self, dm_id: str) -> DecisionMechanism: ...
     def operator(self, name: str) -> OperatorRule: ...
+    def ids(self, kind: Literal["construct", "mechanism", "operator"]) -> tuple[str, ...]: ...
 ```
 
 | 类型 | 关键字段 |
 |---|---|
-| `Construct` | construct_id、value_form、range、tempo（快变 / 慢变 / 类别）、writer（唯一写入算子）、half_life、self_visibility、high_impact |
-| `DecisionMechanism` | dm_id、options（登记的可选项）、reads、hands_to（交给哪些算子） |
-| `OperatorRule` | name、writes（构念白名单）、stages（允许在哪些阶段调用）、group（依赖组） |
+| `Construct` | construct_id、layer、module、section、name、writer（唯一主写入算子）、tempo（快变 / 慢变 / 类别）、decay（§九的时间规则原文）、self_visibility（能自知 / 部分 / 不能）、high_impact、basis |
+| `DecisionMechanism` | dm_id、section、name、options（登记的可选项）、option_groups、stages、hands_to（交给哪些算子）、card（有无机制卡）、notes、basis |
+| `OperatorRule` | name、section、writes（构念白名单）、stages（允许在哪些阶段调用）、group（依赖组）、timing、basis |
 
-数据由脚本从心理学组的三份接口文件抽取，只读。心理学组发新版时重新生成。
+| | 内容 |
+|---|---|
+| 实现 | `rolesim/registry.py`：`build_registry()` 从 `data/sources/psychology_v1/` 抽取，`python3 -m rolesim registry` 写成 `data/registry.json`；`Registry.load()` 读这个文件，实现本接口 |
+| 抽取方式 | 结构规整的部分机械抽取：构念与决策过程条目、算子写入白名单、算子的时间与优先级、每个阶段可调用的算子和决策过程、机制卡。只写在叙述里的部分放在一张带原文引语的对照表里：依赖组、快慢变归类、衰减规则、自知程度、高影响字段，以及 12 个决策过程的可选项断句修正 |
+| 保证 | 只读；`basis` 记录每个属性出自哪份文件、哪一节、哪句话；`registry.json` 与原文不一致时测试失败 |
+| 出错 | 未登记的 ID → `KeyError`。原文改动使对照表的引语找不到、§九多出一条、声明的数量对不上、一个构念出现两个主写入算子 → 构建失败（`RegistryBuildError`），需要人工重读后再生成 |
+| 没有抽取的 | 每个字段的取值形式和范围（角色状态说明里只有叙述，留给 `IStateStore` 的字段表）；决策过程读取哪些构念（原文只有中文描述）；登记 §4.10 的先验映射表（留给 `IProfileCompiler`）；幅度分档的数值（留给 `IMagnitude`） |
+| 待心理学组确认 | `registry.json` 里的 `review`：15 个没有任何阶段调用的决策过程、21 个没有归入快慢变的 dynamic 构念、20 个没写自知程度的构念（暂按不可自知处理）、19 个可选项里夹着说明的决策过程、15 处 §4.10 候选项与 §7 可选项写法不一致 |
 
 ---
 
@@ -293,7 +301,7 @@ IRoleAgent.act
 | 1.2 ITrace | ◐ | `adapter.log` 内存列表，由 `loop.py` 落盘 | 没有 `PhaseLog`（证据集、判断、产物）；**日志由运行器写盘，接环境组的真实运行器后就没人写了**，需要我们自己按 `interaction_id` 落盘 |
 | **2 IRoleRepository** | ◐ | `roles.load_role`、`Agent.begin`、`briefing.py` | `load` 只读手写 JSON（role-1.0）；`enter` 没有按"档案 → bootstrap → 先验"取值，bootstrap 的 `core_goals` / `history_memory` 只拼成一段背景文字，没进目标和记忆 |
 | 2.1 IProfileCompiler | ✗ | `persona.validate_persona` 只做校验 | 不能从自然语言档案生成；字段没有来源类型、置信度、待审核清单 |
-| 2.2 IRegistry | ✗ | `state.OPERATORS` 是手写的局部版 | 抽取脚本：从 `data/sources/psychology_v1/` 的登记表生成 87 个构念、75 个决策过程、11 个算子规则（含阶段权限） |
+| 2.2 IRegistry | ✅ | `registry.Registry` + `data/registry.json` | 待心理学组核对 `review` 清单；`state.OPERATORS` 仍是旧的手写局部版，第 2 步改为查本接口 |
 | **3 IStage** S1 | ◐ | `backend.appraise`：每条事件出 5 个线索值 | 产物 `SituationInterpretation`（定义情境、评价、归因、1—3 个假设…） |
 | 　S2 | ◐ | `backend.decide`：从允许动作里选一个 + 理由 | 产物 `ActionPlan`（候选、备选、切换条件、承诺、表达目标…） |
 | 　S3 | ✗ | 无 | 整个阶段：预期对实际、承诺裁定、关系走向、学习归因 |
@@ -319,9 +327,11 @@ IRoleAgent.act
 
 F1—F5（见 [09 §7](09-interface-and-field-spec.md)）：〔工程〕结构、各决策过程的输出字段、时间单位、场景结构、第一版启用哪些模块。不影响先搭骨架，影响具体字段和规则。
 
+另有 `data/registry.json` 的 `review` 清单（5 类，见 §2.2），需要心理学组逐条确认；确认后改原文或改对照表，再重新生成。
+
 ### 6.3 建议顺序
 
-1. `IRegistry`：抽取脚本 + 只读查询。其余接口都要查它。
+1. ~~`IRegistry`：抽取脚本 + 只读查询。其余接口都要查它。~~ 已完成（2026-11-07）。
 2. `IStateStore` + `IUpdateOperator` + `IValidator` + `IMagnitude`：状态改成按构念 ID，按登记表做权限和区间。
 3. `IModel` 通用化，mock 能产出三个阶段的合规产物。
 4. `IEvidenceGate` + 三个 `IStage` + `IExpresser`。

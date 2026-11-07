@@ -1,0 +1,5493 @@
+{
+  "schema_version": "registry-1.0",
+  "status": "psychology_group_v1_definition",
+  "evidence": "来源理论 + 心理学组工程化约定；其中数值为初始值，待标定，不是验证结果",
+  "generated_by": "python3 -m rolesim registry",
+  "sources": [
+    {
+      "file": "接口文件v1/接口文件总说明v1.md",
+      "sha256": "e0ad57d8366a21ae531944f243ae49ee4961e20ed662e43c7e403f5370525e17"
+    },
+    {
+      "file": "接口文件v1/心理构念登记v1.md",
+      "sha256": "88f2b233e5ca7f757d4637f6aa80e6ab69efe84e838bef48bf539b47a1b5dbc6"
+    },
+    {
+      "file": "接口文件v1/角色状态说明v1.md",
+      "sha256": "8c4c0f3ec4593b0d50c9b7b731e720afa93d2974b59aacbae10ab90b27cd6fe9"
+    },
+    {
+      "file": "接口文件v1/状态变化规则v1.md",
+      "sha256": "e07607707393929c4be279e500fe9736ec6275ac08bf6eda456b4542d90edae6"
+    },
+    {
+      "file": "skills/事件建模skill.md",
+      "sha256": "f40413812ead7f680b426b38ab9864f64c12f78bb5327db73f8cf49f901ce703"
+    },
+    {
+      "file": "skills/行动计划skill.md",
+      "sha256": "b158d7a14756d34cf808d086585dd3874be56acf1d0e275ffba1e09ad134cd2e"
+    },
+    {
+      "file": "skills/长期演化skill.md",
+      "sha256": "a1cb05df18bc46c6f09287428eef418927a390b00dba90c93c6c4c042d9358df"
+    }
+  ],
+  "counts": {
+    "constructs": 87,
+    "mechanisms": 75,
+    "operators": 11
+  },
+  "constructs": [
+    {
+      "construct_id": "s.identity.demographics",
+      "layer": "stable",
+      "module": "identity",
+      "section": "4.1",
+      "name": "人口学信息",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.1：角色本人完整知晓",
+        "high_impact": "心理构念登记v1 §4.1：高影响字段（非档案明写时）：年龄、健康/残障条件、正式职位、法律身份、重大失落或受害经历"
+      }
+    },
+    {
+      "construct_id": "s.identity.social_roles",
+      "layer": "stable",
+      "module": "identity",
+      "section": "4.1",
+      "name": "社会角色与制度位置",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": true,
+      "basis": {
+        "high_impact": "心理构念登记v1 §4.1：高影响字段（非档案明写时）：年龄、健康/残障条件、正式职位、法律身份、重大失落或受害经历"
+      }
+    },
+    {
+      "construct_id": "s.identity.resources",
+      "layer": "stable",
+      "module": "identity",
+      "section": "4.1",
+      "name": "资源、外貌与可观察表现",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": false,
+      "basis": {}
+    },
+    {
+      "construct_id": "s.identity.life_history",
+      "layer": "stable",
+      "module": "identity",
+      "section": "4.1",
+      "name": "生命历程",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.1：角色的自知可能带有选择性和自我叙事加工",
+        "high_impact": "心理构念登记v1 §4.1：高影响字段（非档案明写时）：年龄、健康/残障条件、正式职位、法律身份、重大失落或受害经历"
+      }
+    },
+    {
+      "construct_id": "s.traits.personality.p1_big_five",
+      "layer": "stable",
+      "module": "traits.personality",
+      "section": "4.2",
+      "name": "方案 P1：大五人格",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.2：角色对自己的人格只有部分自知",
+        "high_impact": "心理构念登记v1 §4.2：三套全部属于高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.personality.p2_16pf",
+      "layer": "stable",
+      "module": "traits.personality",
+      "section": "4.2",
+      "name": "方案 P2：16PF",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.2：角色对自己的人格只有部分自知",
+        "high_impact": "心理构念登记v1 §4.2：三套全部属于高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.personality.p3_jung_hexaco",
+      "layer": "stable",
+      "module": "traits.personality",
+      "section": "4.2",
+      "name": "方案 P3：荣格认知功能与 HEXACO",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.2：角色对自己的人格只有部分自知",
+        "high_impact": "心理构念登记v1 §4.2：三套全部属于高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.attachment.global",
+      "layer": "stable",
+      "module": "traits.attachment",
+      "section": "4.3",
+      "name": "成人依恋全局基线",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.3：角色通常只能描述关系体验，不能直接说出轴的位置",
+        "high_impact": "心理构念登记v1 §4.3：作用层级为关系，属于高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.motivation.source_activation",
+      "layer": "stable",
+      "module": "traits.motivation_baseline",
+      "section": "4.4",
+      "name": "来源与激活基线",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": true,
+      "basis": {
+        "high_impact": "心理构念登记v1 §4.4：整个模块属于高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.motivation.need_vector",
+      "layer": "stable",
+      "module": "traits.motivation_baseline",
+      "section": "4.4",
+      "name": "统一需要向量",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": true,
+      "basis": {
+        "high_impact": "心理构念登记v1 §4.4：整个模块属于高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.motivation.goal_computation",
+      "layer": "stable",
+      "module": "traits.motivation_baseline",
+      "section": "4.4",
+      "name": "目标计算基线",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": true,
+      "basis": {
+        "high_impact": "心理构念登记v1 §4.4：整个模块属于高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.motivation.conflict_regulation",
+      "layer": "stable",
+      "module": "traits.motivation_baseline",
+      "section": "4.4",
+      "name": "冲突与调节基线",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "unaware",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.3：冲突主题和自体、他人表征与关系模板对角色本人不可自知",
+        "high_impact": "心理构念登记v1 §4.4：整个模块属于高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.motivation.self_efficacy",
+      "layer": "stable",
+      "module": "traits.motivation_baseline",
+      "section": "4.4",
+      "name": "自我效能基线",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "心理构念登记v1 §4.6：角色只知自我效能，不知能力分",
+        "high_impact": "心理构念登记v1 §4.4：整个模块属于高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.affect.emotion_baseline",
+      "layer": "stable",
+      "module": "traits.affective_capacities",
+      "section": "4.5",
+      "name": "情绪基线",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": false,
+      "basis": {}
+    },
+    {
+      "construct_id": "s.traits.affect.appraisal_bias",
+      "layer": "stable",
+      "module": "traits.affective_capacities",
+      "section": "4.5",
+      "name": "评价偏向",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": false,
+      "basis": {}
+    },
+    {
+      "construct_id": "s.traits.affect.regulation_capacity",
+      "layer": "stable",
+      "module": "traits.affective_capacities",
+      "section": "4.5",
+      "name": "情绪调节能力",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": true,
+      "basis": {
+        "high_impact": "心理构念登记v1 §4.5：情绪调节能力和共情属于高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.affect.empathy",
+      "layer": "stable",
+      "module": "traits.affective_capacities",
+      "section": "4.5",
+      "name": "共情能力",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": true,
+      "basis": {
+        "high_impact": "心理构念登记v1 §4.5：情绪调节能力和共情属于高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.affect.emotional_intelligence",
+      "layer": "stable",
+      "module": "traits.affective_capacities",
+      "section": "4.5",
+      "name": "情绪智力",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": false,
+      "basis": {}
+    },
+    {
+      "construct_id": "s.traits.affect.expression",
+      "layer": "stable",
+      "module": "traits.affective_capacities",
+      "section": "4.5",
+      "name": "情感表达与显示规则",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": false,
+      "basis": {}
+    },
+    {
+      "construct_id": "s.traits.social_cognition_71d",
+      "layer": "stable",
+      "module": "traits.social_cognition_71d",
+      "section": "4.6",
+      "name": "社会心智能力向量",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "unaware",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.3：角色本人不知道自己的能力分",
+        "high_impact": "心理构念登记v1 §4.6：未赋值维度取 0 并标为 default。属于高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.cognitive.dual_process",
+      "layer": "stable",
+      "module": "traits.cognitive_style",
+      "section": "4.7",
+      "name": "双过程倾向",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "self_visibility": "心理构念登记v1 §4.7：角色部分自知；初始化以规则推断为主"
+      }
+    },
+    {
+      "construct_id": "s.traits.cognitive.need_for_cognition",
+      "layer": "stable",
+      "module": "traits.cognitive_style",
+      "section": "4.7",
+      "name": "认知需求",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "self_visibility": "心理构念登记v1 §4.7：角色部分自知；初始化以规则推断为主"
+      }
+    },
+    {
+      "construct_id": "s.traits.cognitive.need_for_closure",
+      "layer": "stable",
+      "module": "traits.cognitive_style",
+      "section": "4.7",
+      "name": "认知闭合需要",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "self_visibility": "心理构念登记v1 §4.7：角色部分自知；初始化以规则推断为主"
+      }
+    },
+    {
+      "construct_id": "s.traits.cognitive.ambiguity_tolerance",
+      "layer": "stable",
+      "module": "traits.cognitive_style",
+      "section": "4.7",
+      "name": "模糊容忍度",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "self_visibility": "心理构念登记v1 §4.7：角色部分自知；初始化以规则推断为主"
+      }
+    },
+    {
+      "construct_id": "s.traits.cognitive.flexibility",
+      "layer": "stable",
+      "module": "traits.cognitive_style",
+      "section": "4.7",
+      "name": "认知灵活性",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "self_visibility": "心理构念登记v1 §4.7：角色部分自知；初始化以规则推断为主"
+      }
+    },
+    {
+      "construct_id": "s.traits.cognitive.metacognitive_calibration",
+      "layer": "stable",
+      "module": "traits.cognitive_style",
+      "section": "4.7",
+      "name": "元认知校准",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "self_visibility": "心理构念登记v1 §4.7：角色部分自知；初始化以规则推断为主"
+      }
+    },
+    {
+      "construct_id": "s.traits.development.position",
+      "layer": "stable",
+      "module": "traits.developmental_position",
+      "section": "4.8",
+      "name": "自我发展位置",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "unaware",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.3：development_stage 有值时至少要有一条跨事件或具有生命史连续性的证据。角色本人不能自知",
+        "high_impact": "心理构念登记v1 §4.8：高影响字段，只能由规则或模型推断"
+      }
+    },
+    {
+      "construct_id": "s.traits.self.self_concept",
+      "layer": "stable",
+      "module": "traits.developmental_position",
+      "section": "4.8",
+      "name": "自我概念",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": false,
+      "basis": {}
+    },
+    {
+      "construct_id": "s.traits.self.self_esteem",
+      "layer": "stable",
+      "module": "traits.developmental_position",
+      "section": "4.8",
+      "name": "自尊基线",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": true,
+      "basis": {
+        "high_impact": "心理构念登记v1 §4.8：自尊与认同状态为高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.self.self_discrepancy",
+      "layer": "stable",
+      "module": "traits.developmental_position",
+      "section": "4.8",
+      "name": "自我差异",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": false,
+      "basis": {}
+    },
+    {
+      "construct_id": "s.traits.self.identity_status",
+      "layer": "stable",
+      "module": "traits.developmental_position",
+      "section": "4.8",
+      "name": "认同状态",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": true,
+      "basis": {
+        "high_impact": "心理构念登记v1 §4.8：自尊与认同状态为高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.self.role_identity",
+      "layer": "stable",
+      "module": "traits.developmental_position",
+      "section": "4.8",
+      "name": "角色认同",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": false,
+      "basis": {}
+    },
+    {
+      "construct_id": "s.traits.self.social_identity",
+      "layer": "stable",
+      "module": "traits.developmental_position",
+      "section": "4.8",
+      "name": "社会认同基线",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": false,
+      "basis": {}
+    },
+    {
+      "construct_id": "s.traits.function.domains",
+      "layer": "stable",
+      "module": "traits.personality_function",
+      "section": "4.9",
+      "name": "人格功能五域",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "unaware",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.3：剖面不典型时为“混合/未定”。角色本人不能自知",
+        "high_impact": "心理构念登记v1 §4.9：本模块是研究编码，只能由规则或模型推断，全部为高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.function.pathology_traits",
+      "layer": "stable",
+      "module": "traits.personality_function",
+      "section": "4.9",
+      "name": "病理特质方向",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "unaware",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.3：剖面不典型时为“混合/未定”。角色本人不能自知",
+        "high_impact": "心理构念登记v1 §4.9：本模块是研究编码，只能由规则或模型推断，全部为高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.function.organization_label",
+      "layer": "stable",
+      "module": "traits.personality_function",
+      "section": "4.9",
+      "name": "人格组织标签",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "unaware",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.3：剖面不典型时为“混合/未定”。角色本人不能自知",
+        "high_impact": "心理构念登记v1 §4.9：本模块是研究编码，只能由规则或模型推断，全部为高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.traits.decision_preferences",
+      "layer": "stable",
+      "module": "traits.decision_preferences",
+      "section": "4.10",
+      "name": "决策偏好基线",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.3：防御偏好对角色本人不可自知，其余子项部分自知",
+        "high_impact": "心理构念登记v1 §4.10：防御、受侵害反应、诚实和权威服从为高影响子项"
+      }
+    },
+    {
+      "construct_id": "s.values.schwartz_priorities",
+      "layer": "stable",
+      "module": "values",
+      "section": "4.11",
+      "name": "施瓦兹价值优先级",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.4：values 的三个模块角色部分自知",
+        "high_impact": "心理构念登记v1 §4.11：道德基础理论与罗凯奇分类只作对照映射，不独立赋值。全部为高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.values.moral_reasoning",
+      "layer": "stable",
+      "module": "values",
+      "section": "4.11",
+      "name": "道德推理",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.4：values 的三个模块角色部分自知",
+        "high_impact": "心理构念登记v1 §4.11：道德基础理论与罗凯奇分类只作对照映射，不独立赋值。全部为高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.values.cultural_orientation",
+      "layer": "stable",
+      "module": "values",
+      "section": "4.11",
+      "name": "内化文化取向",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.4：values 的三个模块角色部分自知",
+        "high_impact": "心理构念登记v1 §4.11：道德基础理论与罗凯奇分类只作对照映射，不独立赋值。全部为高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.core_goals.primary",
+      "layer": "stable",
+      "module": "core_goals",
+      "section": "4.12",
+      "name": "主核心目标",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": true,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.5：角色本人通常知晓，他人不可见",
+        "high_impact": "心理构念登记v1 §4.12：goal_state 不能反向覆盖核心目标。高影响字段"
+      }
+    },
+    {
+      "construct_id": "s.speech_style.baseline",
+      "layer": "stable",
+      "module": "speech_style",
+      "section": "4.13",
+      "name": "表达基线",
+      "writer": null,
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "self_visibility": "角色状态说明v1 §4.6：表达基线对他人可见，角色部分自知"
+      }
+    },
+    {
+      "construct_id": "d.affect.emotion",
+      "layer": "dynamic",
+      "module": "affect_state",
+      "section": "5.1",
+      "name": "当前情绪",
+      "writer": "emotion_update",
+      "tempo": "fast",
+      "decay": "当前情绪的强度和唤醒，朝向情绪基线：恐惧、惊讶、厌恶 1 小时；愤怒、焦虑、喜悦 6 小时；悲伤、怨恨 1—2 天。悲伤和怨恨持续最久，事件越重要、越被反刍，持续越长（Verduyn & Lavrijsen, 2015）。",
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.1 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：快变构念（情绪强度与唤醒、压力、威胁与奖赏激活、价值与目标激活、身份与规范显著性、面子成本）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.affect.stress",
+      "layer": "dynamic",
+      "module": "affect_state",
+      "section": "5.1",
+      "name": "压力水平",
+      "writer": "emotion_update",
+      "tempo": "fast",
+      "decay": "压力水平和威胁与奖赏激活，朝向零：威胁解除后 12 小时，威胁持续时不回落。",
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.1 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：快变构念（情绪强度与唤醒、压力、威胁与奖赏激活、价值与目标激活、身份与规范显著性、面子成本）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.affect.threat_reward_activation",
+      "layer": "dynamic",
+      "module": "affect_state",
+      "section": "5.1",
+      "name": "威胁与奖赏激活",
+      "writer": "emotion_update",
+      "tempo": "fast",
+      "decay": "压力水平和威胁与奖赏激活，朝向零：威胁解除后 12 小时，威胁持续时不回落。",
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.1 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：快变构念（情绪强度与唤醒、压力、威胁与奖赏激活、价值与目标激活、身份与规范显著性、面子成本）",
+        "self_visibility": "心理构念登记v1 §5.1：不是基线敏感度。部分自知"
+      }
+    },
+    {
+      "construct_id": "d.affect.regulation_state",
+      "layer": "dynamic",
+      "module": "affect_state",
+      "section": "5.1",
+      "name": "调节状态",
+      "writer": "emotion_update",
+      "tempo": null,
+      "decay": "调节状态：调节结束后转为 inactive，不计半衰期。",
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.1 定义与理论依据",
+        "self_visibility": "心理构念登记v1 §5.1：防御通常不能自知"
+      }
+    },
+    {
+      "construct_id": "d.cognition.belief",
+      "layer": "dynamic",
+      "module": "cognition_state",
+      "section": "5.2",
+      "name": "命题信念",
+      "writer": "belief_revision",
+      "tempo": "slow",
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.2 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：慢变构念（trust、closeness、dependence、commitment、确信度、羞耻负荷、动态目标承诺、可行性估计、策略权重等 0—1 构念）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.cognition.attention",
+      "layer": "dynamic",
+      "module": "cognition_state",
+      "section": "5.2",
+      "name": "注意焦点与忽略项",
+      "writer": "belief_revision",
+      "tempo": null,
+      "decay": "注意焦点的持续度，朝向零：1 天。",
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.2 定义与理论依据",
+        "self_visibility": "心理构念登记v1 §5.2：忽略项通常不能自知"
+      }
+    },
+    {
+      "construct_id": "d.cognition.attribution",
+      "layer": "dynamic",
+      "module": "cognition_state",
+      "section": "5.2",
+      "name": "归因与责任判断",
+      "writer": "belief_revision",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.2 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.cognition.self_evaluation",
+      "layer": "dynamic",
+      "module": "cognition_state",
+      "section": "5.2",
+      "name": "当前自我评价",
+      "writer": "self_state_update",
+      "tempo": "slow",
+      "decay": "当前自我评价，朝向自尊基线：3 天。当前任务自我效能在任务结束后不再保留。",
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.4 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：当前自我评价（与自尊基线同为 -2—+2）取慢变区间的四倍",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.cognition.task_self_efficacy",
+      "layer": "dynamic",
+      "module": "cognition_state",
+      "section": "5.2",
+      "name": "当前任务自我效能",
+      "writer": "self_state_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.4 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.cognition.shame",
+      "layer": "dynamic",
+      "module": "cognition_state",
+      "section": "5.2",
+      "name": "羞耻负荷",
+      "writer": "self_state_update",
+      "tempo": "slow",
+      "decay": "羞耻负荷，朝向零：7 天。",
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.4 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：慢变构念（trust、closeness、dependence、commitment、确信度、羞耻负荷、动态目标承诺、可行性估计、策略权重等 0—1 构念）",
+        "self_visibility": "心理构念登记v1 §5.2：也不是内疚。部分自知"
+      }
+    },
+    {
+      "construct_id": "d.cognition.face_cost",
+      "layer": "dynamic",
+      "module": "cognition_state",
+      "section": "5.2",
+      "name": "面子成本",
+      "writer": "self_state_update",
+      "tempo": "fast",
+      "decay": "面子成本，朝向零：3 天，同一批观众再次在场时暂停。",
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.4 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：快变构念（情绪强度与唤醒、压力、威胁与奖赏激活、价值与目标激活、身份与规范显著性、面子成本）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.cognition.self_responsibility",
+      "layer": "dynamic",
+      "module": "cognition_state",
+      "section": "5.2",
+      "name": "自我责任评价",
+      "writer": "self_state_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.4 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.cognition.other_model",
+      "layer": "dynamic",
+      "module": "cognition_state",
+      "section": "5.2",
+      "name": "他人模型",
+      "writer": "other_model_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.3 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.cognition.tom_level",
+      "layer": "dynamic",
+      "module": "cognition_state",
+      "section": "5.2",
+      "name": "心理理论可用层级",
+      "writer": "other_model_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": true,
+      "basis": {
+        "writer": "状态变化规则v1 §5.3 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓",
+        "high_impact": "角色状态说明v1 §8.3：dynamic 中由推断得到的心理理论层级初值"
+      }
+    },
+    {
+      "construct_id": "d.goal.goals_now",
+      "layer": "dynamic",
+      "module": "goal_state",
+      "section": "5.3",
+      "name": "当前目标",
+      "writer": "goal_update",
+      "tempo": "categorical",
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.7 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：类别型构念（伤害事件的修复程度、目标阶段、承诺阶段）用状态转移描述",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.goal.value_activation",
+      "layer": "dynamic",
+      "module": "goal_state",
+      "section": "5.3",
+      "name": "价值激活",
+      "writer": "goal_update",
+      "tempo": "fast",
+      "decay": "价值激活和目标激活，朝向零：相关目标完成或放弃后 1 天，目标未决时不回落。",
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.7 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：快变构念（情绪强度与唤醒、压力、威胁与奖赏激活、价值与目标激活、身份与规范显著性、面子成本）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.goal.goal_activation",
+      "layer": "dynamic",
+      "module": "goal_state",
+      "section": "5.3",
+      "name": "目标激活",
+      "writer": "goal_update",
+      "tempo": "fast",
+      "decay": "价值激活和目标激活，朝向零：相关目标完成或放弃后 1 天，目标未决时不回落。",
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.7 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：快变构念（情绪强度与唤醒、压力、威胁与奖赏激活、价值与目标激活、身份与规范显著性、面子成本）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.goal.goal_commitment",
+      "layer": "dynamic",
+      "module": "goal_state",
+      "section": "5.3",
+      "name": "动态目标承诺",
+      "writer": "goal_update",
+      "tempo": "slow",
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.7 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：慢变构念（trust、closeness、dependence、commitment、确信度、羞耻负荷、动态目标承诺、可行性估计、策略权重等 0—1 构念）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.goal.feasibility_estimate",
+      "layer": "dynamic",
+      "module": "goal_state",
+      "section": "5.3",
+      "name": "可行性估计",
+      "writer": "goal_update",
+      "tempo": "slow",
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.7 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：慢变构念（trust、closeness、dependence、commitment、确信度、羞耻负荷、动态目标承诺、可行性估计、策略权重等 0—1 构念）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.goal.threat_to_goal",
+      "layer": "dynamic",
+      "module": "goal_state",
+      "section": "5.3",
+      "name": "目标威胁",
+      "writer": "goal_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.7 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.goal.goal_conflict",
+      "layer": "dynamic",
+      "module": "goal_state",
+      "section": "5.3",
+      "name": "目标冲突",
+      "writer": "goal_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.7 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.goal.action_orientation",
+      "layer": "dynamic",
+      "module": "goal_state",
+      "section": "5.3",
+      "name": "行动指向",
+      "writer": "goal_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.7 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.goal.revision_candidate",
+      "layer": "dynamic",
+      "module": "goal_state",
+      "section": "5.3",
+      "name": "目标修订候选",
+      "writer": "goal_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.7 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.relation.trust",
+      "layer": "dynamic",
+      "module": "relation_state",
+      "section": "5.4",
+      "name": "信任",
+      "writer": "relation_update",
+      "tempo": "slow",
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": true,
+      "basis": {
+        "writer": "状态变化规则v1 §5.5 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：慢变构念（trust、closeness、dependence、commitment、确信度、羞耻负荷、动态目标承诺、可行性估计、策略权重等 0—1 构念）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓",
+        "high_impact": "心理构念登记v1 §5.4：推断得到的 trust、commitment、harm_history 属高影响内容，需审核"
+      }
+    },
+    {
+      "construct_id": "d.relation.closeness",
+      "layer": "dynamic",
+      "module": "relation_state",
+      "section": "5.4",
+      "name": "亲近",
+      "writer": "relation_update",
+      "tempo": "slow",
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.5 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：慢变构念（trust、closeness、dependence、commitment、确信度、羞耻负荷、动态目标承诺、可行性估计、策略权重等 0—1 构念）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.relation.dependence",
+      "layer": "dynamic",
+      "module": "relation_state",
+      "section": "5.4",
+      "name": "依赖",
+      "writer": "relation_update",
+      "tempo": "slow",
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.5 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：慢变构念（trust、closeness、dependence、commitment、确信度、羞耻负荷、动态目标承诺、可行性估计、策略权重等 0—1 构念）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.relation.commitment",
+      "layer": "dynamic",
+      "module": "relation_state",
+      "section": "5.4",
+      "name": "关系承诺",
+      "writer": "relation_update",
+      "tempo": "slow",
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": true,
+      "basis": {
+        "writer": "状态变化规则v1 §5.5 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：慢变构念（trust、closeness、dependence、commitment、确信度、羞耻负荷、动态目标承诺、可行性估计、策略权重等 0—1 构念）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓",
+        "high_impact": "心理构念登记v1 §5.4：推断得到的 trust、commitment、harm_history 属高影响内容，需审核"
+      }
+    },
+    {
+      "construct_id": "d.relation.harm_history",
+      "layer": "dynamic",
+      "module": "relation_state",
+      "section": "5.4",
+      "name": "伤害历史",
+      "writer": "relation_update",
+      "tempo": "categorical",
+      "decay": "伤害事件的显著性：未修复 30 天、部分修复 10 天，下限为初始显著性的 20%，再激活时回升。",
+      "self_visibility": "aware",
+      "high_impact": true,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.5 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：类别型构念（伤害事件的修复程度、目标阶段、承诺阶段）用状态转移描述",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓",
+        "high_impact": "心理构念登记v1 §5.4：推断得到的 trust、commitment、harm_history 属高影响内容，需审核"
+      }
+    },
+    {
+      "construct_id": "d.relation.power_asymmetry",
+      "layer": "dynamic",
+      "module": "relation_state",
+      "section": "5.4",
+      "name": "权力差异",
+      "writer": "relation_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.5 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.group.membership",
+      "layer": "dynamic",
+      "module": "group_state",
+      "section": "5.5",
+      "name": "当前成员资格",
+      "writer": "group_state_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.6 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.group.identity_salience",
+      "layer": "dynamic",
+      "module": "group_state",
+      "section": "5.5",
+      "name": "身份显著性",
+      "writer": "group_state_update",
+      "tempo": "fast",
+      "decay": "身份显著性和规范显著性，朝向社会认同基线对应的水平：1—3 天，场景规范越紧密越长。",
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.6 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：快变构念（情绪强度与唤醒、压力、威胁与奖赏激活、价值与目标激活、身份与规范显著性、面子成本）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.group.norm_salience",
+      "layer": "dynamic",
+      "module": "group_state",
+      "section": "5.5",
+      "name": "规范显著性",
+      "writer": "group_state_update",
+      "tempo": "fast",
+      "decay": "身份显著性和规范显著性，朝向社会认同基线对应的水平：1—3 天，场景规范越紧密越长。",
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.6 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：快变构念（情绪强度与唤醒、压力、威胁与奖赏激活、价值与目标激活、身份与规范显著性、面子成本）",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.group.alliance",
+      "layer": "dynamic",
+      "module": "group_state",
+      "section": "5.5",
+      "name": "联盟",
+      "writer": "group_state_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.6 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.group.boundary",
+      "layer": "dynamic",
+      "module": "group_state",
+      "section": "5.5",
+      "name": "内外群体边界",
+      "writer": "group_state_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.6 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.group.responsibility_allocation",
+      "layer": "dynamic",
+      "module": "group_state",
+      "section": "5.5",
+      "name": "责任分配",
+      "writer": "group_state_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "aware",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.6 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §五：dynamic 默认的可见性为：角色本人可以体验或知晓"
+      }
+    },
+    {
+      "construct_id": "d.policy.action_commitment",
+      "layer": "dynamic",
+      "module": "policy_state",
+      "section": "5.6",
+      "name": "行动承诺",
+      "writer": "commitment_update",
+      "tempo": "categorical",
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.8 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：类别型构念（伤害事件的修复程度、目标阶段、承诺阶段）用状态转移描述",
+        "self_visibility": "角色状态说明v1 §5.6：角色对自己的策略选择只有部分自知"
+      }
+    },
+    {
+      "construct_id": "d.policy.current_strategy",
+      "layer": "dynamic",
+      "module": "policy_state",
+      "section": "5.6",
+      "name": "当前策略",
+      "writer": "strategy_learning",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.9 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §5.6：角色对自己的策略选择只有部分自知"
+      }
+    },
+    {
+      "construct_id": "d.policy.fallback_strategy",
+      "layer": "dynamic",
+      "module": "policy_state",
+      "section": "5.6",
+      "name": "备用策略",
+      "writer": "strategy_learning",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.9 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §5.6：角色对自己的策略选择只有部分自知"
+      }
+    },
+    {
+      "construct_id": "d.policy.switch_condition",
+      "layer": "dynamic",
+      "module": "policy_state",
+      "section": "5.6",
+      "name": "切换条件",
+      "writer": "strategy_learning",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.9 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §5.6：角色对自己的策略选择只有部分自知"
+      }
+    },
+    {
+      "construct_id": "d.policy.strategy_weight",
+      "layer": "dynamic",
+      "module": "policy_state",
+      "section": "5.6",
+      "name": "策略权重",
+      "writer": "strategy_learning",
+      "tempo": "slow",
+      "decay": "策略权重中由短期反馈造成的偏离：7 天；累计反馈形成的权重不回落。",
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.9 定义与理论依据",
+        "tempo": "状态变化规则v1 §5.0：慢变构念（trust、closeness、dependence、commitment、确信度、羞耻负荷、动态目标承诺、可行性估计、策略权重等 0—1 构念）",
+        "self_visibility": "角色状态说明v1 §5.6：角色对自己的策略选择只有部分自知"
+      }
+    },
+    {
+      "construct_id": "d.policy.learning_state",
+      "layer": "dynamic",
+      "module": "policy_state",
+      "section": "5.6",
+      "name": "学习状态",
+      "writer": "strategy_learning",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.9 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §5.6：角色对自己的策略选择只有部分自知"
+      }
+    },
+    {
+      "construct_id": "d.policy.mechanism_preference_state",
+      "layer": "dynamic",
+      "module": "policy_state",
+      "section": "5.6",
+      "name": "短期决策偏好",
+      "writer": "strategy_learning",
+      "tempo": null,
+      "decay": "短期决策偏好，朝向长期偏好：情境结束后 1 天。",
+      "self_visibility": "partial",
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.9 定义与理论依据",
+        "self_visibility": "角色状态说明v1 §5.6：角色对自己的策略选择只有部分自知"
+      }
+    },
+    {
+      "construct_id": "m.entry",
+      "layer": "memory",
+      "module": "memory",
+      "section": "6",
+      "name": "记忆条目",
+      "writer": "memory_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.10 定义与理论依据"
+      }
+    },
+    {
+      "construct_id": "m.accessibility",
+      "layer": "memory",
+      "module": "memory",
+      "section": "6",
+      "name": "记忆可及性",
+      "writer": "memory_update",
+      "tempo": null,
+      "decay": "记忆的可及性：起始 7 天，每被调取一次后续半衰期加倍，使遗忘呈先快后慢的形态（Wixted & Ebbesen, 1991）。",
+      "self_visibility": null,
+      "high_impact": false,
+      "basis": {
+        "decay": "状态变化规则v1 §九",
+        "writer": "状态变化规则v1 §5.10 定义与理论依据"
+      }
+    },
+    {
+      "construct_id": "m.reactivation",
+      "layer": "memory",
+      "module": "memory",
+      "section": "6",
+      "name": "记忆再激活",
+      "writer": "memory_update",
+      "tempo": null,
+      "decay": null,
+      "self_visibility": null,
+      "high_impact": false,
+      "basis": {
+        "writer": "状态变化规则v1 §5.10 定义与理论依据"
+      }
+    }
+  ],
+  "mechanisms": [
+    {
+      "dm_id": "dm.cog.attention_filtering",
+      "section": "1.1",
+      "name": "注意分配与信息过滤",
+      "options": [
+        "威胁",
+        "奖赏",
+        "任务进度",
+        "关系信号",
+        "规范线索",
+        "自我形象",
+        "他人情绪",
+        "历史承诺",
+        "窄焦点深加工",
+        "宽焦点整合"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "威胁",
+            "奖赏",
+            "任务进度",
+            "关系信号",
+            "规范线索",
+            "自我形象",
+            "他人情绪",
+            "历史承诺"
+          ]
+        },
+        {
+          "label": "",
+          "items": [
+            "窄焦点深加工",
+            "宽焦点整合"
+          ]
+        }
+      ],
+      "stages": [
+        "S1"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：威胁、奖赏、任务进度、关系信号、规范线索、自我形象、他人情绪、历史承诺；窄焦点深加工、宽焦点整合。",
+        "hands_to": "状态变化规则v1 §4 第1章（按章，未细分到单个过程）",
+        "stages": "事件建模skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.cog.memory_retrieval",
+      "section": "1.2",
+      "name": "记忆检索与时间窗口",
+      "options": [
+        "最近事件",
+        "峰值事件",
+        "重复事件",
+        "承诺或违约事件",
+        "长期关系史",
+        "相似案例"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "最近事件",
+            "峰值事件",
+            "重复事件",
+            "承诺或违约事件",
+            "长期关系史",
+            "相似案例"
+          ]
+        }
+      ],
+      "stages": [
+        "S1"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：最近事件、峰值事件、重复事件、承诺或违约事件、长期关系史、相似案例。",
+        "hands_to": "状态变化规则v1 §4 第1章（按章，未细分到单个过程）",
+        "stages": "事件建模skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.cog.dual_process_mode",
+      "section": "1.3",
+      "name": "双过程加工偏好",
+      "options": [
+        "直觉/启发式",
+        "分析/反思"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "直觉/启发式",
+            "分析/反思"
+          ]
+        }
+      ],
+      "stages": [
+        "S1"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [
+        "按熟悉度、时间压力设切换阈值"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：直觉/启发式、分析/反思；按熟悉度、时间压力设切换阈值。",
+        "hands_to": "状态变化规则v1 §4 第1章（按章，未细分到单个过程）",
+        "stages": "事件建模skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.cog.satisficing",
+      "section": "1.4",
+      "name": "有限理性与满意化",
+      "options": [
+        "最大化搜索",
+        "满意化",
+        "简单启发式",
+        "习惯反应"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "最大化搜索",
+            "满意化",
+            "简单启发式",
+            "习惯反应"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [
+        "抱负水平（最低可接受、期望、理想）与停止规则"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：抱负水平（最低可接受、期望、理想）与停止规则；最大化搜索、满意化、简单启发式、习惯反应。",
+        "hands_to": "状态变化规则v1 §4 第1章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.cog.uncertainty_closure",
+      "section": "1.5",
+      "name": "不确定性、闭合需要与模糊容忍",
+      "options": [
+        "开放探索",
+        "快速定论",
+        "主动寻求复杂性",
+        "悬置判断"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "开放探索",
+            "快速定论",
+            "主动寻求复杂性",
+            "悬置判断"
+          ]
+        }
+      ],
+      "stages": [
+        "S1",
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [
+        "定证据标准"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：定证据标准；开放探索、快速定论、主动寻求复杂性、悬置判断。",
+        "hands_to": "状态变化规则v1 §4 第1章（按章，未细分到单个过程）",
+        "stages": "事件建模skill §4.1；行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.cog.heuristics_biases",
+      "section": "1.6",
+      "name": "启发式与系统性偏差",
+      "options": [
+        "可得性",
+        "代表性",
+        "锚定与调整",
+        "默认效应",
+        "现状偏好",
+        "沉没成本",
+        "遗漏偏差",
+        "确认偏误",
+        "自利偏差",
+        "基本归因错误",
+        "内群体偏差"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "可得性",
+            "代表性",
+            "锚定与调整",
+            "默认效应",
+            "现状偏好",
+            "沉没成本",
+            "遗漏偏差",
+            "确认偏误",
+            "自利偏差",
+            "基本归因错误",
+            "内群体偏差"
+          ]
+        }
+      ],
+      "stages": [
+        "S1"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：可得性、代表性、锚定与调整、默认效应、现状偏好、沉没成本、遗漏偏差、确认偏误、自利偏差、基本归因错误、内群体偏差。",
+        "hands_to": "状态变化规则v1 §4 第1章（按章，未细分到单个过程）",
+        "stages": "事件建模skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.cog.belief_updating",
+      "section": "1.7",
+      "name": "信念更新与确认性加工",
+      "options": [
+        "增强",
+        "减弱",
+        "分化",
+        "悬置",
+        "改写",
+        "证据加权",
+        "保守更新",
+        "依赖权威",
+        "社会证明",
+        "身份保护性推理",
+        "选择性搜索",
+        "提高反证门槛",
+        "重新解释",
+        "偏好支持者来源",
+        "隔离冲突信念"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "增强",
+            "减弱",
+            "分化",
+            "悬置",
+            "改写"
+          ]
+        },
+        {
+          "label": "",
+          "items": [
+            "证据加权",
+            "保守更新",
+            "依赖权威",
+            "社会证明",
+            "身份保护性推理"
+          ]
+        },
+        {
+          "label": "确认",
+          "items": [
+            "选择性搜索",
+            "提高反证门槛",
+            "重新解释",
+            "偏好支持者来源",
+            "隔离冲突信念"
+          ]
+        }
+      ],
+      "stages": [
+        "S1"
+      ],
+      "hands_to": [
+        "belief_revision"
+      ],
+      "card": true,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：增强、减弱、分化、悬置、改写；证据加权、保守更新、依赖权威、社会证明、身份保护性推理；确认：选择性搜索、提高反证门槛、重新解释、偏好支持者来源、隔离冲突信念。",
+        "hands_to": "状态变化规则v1 §4.1 机制卡",
+        "stages": "事件建模skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.cog.attribution_responsibility",
+      "section": "1.8",
+      "name": "归因、责任与意图判断",
+      "options": [
+        "内外",
+        "稳定与暂时",
+        "全局与具体",
+        "可控与不可控",
+        "事实",
+        "道德",
+        "关系",
+        "制度",
+        "解释",
+        "宽恕",
+        "补偿",
+        "责备",
+        "惩罚",
+        "边界重设",
+        "重新分工"
+      ],
+      "option_groups": [
+        {
+          "label": "归因",
+          "items": [
+            "内外",
+            "稳定与暂时",
+            "全局与具体",
+            "可控与不可控"
+          ]
+        },
+        {
+          "label": "责任",
+          "items": [
+            "事实",
+            "道德",
+            "关系",
+            "制度"
+          ]
+        },
+        {
+          "label": "后续",
+          "items": [
+            "解释",
+            "宽恕",
+            "补偿",
+            "责备",
+            "惩罚",
+            "边界重设",
+            "重新分工"
+          ]
+        }
+      ],
+      "stages": [
+        "S1",
+        "S3"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update"
+      ],
+      "card": true,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：归因：内外、稳定与暂时、全局与具体、可控与不可控；责任：事实、道德、关系、制度；后续解释、宽恕、补偿、责备、惩罚、边界重设、重新分工。",
+        "hands_to": "状态变化规则v1 §4.1 机制卡",
+        "stages": "事件建模skill §4.1；长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.cog.metacognitive_monitoring",
+      "section": "1.9",
+      "name": "元认知监控与信心校准",
+      "options": [
+        "校准",
+        "坚持",
+        "求证",
+        "防御性解释",
+        "自身判断",
+        "信息缺失",
+        "情境变化",
+        "他人不合作",
+        "运气"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "校准",
+            "坚持",
+            "求证",
+            "防御性解释"
+          ]
+        },
+        {
+          "label": "失败归于",
+          "items": [
+            "自身判断",
+            "信息缺失",
+            "情境变化",
+            "他人不合作",
+            "运气"
+          ]
+        }
+      ],
+      "stages": [
+        "S1"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：校准、坚持、求证、防御性解释；失败归于自身判断、信息缺失、情境变化、他人不合作、运气。",
+        "hands_to": "状态变化规则v1 §4 第1章（按章，未细分到单个过程）",
+        "stages": "事件建模skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.cog.rule_switching",
+      "section": "1.10",
+      "name": "认知灵活性与规则切换",
+      "options": [
+        "修补旧规则",
+        "并行测试",
+        "重构框架",
+        "规则僵化",
+        "过度切换"
+      ],
+      "option_groups": [
+        {
+          "label": "误差达阈值后",
+          "items": [
+            "修补旧规则",
+            "并行测试",
+            "重构框架"
+          ]
+        },
+        {
+          "label": "失调",
+          "items": [
+            "规则僵化",
+            "过度切换"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：误差达阈值后修补旧规则、并行测试、重构框架；失调：规则僵化、过度切换。",
+        "hands_to": "状态变化规则v1 §4 第1章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.affect.primary_secondary_appraisal",
+      "section": "2.1",
+      "name": "初级与次级评价",
+      "options": [
+        "无关",
+        "积极",
+        "损失",
+        "威胁",
+        "挑战",
+        "收益",
+        "责任",
+        "控制感",
+        "资源",
+        "支持",
+        "时间窗口",
+        "应对选项"
+      ],
+      "option_groups": [
+        {
+          "label": "初级",
+          "items": [
+            "无关",
+            "积极",
+            "损失",
+            "威胁",
+            "挑战",
+            "收益"
+          ]
+        },
+        {
+          "label": "次级",
+          "items": [
+            "责任",
+            "控制感",
+            "资源",
+            "支持",
+            "时间窗口",
+            "应对选项"
+          ]
+        }
+      ],
+      "stages": [
+        "S1"
+      ],
+      "hands_to": [
+        "emotion_update",
+        "self_state_update",
+        "goal_update"
+      ],
+      "card": true,
+      "notes": [
+        "每轮沿用首次评价为评价固着"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：初级：无关、积极、损失、威胁、挑战、收益；次级：责任、控制感、资源、支持、时间窗口、应对选项；每轮沿用首次评价为评价固着。",
+        "hands_to": "状态变化规则v1 §4.1 机制卡",
+        "stages": "事件建模skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.affect.threat_reward_policy",
+      "section": "2.2",
+      "name": "威胁与奖赏反应政策",
+      "options": [
+        "接近",
+        "回避",
+        "对抗",
+        "冻结或暂停",
+        "求助或安抚",
+        "谈判"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "接近",
+            "回避",
+            "对抗",
+            "冻结或暂停",
+            "求助或安抚",
+            "谈判"
+          ]
+        }
+      ],
+      "stages": [
+        "S1"
+      ],
+      "hands_to": [
+        "emotion_update",
+        "self_state_update",
+        "goal_update",
+        "memory_update",
+        "decay_or_recovery"
+      ],
+      "card": false,
+      "notes": [
+        "依 BAS、BIS、FFFS 基线"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：依 BAS、BIS、FFFS 基线接近、回避、对抗、冻结或暂停、求助或安抚、谈判。",
+        "hands_to": "状态变化规则v1 §4 第2章（按章，未细分到单个过程）",
+        "stages": "事件建模skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.affect.emotion_regulation",
+      "section": "2.3",
+      "name": "情绪调节策略偏好",
+      "options": [
+        "情境选择",
+        "情境修改",
+        "注意转移",
+        "认知重评",
+        "反应调节",
+        "接受",
+        "问题解决",
+        "寻求支持",
+        "分心",
+        "宣泄",
+        "压抑",
+        "反刍"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "情境选择",
+            "情境修改",
+            "注意转移",
+            "认知重评",
+            "反应调节"
+          ]
+        },
+        {
+          "label": "运行",
+          "items": [
+            "接受",
+            "问题解决",
+            "寻求支持",
+            "分心",
+            "宣泄",
+            "压抑",
+            "反刍"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "emotion_update",
+        "self_state_update",
+        "goal_update",
+        "memory_update",
+        "decay_or_recovery"
+      ],
+      "card": false,
+      "notes": [
+        "不设跨情境最佳策略"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：情境选择、情境修改、注意转移、认知重评、反应调节；运行：接受、问题解决、寻求支持、分心、宣泄、压抑、反刍；不设跨情境最佳策略。",
+        "hands_to": "状态变化规则v1 §4 第2章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.affect.coping",
+      "section": "2.4",
+      "name": "应对方式",
+      "options": [
+        "问题聚焦",
+        "情绪聚焦",
+        "意义聚焦",
+        "社会支持",
+        "回避或否认",
+        "行动暂停"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "问题聚焦",
+            "情绪聚焦",
+            "意义聚焦",
+            "社会支持",
+            "回避或否认",
+            "行动暂停"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "emotion_update",
+        "self_state_update",
+        "goal_update",
+        "memory_update",
+        "decay_or_recovery"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：问题聚焦、情绪聚焦、意义聚焦、社会支持、回避或否认、行动暂停。",
+        "hands_to": "状态变化规则v1 §4 第2章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.affect.defense",
+      "section": "2.5",
+      "name": "防御机制",
+      "options": [
+        "升华",
+        "幽默",
+        "预期",
+        "抑制",
+        "利他",
+        "隔离情感",
+        "理智化",
+        "压抑或潜抑",
+        "反向形成",
+        "转移",
+        "抵消",
+        "否认",
+        "投射",
+        "分裂",
+        "行动化",
+        "被动攻击",
+        "解离",
+        "贬低或理想化",
+        "精神病性否认",
+        "妄想性投射",
+        "现实严重歪曲"
+      ],
+      "option_groups": [
+        {
+          "label": "成熟",
+          "items": [
+            "升华",
+            "幽默",
+            "预期",
+            "抑制",
+            "利他"
+          ]
+        },
+        {
+          "label": "神经症性",
+          "items": [
+            "隔离情感",
+            "理智化",
+            "压抑或潜抑",
+            "反向形成",
+            "转移",
+            "抵消"
+          ]
+        },
+        {
+          "label": "不成熟",
+          "items": [
+            "否认",
+            "投射",
+            "分裂",
+            "行动化",
+            "被动攻击",
+            "解离",
+            "贬低或理想化"
+          ]
+        },
+        {
+          "label": "病理性",
+          "items": [
+            "精神病性否认",
+            "妄想性投射",
+            "现实严重歪曲"
+          ]
+        }
+      ],
+      "stages": [
+        "S1",
+        "S3"
+      ],
+      "hands_to": [
+        "emotion_update",
+        "belief_revision",
+        "self_state_update"
+      ],
+      "card": true,
+      "notes": [
+        "先选层级再选防御，后算代价"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：先选层级再选防御，后算代价；成熟：升华、幽默、预期、抑制、利他；神经症性：隔离情感、理智化、压抑或潜抑、反向形成、转移、抵消；不成熟：否认、投射、分裂、行动化、被动攻击、解离、贬低或理想化；病理性：精神病性否认、妄想性投射、现实严重歪曲。",
+        "hands_to": "状态变化规则v1 §4.1 机制卡",
+        "stages": "事件建模skill §4.1；长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.affect.rumination_recovery",
+      "section": "2.6",
+      "name": "反刍、恢复与自我控制",
+      "options": [
+        "问题分析",
+        "情绪反复",
+        "责己",
+        "责人",
+        "意义重构",
+        "主动停止",
+        "降低唤醒",
+        "获得安全",
+        "重新解释",
+        "完成未竟行动",
+        "修复关系",
+        "恢复节律",
+        "纳入自我叙事",
+        "即时冲动优先",
+        "延迟满足",
+        "规则承诺",
+        "依赖外部约束",
+        "放弃",
+        "重试",
+        "降低标准",
+        "责备自己",
+        "修订环境"
+      ],
+      "option_groups": [
+        {
+          "label": "反刍",
+          "items": [
+            "问题分析",
+            "情绪反复",
+            "责己",
+            "责人",
+            "意义重构",
+            "主动停止"
+          ]
+        },
+        {
+          "label": "恢复",
+          "items": [
+            "降低唤醒",
+            "获得安全",
+            "重新解释",
+            "完成未竟行动",
+            "修复关系",
+            "恢复节律",
+            "纳入自我叙事"
+          ]
+        },
+        {
+          "label": "自控",
+          "items": [
+            "即时冲动优先",
+            "延迟满足",
+            "规则承诺",
+            "依赖外部约束"
+          ]
+        },
+        {
+          "label": "失败后",
+          "items": [
+            "放弃",
+            "重试",
+            "降低标准",
+            "责备自己",
+            "修订环境"
+          ]
+        }
+      ],
+      "stages": [
+        "S2",
+        "S3"
+      ],
+      "hands_to": [
+        "emotion_update",
+        "self_state_update",
+        "goal_update",
+        "memory_update",
+        "decay_or_recovery"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：反刍：问题分析、情绪反复、责己、责人、意义重构、主动停止；恢复：降低唤醒、获得安全、重新解释、完成未竟行动、修复关系、恢复节律、纳入自我叙事；自控：即时冲动优先、延迟满足、规则承诺、依赖外部约束；失败后：放弃、重试、降低标准、责备自己、修订环境。",
+        "hands_to": "状态变化规则v1 §4 第2章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1；长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.social.sip",
+      "section": "3.1",
+      "name": "社会信息加工序列",
+      "options": [
+        "线索编码",
+        "线索解释（善意、意外、敌意、模糊）",
+        "目标澄清（安全、关系、地位、任务、自主）",
+        "反应生成",
+        "反应评价",
+        "执行"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "线索编码",
+            "线索解释（善意、意外、敌意、模糊）",
+            "目标澄清（安全、关系、地位、任务、自主）",
+            "反应生成",
+            "反应评价",
+            "执行"
+          ]
+        }
+      ],
+      "stages": [
+        "S1"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "other_model_update",
+        "self_state_update",
+        "relation_update",
+        "goal_update"
+      ],
+      "card": false,
+      "notes": [
+        "误差须定位到具体步骤"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：线索编码、线索解释（善意、意外、敌意、模糊）、目标澄清（安全、关系、地位、任务、自主）、反应生成、反应评价、执行；误差须定位到具体步骤。",
+        "hands_to": "状态变化规则v1 §4 第3章（按章，未细分到单个过程）",
+        "stages": "事件建模skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.social.mentalizing_mode",
+      "section": "3.2",
+      "name": "心智化执行模式",
+      "options": [
+        "自动或隐性",
+        "受控或反思",
+        "过度心智化",
+        "心智化不足",
+        "情境性暂停"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "自动或隐性",
+            "受控或反思",
+            "过度心智化",
+            "心智化不足",
+            "情境性暂停"
+          ]
+        }
+      ],
+      "stages": [
+        "S1"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "other_model_update",
+        "self_state_update",
+        "relation_update",
+        "goal_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：自动或隐性、受控或反思、过度心智化、心智化不足、情境性暂停。",
+        "hands_to": "状态变化规则v1 §4 第3章（按章，未细分到单个过程）",
+        "stages": "事件建模skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.social.impression_formation",
+      "section": "3.3",
+      "name": "印象形成与刻板化加工",
+      "options": [
+        "类别化",
+        "个体化",
+        "首因加权",
+        "近因加权",
+        "光环效应",
+        "套用刻板印象",
+        "主动纠偏",
+        "更新个体模型",
+        "修订群体信念",
+        "视为例外",
+        "否认代表性"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "类别化",
+            "个体化",
+            "首因加权",
+            "近因加权",
+            "光环效应",
+            "套用刻板印象",
+            "主动纠偏"
+          ]
+        },
+        {
+          "label": "遇反例",
+          "items": [
+            "更新个体模型",
+            "修订群体信念",
+            "视为例外",
+            "否认代表性"
+          ]
+        }
+      ],
+      "stages": [
+        "S1",
+        "S3"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "other_model_update",
+        "self_state_update",
+        "relation_update",
+        "goal_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：类别化、个体化、首因加权、近因加权、光环效应、套用刻板印象、主动纠偏；遇反例：更新个体模型、修订群体信念、视为例外、否认代表性。",
+        "hands_to": "状态变化规则v1 §4 第3章（按章，未细分到单个过程）",
+        "stages": "事件建模skill §4.1；长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.social.trust_reputation_update",
+      "section": "3.4",
+      "name": "信任与声誉更新",
+      "options": [
+        "能力",
+        "善意",
+        "诚信",
+        "可靠性",
+        "利益相容",
+        "历史兑现率",
+        "默认信任",
+        "谨慎观察",
+        "分阶段授权",
+        "以行动换信任",
+        "默认不信任",
+        "彻底撤信",
+        "有限试探",
+        "有条件修复",
+        "维持低强度关系"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "能力",
+            "善意",
+            "诚信",
+            "可靠性",
+            "利益相容",
+            "历史兑现率"
+          ]
+        },
+        {
+          "label": "",
+          "items": [
+            "默认信任",
+            "谨慎观察",
+            "分阶段授权",
+            "以行动换信任",
+            "默认不信任"
+          ]
+        },
+        {
+          "label": "背叛后",
+          "items": [
+            "彻底撤信",
+            "有限试探",
+            "有条件修复",
+            "维持低强度关系"
+          ]
+        }
+      ],
+      "stages": [
+        "S1",
+        "S3"
+      ],
+      "hands_to": [
+        "relation_update"
+      ],
+      "card": true,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：能力、善意、诚信、可靠性、利益相容、历史兑现率；默认信任、谨慎观察、分阶段授权、以行动换信任、默认不信任；背叛后：彻底撤信、有限试探、有条件修复、维持低强度关系。",
+        "hands_to": "状态变化规则v1 §4.1 机制卡",
+        "stages": "事件建模skill §4.1；长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.social.social_comparison",
+      "section": "3.5",
+      "name": "社会比较与自我评价",
+      "options": [
+        "向上",
+        "向下",
+        "横向",
+        "拒绝比较",
+        "学习",
+        "重设标准",
+        "寻求支持",
+        "贬低他人",
+        "退出竞争",
+        "改变所属群体"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "向上",
+            "向下",
+            "横向",
+            "拒绝比较"
+          ]
+        },
+        {
+          "label": "后果",
+          "items": [
+            "学习",
+            "重设标准",
+            "寻求支持",
+            "贬低他人",
+            "退出竞争",
+            "改变所属群体"
+          ]
+        }
+      ],
+      "stages": [
+        "S3"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "other_model_update",
+        "self_state_update",
+        "relation_update",
+        "goal_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：向上、向下、横向、拒绝比较；后果为学习、重设标准、寻求支持、贬低他人、退出竞争、改变所属群体。",
+        "hands_to": "状态变化规则v1 §4 第3章（按章，未细分到单个过程）",
+        "stages": "长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.learn.social_learning",
+      "section": "4.1",
+      "name": "社会学习与模仿",
+      "options": [
+        "注意",
+        "保持",
+        "再现",
+        "动机",
+        "权威",
+        "成功者",
+        "相似者",
+        "受欢迎者",
+        "亲密对象",
+        "群体多数"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "注意",
+            "保持",
+            "再现",
+            "动机"
+          ]
+        },
+        {
+          "label": "观察",
+          "items": [
+            "权威",
+            "成功者",
+            "相似者",
+            "受欢迎者",
+            "亲密对象",
+            "群体多数"
+          ]
+        }
+      ],
+      "stages": [
+        "S3"
+      ],
+      "hands_to": [
+        "group_state_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：注意、保持、再现、动机；观察权威、成功者、相似者、受欢迎者、亲密对象、群体多数。",
+        "hands_to": "状态变化规则v1 §4 第4章（按章，未细分到单个过程）",
+        "stages": "长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.learn.reinforcement",
+      "section": "4.2",
+      "name": "强化与目标导向学习",
+      "options": [
+        "奖赏驱动",
+        "惩罚规避",
+        "结果与行动联结",
+        "规则学习",
+        "习惯重复",
+        "即时",
+        "长期",
+        "社会反馈",
+        "价值一致"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "奖赏驱动",
+            "惩罚规避",
+            "结果与行动联结",
+            "规则学习",
+            "习惯重复"
+          ]
+        },
+        {
+          "label": "偏重",
+          "items": [
+            "即时",
+            "长期",
+            "社会反馈",
+            "价值一致"
+          ]
+        }
+      ],
+      "stages": [
+        "S3"
+      ],
+      "hands_to": [
+        "group_state_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：奖赏驱动、惩罚规避、结果与行动联结、规则学习、习惯重复；偏重即时、长期、社会反馈、价值一致。",
+        "hands_to": "状态变化规则v1 §4 第4章（按章，未细分到单个过程）",
+        "stages": "长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.learn.exploration_exploitation",
+      "section": "4.3",
+      "name": "探索—利用",
+      "options": [
+        "保守利用",
+        "平衡探索",
+        "主动探索"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "保守利用",
+            "平衡探索",
+            "主动探索"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "group_state_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：保守利用、平衡探索、主动探索。",
+        "hands_to": "状态变化规则v1 §4 第4章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.learn.norm_culture_learning",
+      "section": "4.4",
+      "name": "规范与文化学习",
+      "options": [
+        "从众",
+        "声望",
+        "收益",
+        "内容意义",
+        "反从众创新",
+        "内化",
+        "表面遵从",
+        "抵抗",
+        "遵循当地",
+        "保持原规范",
+        "代码切换",
+        "选择性融合",
+        "公开抵抗",
+        "暂时沉默"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "从众",
+            "声望",
+            "收益",
+            "内容意义",
+            "反从众创新"
+          ]
+        },
+        {
+          "label": "",
+          "items": [
+            "内化",
+            "表面遵从",
+            "抵抗"
+          ]
+        },
+        {
+          "label": "跨文化",
+          "items": [
+            "遵循当地",
+            "保持原规范",
+            "代码切换",
+            "选择性融合",
+            "公开抵抗",
+            "暂时沉默"
+          ]
+        }
+      ],
+      "stages": [
+        "S3"
+      ],
+      "hands_to": [
+        "group_state_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：从众、声望、收益、内容意义、反从众创新；内化、表面遵从、抵抗；跨文化：遵循当地、保持原规范、代码切换、选择性融合、公开抵抗、暂时沉默。",
+        "hands_to": "状态变化规则v1 §4 第4章（按章，未细分到单个过程）",
+        "stages": "长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.learn.feedback_acceptance",
+      "section": "4.5",
+      "name": "反馈接受与适应速度",
+      "options": [
+        "采纳",
+        "部分采纳",
+        "质疑",
+        "拒绝",
+        "反击",
+        "转移责任"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "采纳",
+            "部分采纳",
+            "质疑",
+            "拒绝",
+            "反击",
+            "转移责任"
+          ]
+        }
+      ],
+      "stages": [
+        "S3"
+      ],
+      "hands_to": [
+        "group_state_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：采纳、部分采纳、质疑、拒绝、反击、转移责任。",
+        "hands_to": "状态变化规则v1 §4 第4章（按章，未细分到单个过程）",
+        "stages": "长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.learn.habit_goal_directed",
+      "section": "4.6",
+      "name": "习惯与目标导向行动",
+      "options": [
+        "习惯路径主导",
+        "目标路径主导",
+        "恢复",
+        "替代",
+        "压制",
+        "重新固化"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "习惯路径主导",
+            "目标路径主导"
+          ]
+        },
+        {
+          "label": "打断后",
+          "items": [
+            "恢复",
+            "替代",
+            "压制",
+            "重新固化"
+          ]
+        }
+      ],
+      "stages": [
+        "S2",
+        "S3"
+      ],
+      "hands_to": [
+        "group_state_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：习惯或目标路径主导；打断后恢复、替代、压制、重新固化。",
+        "hands_to": "状态变化规则v1 §4 第4章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1；长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.choice.choice_rule",
+      "section": "5.1",
+      "name": "选择规则候选",
+      "options": [
+        "期望效用",
+        "前景理论（参考点、损失厌恶、概率加权）",
+        "满意化",
+        "启发式与习惯"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "期望效用",
+            "前景理论（参考点、损失厌恶、概率加权）",
+            "满意化",
+            "启发式与习惯"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "goal_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：期望效用、前景理论（参考点、损失厌恶、概率加权）、满意化、启发式与习惯。",
+        "hands_to": "状态变化规则v1 §4 第5章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.choice.risk_ambiguity",
+      "section": "5.2",
+      "name": "风险与模糊偏好",
+      "options": [
+        "厌恶",
+        "中性",
+        "寻求",
+        "容忍"
+      ],
+      "option_groups": [
+        {
+          "label": "风险（收益、损失分开）",
+          "items": [
+            "厌恶",
+            "中性",
+            "寻求"
+          ]
+        },
+        {
+          "label": "模糊",
+          "items": [
+            "厌恶",
+            "容忍",
+            "寻求"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "goal_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [
+        "两轴不合并"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：风险（收益、损失分开）：厌恶、中性、寻求；模糊：厌恶、容忍、寻求；两轴不合并。",
+        "hands_to": "状态变化规则v1 §4 第5章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.choice.temporal_discounting",
+      "section": "5.3",
+      "name": "时间折扣与未来取向",
+      "options": [
+        "即时回报优先",
+        "平衡",
+        "未来回报优先"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "即时回报优先",
+            "平衡",
+            "未来回报优先"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "goal_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：即时回报优先、平衡、未来回报优先。",
+        "hands_to": "状态变化规则v1 §4 第5章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.choice.social_value_orientation",
+      "section": "5.4",
+      "name": "社会价值取向",
+      "options": [
+        "亲社会",
+        "个人主义",
+        "竞争性",
+        "利他性"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "亲社会",
+            "个人主义",
+            "竞争性",
+            "利他性"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "goal_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [
+        "优先用连续分配权重"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：亲社会、个人主义、竞争性、利他性；优先用连续分配权重。",
+        "hands_to": "状态变化规则v1 §4 第5章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.choice.fairness_allocation",
+      "section": "5.5",
+      "name": "公平与资源分配规则",
+      "options": [
+        "平均分配",
+        "按贡献",
+        "按需要",
+        "按身份或资格",
+        "程序公平优先"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "平均分配",
+            "按贡献",
+            "按需要",
+            "按身份或资格",
+            "程序公平优先"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "goal_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：平均分配、按贡献、按需要、按身份或资格、程序公平优先。",
+        "hands_to": "状态变化规则v1 §4 第5章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.choice.planned_behavior",
+      "section": "5.6",
+      "name": "计划行为与意图形成",
+      "options": [
+        "态度",
+        "主观规范",
+        "知觉行为控制"
+      ],
+      "option_groups": [
+        {
+          "label": "形成意图",
+          "items": [
+            "态度",
+            "主观规范",
+            "知觉行为控制"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "goal_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [
+        "可有意图与行为缺口"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：态度、主观规范、知觉行为控制形成意图，可有意图与行为缺口。",
+        "hands_to": "状态变化规则v1 §4 第5章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.choice.implementation_intention",
+      "section": "5.7",
+      "name": "目标执行与实施意图",
+      "options": [
+        "“如果……那么……”计划",
+        "计划固着"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "“如果……那么……”计划"
+          ]
+        },
+        {
+          "label": "失败",
+          "items": [
+            "计划固着"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "goal_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：“如果……那么……”计划；失败：计划固着。",
+        "hands_to": "状态变化规则v1 §4 第5章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.comm.directness",
+      "section": "6.1",
+      "name": "直接性与语境依赖",
+      "options": [
+        "明说",
+        "礼貌间接",
+        "暗示留白",
+        "回避表达"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "明说",
+            "礼貌间接",
+            "暗示留白",
+            "回避表达"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [
+        "高低语境是场景输入"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：明说、礼貌间接、暗示留白、回避表达；高低语境是场景输入。",
+        "hands_to": "状态变化规则v1 §4 第6章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.comm.politeness_face",
+      "section": "6.2",
+      "name": "礼貌与面子管理",
+      "options": [
+        "直接行动",
+        "积极礼貌",
+        "消极礼貌",
+        "离题暗示",
+        "暂不行动"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "直接行动",
+            "积极礼貌",
+            "消极礼貌",
+            "离题暗示",
+            "暂不行动"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：直接行动、积极礼貌、消极礼貌、离题暗示、暂不行动。",
+        "hands_to": "状态变化规则v1 §4 第6章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.comm.self_disclosure",
+      "section": "6.3",
+      "name": "自我披露与隐私边界",
+      "options": [
+        "谨慎",
+        "互惠",
+        "深度",
+        "过度",
+        "主动隐藏",
+        "有条件披露"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "谨慎",
+            "互惠",
+            "深度",
+            "过度",
+            "主动隐藏",
+            "有条件披露"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：谨慎、互惠、深度、过度、主动隐藏、有条件披露。",
+        "hands_to": "状态变化规则v1 §4 第6章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.comm.repair_commitment",
+      "section": "6.4",
+      "name": "对话修复与承诺管理",
+      "options": [
+        "澄清",
+        "重述",
+        "承认错误",
+        "道歉",
+        "解释",
+        "补偿",
+        "暂停",
+        "转移话题",
+        "坚持原说法"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "澄清",
+            "重述",
+            "承认错误",
+            "道歉",
+            "解释",
+            "补偿",
+            "暂停",
+            "转移话题",
+            "坚持原说法"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：澄清、重述、承认错误、道歉、解释、补偿、暂停、转移话题、坚持原说法。",
+        "hands_to": "状态变化规则v1 §4 第6章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.comm.humor_expression",
+      "section": "6.5",
+      "name": "幽默与情感表达策略",
+      "options": [
+        "联结型",
+        "自我提升型",
+        "攻击型",
+        "自我贬抑型",
+        "验证",
+        "安慰",
+        "热情表达",
+        "压抑",
+        "伪装",
+        "宣泄",
+        "冷处理"
+      ],
+      "option_groups": [
+        {
+          "label": "幽默",
+          "items": [
+            "联结型",
+            "自我提升型",
+            "攻击型",
+            "自我贬抑型"
+          ]
+        },
+        {
+          "label": "情感表达",
+          "items": [
+            "验证",
+            "安慰",
+            "热情表达",
+            "压抑",
+            "伪装",
+            "宣泄",
+            "冷处理"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：幽默：联结型、自我提升型、攻击型、自我贬抑型；情感表达：验证、安慰、热情表达、压抑、伪装、宣泄、冷处理。",
+        "hands_to": "状态变化规则v1 §4 第6章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.comm.impression_management",
+      "section": "6.6",
+      "name": "印象管理",
+      "options": [
+        "自我推销",
+        "讨好",
+        "树立榜样",
+        "威吓",
+        "示弱求助",
+        "保持神秘",
+        "责任切割"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "自我推销",
+            "讨好",
+            "树立榜样",
+            "威吓",
+            "示弱求助",
+            "保持神秘",
+            "责任切割"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：自我推销、讨好、树立榜样、威吓、示弱求助、保持神秘、责任切割。",
+        "hands_to": "状态变化规则v1 §4 第6章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.comm.deception_concealment",
+      "section": "6.7",
+      "name": "欺骗、隐瞒与操纵策略",
+      "options": [
+        "如实表达",
+        "选择性披露",
+        "遗漏",
+        "直接说谎",
+        "虚张声势",
+        "战略性模糊",
+        "情绪操纵",
+        "继续",
+        "纠正",
+        "部分披露",
+        "转嫁责任"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "如实表达",
+            "选择性披露",
+            "遗漏",
+            "直接说谎",
+            "虚张声势",
+            "战略性模糊",
+            "情绪操纵"
+          ]
+        },
+        {
+          "label": "事后",
+          "items": [
+            "继续",
+            "纠正",
+            "部分披露",
+            "转嫁责任"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：如实表达、选择性披露、遗漏、直接说谎、虚张声势、战略性模糊、情绪操纵；事后继续、纠正、部分披露、转嫁责任。",
+        "hands_to": "状态变化规则v1 §4 第6章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.comm.assertion_boundary",
+      "section": "6.8",
+      "name": "断言与边界设置",
+      "options": [
+        "被动",
+        "坚定自信",
+        "攻击",
+        "被动攻击",
+        "协商式边界",
+        "坚持",
+        "重复",
+        "调整",
+        "找第三方",
+        "退出"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "被动",
+            "坚定自信",
+            "攻击",
+            "被动攻击",
+            "协商式边界"
+          ]
+        },
+        {
+          "label": "回应后",
+          "items": [
+            "坚持",
+            "重复",
+            "调整",
+            "找第三方",
+            "退出"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：被动、坚定自信、攻击、被动攻击、协商式边界；回应后坚持、重复、调整、找第三方、退出。",
+        "hands_to": "状态变化规则v1 §4 第6章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.comm.persuasion_route",
+      "section": "6.9",
+      "name": "说服加工路径",
+      "options": [
+        "中央路径",
+        "外周路径"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "中央路径",
+            "外周路径"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：中央路径、外周路径。",
+        "hands_to": "状态变化规则v1 §4 第6章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.comm.reactance",
+      "section": "6.10",
+      "name": "心理抗拒",
+      "options": [
+        "接受",
+        "协商",
+        "表面服从",
+        "恢复被限制的选项",
+        "反向选择",
+        "攻击信息源"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "接受",
+            "协商",
+            "表面服从",
+            "恢复被限制的选项",
+            "反向选择",
+            "攻击信息源"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "strategy_learning",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：接受、协商、表面服从、恢复被限制的选项、反向选择、攻击信息源。",
+        "hands_to": "状态变化规则v1 §4 第6章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.coop.structure_recognition",
+      "section": "7.1",
+      "name": "互动结构识别",
+      "options": [
+        "协调",
+        "互补合作",
+        "竞争",
+        "零和冲突",
+        "讨价还价",
+        "重复互动",
+        "不完全信息"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "协调",
+            "互补合作",
+            "竞争",
+            "零和冲突",
+            "讨价还价",
+            "重复互动",
+            "不完全信息"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "relation_update",
+        "group_state_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [
+        "保留确信度和替代结构"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：协调、互补合作、竞争、零和冲突、讨价还价、重复互动、不完全信息；保留确信度和替代结构。",
+        "hands_to": "状态变化规则v1 §4 第7章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.coop.repeated_game",
+      "section": "7.2",
+      "name": "重复博弈策略偏好",
+      "options": [
+        "始终合作",
+        "始终背叛",
+        "以牙还牙",
+        "宽容的以牙还牙",
+        "冷酷触发",
+        "赢留输换",
+        "随机化",
+        "初始合作概率",
+        "背叛记忆长度",
+        "报复强度",
+        "宽恕概率",
+        "重新合作门槛",
+        "随机化程度"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "始终合作",
+            "始终背叛",
+            "以牙还牙",
+            "宽容的以牙还牙",
+            "冷酷触发",
+            "赢留输换",
+            "随机化"
+          ]
+        },
+        {
+          "label": "参数",
+          "items": [
+            "初始合作概率",
+            "背叛记忆长度",
+            "报复强度",
+            "宽恕概率",
+            "重新合作门槛",
+            "随机化程度"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "relation_update",
+        "group_state_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：始终合作、始终背叛、以牙还牙、宽容的以牙还牙、冷酷触发、赢留输换、随机化；参数为初始合作概率、背叛记忆长度、报复强度、宽恕概率、重新合作门槛、随机化程度。",
+        "hands_to": "状态变化规则v1 §4 第7章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.coop.trust_building",
+      "section": "7.3",
+      "name": "信任建立与撤回",
+      "options": [
+        "快速信任",
+        "谨慎验证",
+        "默认不信任",
+        "信息分享",
+        "时间投入",
+        "共同任务",
+        "小额资源",
+        "关键权限",
+        "不可逆承诺"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "快速信任",
+            "谨慎验证",
+            "默认不信任"
+          ]
+        },
+        {
+          "label": "授权",
+          "items": [
+            "信息分享",
+            "时间投入",
+            "共同任务",
+            "小额资源",
+            "关键权限",
+            "不可逆承诺"
+          ]
+        }
+      ],
+      "stages": [
+        "S3"
+      ],
+      "hands_to": [
+        "relation_update"
+      ],
+      "card": true,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：快速信任、谨慎验证、默认不信任；授权依次为信息分享、时间投入、共同任务、小额资源、关键权限、不可逆承诺。",
+        "hands_to": "状态变化规则v1 §4.1 机制卡",
+        "stages": "长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.coop.reciprocity_sanction",
+      "section": "7.4",
+      "name": "互惠与制裁",
+      "options": [
+        "即时",
+        "延迟",
+        "有条件",
+        "无条件帮助",
+        "负互惠或报复",
+        "提醒",
+        "私下谈判",
+        "减少合作",
+        "公开谴责",
+        "排斥",
+        "惩罚",
+        "举报",
+        "退出"
+      ],
+      "option_groups": [
+        {
+          "label": "互惠",
+          "items": [
+            "即时",
+            "延迟",
+            "有条件",
+            "无条件帮助",
+            "负互惠或报复"
+          ]
+        },
+        {
+          "label": "制裁渐强",
+          "items": [
+            "提醒",
+            "私下谈判",
+            "减少合作",
+            "公开谴责",
+            "排斥",
+            "惩罚",
+            "举报",
+            "退出"
+          ]
+        }
+      ],
+      "stages": [
+        "S3"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "relation_update",
+        "group_state_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：互惠：即时、延迟、有条件、无条件帮助、负互惠或报复；制裁渐强：提醒、私下谈判、减少合作、公开谴责、排斥、惩罚、举报、退出。",
+        "hands_to": "状态变化规则v1 §4 第7章（按章，未细分到单个过程）",
+        "stages": "长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.coop.negotiation",
+      "section": "7.5",
+      "name": "谈判策略",
+      "options": [
+        "分配式",
+        "整合式",
+        "妥协",
+        "回避",
+        "迁就",
+        "锚定",
+        "让步",
+        "交换",
+        "分阶段承诺",
+        "第三方调解"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "分配式",
+            "整合式",
+            "妥协",
+            "回避",
+            "迁就"
+          ]
+        },
+        {
+          "label": "",
+          "items": [
+            "锚定",
+            "让步",
+            "交换",
+            "分阶段承诺",
+            "第三方调解"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "relation_update",
+        "group_state_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：分配式、整合式、妥协、回避、迁就；锚定、让步、交换、分阶段承诺、第三方调解。",
+        "hands_to": "状态变化规则v1 §4 第7章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.coop.signal_commitment",
+      "section": "7.6",
+      "name": "信号、承诺与声誉",
+      "options": [
+        "公开表态",
+        "合同",
+        "抵押",
+        "第三方见证",
+        "先行投入",
+        "可逆试点"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "公开表态",
+            "合同",
+            "抵押",
+            "第三方见证",
+            "先行投入",
+            "可逆试点"
+          ]
+        }
+      ],
+      "stages": [
+        "S2",
+        "S3"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "relation_update",
+        "group_state_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：公开表态、合同、抵押、第三方见证、先行投入、可逆试点。",
+        "hands_to": "状态变化规则v1 §4 第7章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1；长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.coop.alliance",
+      "section": "7.7",
+      "name": "联盟与群体合作",
+      "options": [
+        "广泛结盟",
+        "核心小团体",
+        "交换性联盟",
+        "身份性联盟",
+        "临时联盟",
+        "保持中立"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "广泛结盟",
+            "核心小团体",
+            "交换性联盟",
+            "身份性联盟",
+            "临时联盟",
+            "保持中立"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "relation_update",
+        "group_state_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [
+        "忠诚度与外群体敌意是独立参数",
+        "类型划分为工程分类"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：广泛结盟、核心小团体、交换性联盟、身份性联盟、临时联盟、保持中立；忠诚度与外群体敌意是独立参数；类型划分为工程分类。",
+        "hands_to": "状态变化规则v1 §4 第7章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.coop.social_exchange",
+      "section": "7.8",
+      "name": "社会交换与关系互依",
+      "options": [
+        "维持",
+        "重新协商",
+        "寻找替代",
+        "降低投入",
+        "暂时拉开距离",
+        "退出"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "维持",
+            "重新协商",
+            "寻找替代",
+            "降低投入",
+            "暂时拉开距离",
+            "退出"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "relation_update",
+        "group_state_update",
+        "commitment_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：维持、重新协商、寻找替代、降低投入、暂时拉开距离、退出。",
+        "hands_to": "状态变化规则v1 §4 第7章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.conflict.conflict_mode",
+      "section": "8.1",
+      "name": "冲突处理模式",
+      "options": [
+        "竞争",
+        "合作",
+        "妥协",
+        "回避",
+        "迁就"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "竞争",
+            "合作",
+            "妥协",
+            "回避",
+            "迁就"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "emotion_update",
+        "relation_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [
+        "处理模式不是人格类型"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：竞争、合作、妥协、回避、迁就；处理模式不是人格类型。",
+        "hands_to": "状态变化规则v1 §4 第8章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.conflict.escalation",
+      "section": "8.2",
+      "name": "冲突升级与降级",
+      "options": [
+        "触发",
+        "试探",
+        "立场硬化",
+        "归因扩大",
+        "公开化",
+        "拉拢盟友",
+        "威胁或报复",
+        "暂停",
+        "冷却",
+        "澄清事实",
+        "重构问题",
+        "重置利益",
+        "有限让步",
+        "第三方调解",
+        "恢复共同程序"
+      ],
+      "option_groups": [
+        {
+          "label": "升级",
+          "items": [
+            "触发",
+            "试探",
+            "立场硬化",
+            "归因扩大",
+            "公开化",
+            "拉拢盟友",
+            "威胁或报复"
+          ]
+        },
+        {
+          "label": "降级",
+          "items": [
+            "暂停",
+            "冷却",
+            "澄清事实",
+            "重构问题",
+            "重置利益",
+            "有限让步",
+            "第三方调解",
+            "恢复共同程序"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "emotion_update",
+        "relation_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [
+        "至破裂",
+        "阶段序列为改编"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：升级：触发、试探、立场硬化、归因扩大、公开化、拉拢盟友、威胁或报复，至破裂；降级：暂停、冷却、澄清事实、重构问题、重置利益、有限让步、第三方调解、恢复共同程序；阶段序列为改编。",
+        "hands_to": "状态变化规则v1 §4 第8章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.conflict.aggression_punishment",
+      "section": "8.3",
+      "name": "攻击、报复与惩罚",
+      "options": [
+        "不报复",
+        "防御性反击",
+        "规范性惩罚",
+        "工具性威胁",
+        "报复性伤害",
+        "借他人之手"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "不报复",
+            "防御性反击",
+            "规范性惩罚",
+            "工具性威胁",
+            "报复性伤害",
+            "借他人之手"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "emotion_update",
+        "relation_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：不报复、防御性反击、规范性惩罚、工具性威胁、报复性伤害、借他人之手。",
+        "hands_to": "状态变化规则v1 §4 第8章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.conflict.power_resistance",
+      "section": "8.4",
+      "name": "权力行使与抵抗",
+      "options": [
+        "强制",
+        "奖赏",
+        "合法",
+        "参照",
+        "专家",
+        "信息",
+        "理性说服",
+        "咨询",
+        "合作",
+        "交换",
+        "树立规范",
+        "施压或威胁",
+        "授权",
+        "公开发声",
+        "私下抵抗",
+        "拖延",
+        "结盟",
+        "退出",
+        "忠诚等待",
+        "制度化反馈"
+      ],
+      "option_groups": [
+        {
+          "label": "基础",
+          "items": [
+            "强制",
+            "奖赏",
+            "合法",
+            "参照",
+            "专家",
+            "信息"
+          ]
+        },
+        {
+          "label": "行使",
+          "items": [
+            "理性说服",
+            "咨询",
+            "合作",
+            "交换",
+            "树立规范",
+            "施压或威胁",
+            "授权"
+          ]
+        },
+        {
+          "label": "抵抗",
+          "items": [
+            "公开发声",
+            "私下抵抗",
+            "拖延",
+            "结盟",
+            "退出",
+            "忠诚等待",
+            "制度化反馈"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "emotion_update",
+        "relation_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：基础为强制、奖赏、合法、参照、专家、信息；行使为理性说服、咨询、合作、交换、树立规范、施压或威胁、授权；抵抗为公开发声、私下抵抗、拖延、结盟、退出、忠诚等待、制度化反馈。",
+        "hands_to": "状态变化规则v1 §4 第8章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.conflict.relationship_repair",
+      "section": "8.5",
+      "name": "关系修复与退出",
+      "options": [
+        "承认伤害",
+        "承担责任",
+        "解释",
+        "道歉",
+        "补偿",
+        "改变行为",
+        "重建边界",
+        "寻求第三方",
+        "恢复信任",
+        "维持低强度关系",
+        "暂时拉开距离",
+        "体面退出",
+        "彻底断裂"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "承认伤害",
+            "承担责任",
+            "解释",
+            "道歉",
+            "补偿",
+            "改变行为",
+            "重建边界",
+            "寻求第三方"
+          ]
+        },
+        {
+          "label": "结果",
+          "items": [
+            "恢复信任",
+            "维持低强度关系",
+            "暂时拉开距离",
+            "体面退出",
+            "彻底断裂"
+          ]
+        }
+      ],
+      "stages": [
+        "S3"
+      ],
+      "hands_to": [
+        "relation_update",
+        "memory_update"
+      ],
+      "card": true,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：承认伤害、承担责任、解释、道歉、补偿、改变行为、重建边界、寻求第三方；结果为恢复信任、维持低强度关系、暂时拉开距离、体面退出、彻底断裂。",
+        "hands_to": "状态变化规则v1 §4.1 机制卡",
+        "stages": "长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.conflict.attachment_activation",
+      "section": "8.6",
+      "name": "依恋激活与支持交换",
+      "options": [
+        "以安全基地求助",
+        "过度寻求确认",
+        "压低依赖",
+        "先发拒绝",
+        "讨好或安抚",
+        "独立解决",
+        "情绪",
+        "工具",
+        "信息",
+        "陪伴"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "以安全基地求助",
+            "过度寻求确认",
+            "压低依赖",
+            "先发拒绝",
+            "讨好或安抚",
+            "独立解决"
+          ]
+        },
+        {
+          "label": "支持",
+          "items": [
+            "情绪",
+            "工具",
+            "信息",
+            "陪伴"
+          ]
+        }
+      ],
+      "stages": [
+        "S3"
+      ],
+      "hands_to": [
+        "emotion_update",
+        "relation_update",
+        "strategy_learning"
+      ],
+      "card": false,
+      "notes": [
+        "读焦虑、回避两轴"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：读焦虑、回避两轴；以安全基地求助、过度寻求确认、压低依赖、先发拒绝、讨好或安抚、独立解决；支持情绪、工具、信息、陪伴。",
+        "hands_to": "状态变化规则v1 §4 第8章（按章，未细分到单个过程）",
+        "stages": "长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.norm.structural_function",
+      "section": "9.2",
+      "name": "结构功能主义视角",
+      "options": [
+        "遵从",
+        "协商",
+        "修正",
+        "退出"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "遵从",
+            "协商",
+            "修正",
+            "退出"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：遵从、协商、修正、退出。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.norm.conflict_theory",
+      "section": "9.3",
+      "name": "冲突理论视角",
+      "options": [
+        "服从",
+        "谈判",
+        "结盟",
+        "抵抗",
+        "推动制度变化"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "服从",
+            "谈判",
+            "结盟",
+            "抵抗",
+            "推动制度变化"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：服从、谈判、结盟、抵抗、推动制度变化。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.norm.role_authority",
+      "section": "9.4",
+      "name": "角色理论、权威服从与制度信任",
+      "options": [
+        "履行",
+        "协商",
+        "偏离",
+        "委托",
+        "退出",
+        "服从",
+        "有条件服从",
+        "程序性遵从",
+        "公开抵抗",
+        "绕开制度"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "履行",
+            "协商",
+            "偏离",
+            "委托",
+            "退出"
+          ]
+        },
+        {
+          "label": "服从水平",
+          "items": [
+            "服从",
+            "有条件服从",
+            "协商",
+            "程序性遵从",
+            "公开抵抗",
+            "绕开制度"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：履行、协商、偏离、委托、退出；服从水平：服从、有条件服从、协商、程序性遵从、公开抵抗、绕开制度。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.norm.system_justification_tightness",
+      "section": "9.5",
+      "name": "系统合理化与文化紧密性—松散性",
+      "options": [
+        "系统合理化倾向",
+        "场景规范紧密度"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "系统合理化倾向",
+            "场景规范紧密度"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：系统合理化倾向、场景规范紧密度。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.norm.conformity",
+      "section": "9.6",
+      "name": "从众、独立与反从众",
+      "options": [
+        "信息性从众",
+        "规范性从众",
+        "公开服从而私下保留",
+        "独立",
+        "反从众"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "信息性从众",
+            "规范性从众",
+            "公开服从而私下保留",
+            "独立",
+            "反从众"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：信息性从众、规范性从众、公开服从而私下保留、独立、反从众。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.norm.group_dynamics",
+      "section": "9.7",
+      "name": "群体极化、群体思维与责任分散",
+      "options": [
+        "风险或谨慎极化",
+        "群体思维",
+        "旁观者效应",
+        "社会惰化",
+        "帮助",
+        "求助",
+        "记录",
+        "离开",
+        "观察"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "风险或谨慎极化",
+            "群体思维",
+            "旁观者效应",
+            "社会惰化"
+          ]
+        },
+        {
+          "label": "旁观时",
+          "items": [
+            "帮助",
+            "求助",
+            "记录",
+            "离开",
+            "观察"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：风险或谨慎极化、群体思维、旁观者效应、社会惰化；旁观时帮助、求助、记录、离开、观察。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.norm.group_boundary",
+      "section": "9.8",
+      "name": "群体边界与身份切换",
+      "options": [
+        "内群体偏袒",
+        "外群体排斥",
+        "跨群体合作",
+        "边界谈判",
+        "隐藏身份",
+        "切换身份"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "内群体偏袒",
+            "外群体排斥",
+            "跨群体合作",
+            "边界谈判",
+            "隐藏身份",
+            "切换身份"
+          ]
+        }
+      ],
+      "stages": [
+        "S3"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：内群体偏袒、外群体排斥、跨群体合作、边界谈判、隐藏身份、切换身份。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）",
+        "stages": "长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.norm.situation_definition",
+      "section": "9.9",
+      "name": "符号互动论与情境定义",
+      "options": [
+        "澄清",
+        "重述",
+        "测试",
+        "坚持自己的框架",
+        "退出"
+      ],
+      "option_groups": [
+        {
+          "label": "冲突时",
+          "items": [
+            "澄清",
+            "重述",
+            "测试",
+            "坚持自己的框架",
+            "退出"
+          ]
+        }
+      ],
+      "stages": [
+        "S1"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：冲突时澄清、重述、测试、坚持自己的框架、退出。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）",
+        "stages": "事件建模skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.norm.normative_focus",
+      "section": "9.10",
+      "name": "规范行为焦点理论",
+      "options": [
+        "描述性规范",
+        "命令性规范"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "描述性规范",
+            "命令性规范"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：描述性规范、命令性规范。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.norm.norm_violation",
+      "section": "9.11",
+      "name": "规范识别、违背判定与文化规范切换",
+      "options": [
+        "失礼",
+        "越界",
+        "道德违背",
+        "制度违约",
+        "法律违背",
+        "提醒",
+        "私下纠正",
+        "协商",
+        "公开批评",
+        "举报",
+        "惩罚",
+        "退出"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "失礼",
+            "越界",
+            "道德违背",
+            "制度违约",
+            "法律违背"
+          ]
+        },
+        {
+          "label": "执行",
+          "items": [
+            "提醒",
+            "私下纠正",
+            "协商",
+            "公开批评",
+            "举报",
+            "惩罚",
+            "退出"
+          ]
+        }
+      ],
+      "stages": [
+        "S1"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [
+        "跨文化切换同 dm.learn.norm_culture_learning"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：失礼、越界、道德违背、制度违约、法律违背；执行为提醒、私下纠正、协商、公开批评、举报、惩罚、退出；跨文化切换同 dm.learn.norm_culture_learning。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）",
+        "stages": "事件建模skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.norm.norm_activation",
+      "section": "9.12",
+      "name": "规范激活模型",
+      "options": [
+        "后果觉察",
+        "责任归属",
+        "个人规范激活",
+        "帮助",
+        "制止",
+        "补偿",
+        "回避责任"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "后果觉察",
+            "责任归属",
+            "个人规范激活"
+          ]
+        },
+        {
+          "label": "",
+          "items": [
+            "帮助",
+            "制止",
+            "补偿",
+            "回避责任"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：后果觉察、责任归属、个人规范激活；帮助、制止、补偿、回避责任。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.norm.norm_enforcement",
+      "section": "9.13",
+      "name": "规范执行与社会惩罚",
+      "options": [
+        "示范",
+        "提醒",
+        "教育",
+        "私下纠正",
+        "公开谴责",
+        "排斥",
+        "正式举报",
+        "惩罚"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "示范",
+            "提醒",
+            "教育",
+            "私下纠正",
+            "公开谴责",
+            "排斥",
+            "正式举报",
+            "惩罚"
+          ]
+        }
+      ],
+      "stages": [
+        "S3"
+      ],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：示范、提醒、教育、私下纠正、公开谴责、排斥、正式举报、惩罚。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）",
+        "stages": "长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.norm.collective_action",
+      "section": "9.14",
+      "name": "集体行动与搭便车",
+      "options": [
+        "主动投入",
+        "有条件投入",
+        "搭便车",
+        "动员他人",
+        "监督",
+        "退出",
+        "举报"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "主动投入",
+            "有条件投入",
+            "搭便车",
+            "动员他人",
+            "监督",
+            "退出",
+            "举报"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：主动投入、有条件投入、搭便车、动员他人、监督、退出、举报。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.norm.moral_disengagement",
+      "section": "9.15",
+      "name": "道德脱离",
+      "options": [
+        "道德辩护",
+        "委婉标签",
+        "有利比较",
+        "责任转移",
+        "责任分散",
+        "忽视或歪曲后果",
+        "去人性化",
+        "归咎受害者"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "道德辩护",
+            "委婉标签",
+            "有利比较",
+            "责任转移",
+            "责任分散",
+            "忽视或歪曲后果",
+            "去人性化",
+            "归咎受害者"
+          ]
+        }
+      ],
+      "stages": [],
+      "hands_to": [
+        "belief_revision",
+        "self_state_update",
+        "group_state_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：道德辩护、委婉标签、有利比较、责任转移、责任分散、忽视或歪曲后果、去人性化、归咎受害者。",
+        "hands_to": "状态变化规则v1 §4 第9章（按章，未细分到单个过程）"
+      }
+    },
+    {
+      "dm_id": "dm.prosocial.helping_care",
+      "section": "10.1",
+      "name": "帮助与照护决策",
+      "options": [
+        "同理关怀",
+        "互惠",
+        "亲缘或关系义务",
+        "规范责任",
+        "声誉",
+        "纯粹利他",
+        "自我保护",
+        "帮助",
+        "有限帮助",
+        "转介",
+        "求助他人",
+        "拒绝"
+      ],
+      "option_groups": [
+        {
+          "label": "动机",
+          "items": [
+            "同理关怀",
+            "互惠",
+            "亲缘或关系义务",
+            "规范责任",
+            "声誉",
+            "纯粹利他",
+            "自我保护"
+          ]
+        },
+        {
+          "label": "",
+          "items": [
+            "帮助",
+            "有限帮助",
+            "转介",
+            "求助他人",
+            "拒绝"
+          ]
+        }
+      ],
+      "stages": [
+        "S2"
+      ],
+      "hands_to": [
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [
+        "须识别控制性照护"
+      ],
+      "basis": {
+        "options": "心理构念登记v1 §7：动机为同理关怀、互惠、亲缘或关系义务、规范责任、声誉、纯粹利他、自我保护；帮助、有限帮助、转介、求助他人、拒绝；须识别控制性照护。",
+        "hands_to": "状态变化规则v1 §4 第10章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.prosocial.responsibility_taking",
+      "section": "10.2",
+      "name": "责任承担与责任转移",
+      "options": [
+        "结果",
+        "意图",
+        "角色",
+        "能力",
+        "补救",
+        "主动承担",
+        "共同承担",
+        "部分承担",
+        "解释情境",
+        "推给他人",
+        "否认",
+        "补偿"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "结果",
+            "意图",
+            "角色",
+            "能力",
+            "补救"
+          ]
+        },
+        {
+          "label": "",
+          "items": [
+            "主动承担",
+            "共同承担",
+            "部分承担",
+            "解释情境",
+            "推给他人",
+            "否认",
+            "补偿"
+          ]
+        }
+      ],
+      "stages": [
+        "S2",
+        "S3"
+      ],
+      "hands_to": [
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：结果、意图、角色、能力、补救；主动承担、共同承担、部分承担、解释情境、推给他人、否认、补偿。",
+        "hands_to": "状态变化规则v1 §4 第10章（按章，未细分到单个过程）",
+        "stages": "行动计划skill §4.1；长期演化skill §4.1"
+      }
+    },
+    {
+      "dm_id": "dm.prosocial.forgiveness",
+      "section": "10.3",
+      "name": "宽恕、和解与记忆保持",
+      "options": [
+        "立即宽恕",
+        "有条件宽恕",
+        "观察后宽恕",
+        "维持距离",
+        "持续记仇",
+        "寻求补偿"
+      ],
+      "option_groups": [
+        {
+          "label": "",
+          "items": [
+            "立即宽恕",
+            "有条件宽恕",
+            "观察后宽恕",
+            "维持距离",
+            "持续记仇",
+            "寻求补偿"
+          ]
+        }
+      ],
+      "stages": [
+        "S3"
+      ],
+      "hands_to": [
+        "self_state_update",
+        "relation_update",
+        "commitment_update",
+        "memory_update"
+      ],
+      "card": false,
+      "notes": [],
+      "basis": {
+        "options": "心理构念登记v1 §7：立即宽恕、有条件宽恕、观察后宽恕、维持距离、持续记仇、寻求补偿。",
+        "hands_to": "状态变化规则v1 §4 第10章（按章，未细分到单个过程）",
+        "stages": "长期演化skill §4.1"
+      }
+    }
+  ],
+  "operators": [
+    {
+      "name": "emotion_update",
+      "section": "5.1",
+      "writes": [
+        "d.affect.emotion",
+        "d.affect.stress",
+        "d.affect.threat_reward_activation",
+        "d.affect.regulation_state"
+      ],
+      "stages": [
+        "S1",
+        "S2"
+      ],
+      "group": "affect_self_relation_group",
+      "timing": "即时。与 self_state_update、relation_update、group_state_update 同组提交；goal_update 读取的是共同快照中的情绪，不是本算子的候选。",
+      "basis": {
+        "writes": "状态变化规则v1 §5.1 定义与理论依据",
+        "group": "状态变化规则v1 §六：本版本的依赖组为：情绪、自我、关系和群体状态；目标、承诺和策略；记忆；衰减与恢复。未声明分组的变化视为同一批。",
+        "stages": "事件建模skill §4.2；行动计划skill §4.2"
+      }
+    },
+    {
+      "name": "belief_revision",
+      "section": "5.2",
+      "writes": [
+        "d.cognition.belief",
+        "d.cognition.attribution",
+        "d.cognition.attention"
+      ],
+      "stages": [
+        "S1",
+        "S3"
+      ],
+      "group": "ungrouped",
+      "timing": "即时，变化持久，不随时间衰减。归因先于 relation_update 和 self_state_update 的判断形成，作为中间判断显式传递。",
+      "basis": {
+        "writes": "状态变化规则v1 §5.2 定义与理论依据",
+        "group": "状态变化规则v1 §六：本版本的依赖组为：情绪、自我、关系和群体状态；目标、承诺和策略；记忆；衰减与恢复。未声明分组的变化视为同一批。",
+        "stages": "事件建模skill §4.2；长期演化skill §4.2"
+      }
+    },
+    {
+      "name": "other_model_update",
+      "section": "5.3",
+      "writes": [
+        "d.cognition.other_model",
+        "d.cognition.tom_level"
+      ],
+      "stages": [
+        "S1"
+      ],
+      "group": "ungrouped",
+      "timing": "即时。结果作为中间判断交给 relation_update 时须显式传递。",
+      "basis": {
+        "writes": "状态变化规则v1 §5.3 定义与理论依据",
+        "group": "状态变化规则v1 §六：本版本的依赖组为：情绪、自我、关系和群体状态；目标、承诺和策略；记忆；衰减与恢复。未声明分组的变化视为同一批。",
+        "stages": "事件建模skill §4.2"
+      }
+    },
+    {
+      "name": "self_state_update",
+      "section": "5.4",
+      "writes": [
+        "d.cognition.self_evaluation",
+        "d.cognition.task_self_efficacy",
+        "d.cognition.shame",
+        "d.cognition.face_cost",
+        "d.cognition.self_responsibility"
+      ],
+      "stages": [
+        "S1",
+        "S2",
+        "S3"
+      ],
+      "group": "affect_self_relation_group",
+      "timing": "即时，羞耻负荷恢复慢于情绪。与 emotion_update 同组。自我效能的变化先于 goal_update 对可行性的判断，二者读取共同快照。",
+      "basis": {
+        "writes": "状态变化规则v1 §5.4 定义与理论依据",
+        "group": "状态变化规则v1 §六：本版本的依赖组为：情绪、自我、关系和群体状态；目标、承诺和策略；记忆；衰减与恢复。未声明分组的变化视为同一批。",
+        "stages": "事件建模skill §4.2；行动计划skill §4.2；长期演化skill §4.2"
+      }
+    },
+    {
+      "name": "relation_update",
+      "section": "5.5",
+      "writes": [
+        "d.relation.trust",
+        "d.relation.closeness",
+        "d.relation.dependence",
+        "d.relation.commitment",
+        "d.relation.harm_history",
+        "d.relation.power_asymmetry"
+      ],
+      "stages": [
+        "S3"
+      ],
+      "group": "affect_self_relation_group",
+      "timing": "即时，变化持久。trust 没有修复证据时不自动回升；伤害显著性可由 decay_or_recovery 降低，伤害事实不变。与 emotion_update 同组。",
+      "basis": {
+        "writes": "状态变化规则v1 §5.5 定义与理论依据",
+        "group": "状态变化规则v1 §六：本版本的依赖组为：情绪、自我、关系和群体状态；目标、承诺和策略；记忆；衰减与恢复。未声明分组的变化视为同一批。",
+        "stages": "长期演化skill §4.2"
+      }
+    },
+    {
+      "name": "group_state_update",
+      "section": "5.6",
+      "writes": [
+        "d.group.membership",
+        "d.group.identity_salience",
+        "d.group.norm_salience",
+        "d.group.alliance",
+        "d.group.boundary",
+        "d.group.responsibility_allocation"
+      ],
+      "stages": [
+        "S1",
+        "S2",
+        "S3"
+      ],
+      "group": "affect_self_relation_group",
+      "timing": "显著性即时且会回落；成员资格、联盟和边界较持久。与 emotion_update、relation_update 同组。",
+      "basis": {
+        "writes": "状态变化规则v1 §5.6 定义与理论依据",
+        "group": "状态变化规则v1 §六：本版本的依赖组为：情绪、自我、关系和群体状态；目标、承诺和策略；记忆；衰减与恢复。未声明分组的变化视为同一批。",
+        "stages": "事件建模skill §4.2；行动计划skill §4.2；长期演化skill §4.2"
+      }
+    },
+    {
+      "name": "goal_update",
+      "section": "5.7",
+      "writes": [
+        "d.goal.goals_now",
+        "d.goal.value_activation",
+        "d.goal.goal_activation",
+        "d.goal.goal_commitment",
+        "d.goal.feasibility_estimate",
+        "d.goal.threat_to_goal",
+        "d.goal.goal_conflict",
+        "d.goal.action_orientation",
+        "d.goal.revision_candidate"
+      ],
+      "stages": [
+        "S2",
+        "S3"
+      ],
+      "group": "goal_commitment_strategy",
+      "timing": "当前目标和激活即时；动态承诺随连续成败缓慢变化；修订候选累积。在情绪、自我、关系、群体组之后提交，但读取共同快照，前一组结果只能通过显式传递的中间判断进入。",
+      "basis": {
+        "writes": "状态变化规则v1 §5.7 定义与理论依据",
+        "group": "状态变化规则v1 §六：本版本的依赖组为：情绪、自我、关系和群体状态；目标、承诺和策略；记忆；衰减与恢复。未声明分组的变化视为同一批。",
+        "stages": "行动计划skill §4.2；长期演化skill §4.2"
+      }
+    },
+    {
+      "name": "commitment_update",
+      "section": "5.8",
+      "writes": [
+        "d.policy.action_commitment"
+      ],
+      "stages": [
+        "S2",
+        "S3"
+      ],
+      "group": "goal_commitment_strategy",
+      "timing": "持久保存直到兑现、违约或撤销，不随时间衰减。与 goal_update、strategy_learning 同组。",
+      "basis": {
+        "writes": "状态变化规则v1 §5.8 定义与理论依据",
+        "group": "状态变化规则v1 §六：本版本的依赖组为：情绪、自我、关系和群体状态；目标、承诺和策略；记忆；衰减与恢复。未声明分组的变化视为同一批。",
+        "stages": "行动计划skill §4.2；长期演化skill §4.2"
+      }
+    },
+    {
+      "name": "strategy_learning",
+      "section": "5.9",
+      "writes": [
+        "d.policy.current_strategy",
+        "d.policy.fallback_strategy",
+        "d.policy.switch_condition",
+        "d.policy.strategy_weight",
+        "d.policy.learning_state",
+        "d.policy.mechanism_preference_state"
+      ],
+      "stages": [
+        "S2",
+        "S3"
+      ],
+      "group": "goal_commitment_strategy",
+      "timing": "权重和学习状态累积；短期偏好即时，按第九部分回落。与 goal_update、commitment_update 同组。",
+      "basis": {
+        "writes": "状态变化规则v1 §5.9 定义与理论依据",
+        "group": "状态变化规则v1 §六：本版本的依赖组为：情绪、自我、关系和群体状态；目标、承诺和策略；记忆；衰减与恢复。未声明分组的变化视为同一批。",
+        "stages": "行动计划skill §4.2；长期演化skill §4.2"
+      }
+    },
+    {
+      "name": "memory_update",
+      "section": "5.10",
+      "writes": [
+        "m.entry",
+        "m.accessibility",
+        "m.reactivation"
+      ],
+      "stages": [
+        "S2",
+        "S3"
+      ],
+      "group": "memory",
+      "timing": "条目持久，可及性随时间变化。在第五步最后或事件阶段结束时提交。",
+      "basis": {
+        "writes": "状态变化规则v1 §5.10 定义与理论依据",
+        "group": "状态变化规则v1 §六：本版本的依赖组为：情绪、自我、关系和群体状态；目标、承诺和策略；记忆；衰减与恢复。未声明分组的变化视为同一批。",
+        "stages": "行动计划skill §4.2；长期演化skill §4.2"
+      }
+    },
+    {
+      "name": "decay_or_recovery",
+      "section": "5.11",
+      "writes": [
+        "d.affect.emotion",
+        "d.cognition.attention",
+        "d.affect.stress",
+        "d.affect.threat_reward_activation",
+        "d.affect.regulation_state",
+        "d.goal.value_activation",
+        "d.goal.goal_activation",
+        "d.group.identity_salience",
+        "d.group.norm_salience",
+        "d.cognition.face_cost",
+        "d.cognition.shame",
+        "d.cognition.self_evaluation",
+        "d.relation.harm_history",
+        "m.accessibility",
+        "d.policy.mechanism_preference_state",
+        "d.policy.strategy_weight"
+      ],
+      "stages": [
+        "S3"
+      ],
+      "group": "decay",
+      "timing": "在事件阶段最后执行；同一阶段其他算子已写入的字段，本算子不再处理。",
+      "basis": {
+        "writes": "状态变化规则v1 §九（decay_or_recovery 可写构念以第九部分所列为限）",
+        "group": "状态变化规则v1 §六：本版本的依赖组为：情绪、自我、关系和群体状态；目标、承诺和策略；记忆；衰减与恢复。未声明分组的变化视为同一批。",
+        "stages": "长期演化skill §4.2"
+      }
+    }
+  ],
+  "review": [
+    {
+      "topic": "没有任何阶段调用的决策过程（三个 skill 的 §4.1 都未列出）",
+      "items": [
+        "dm.cog.rule_switching（1.10 认知灵活性与规则切换）",
+        "dm.comm.self_disclosure（6.3 自我披露与隐私边界）",
+        "dm.comm.humor_expression（6.5 幽默与情感表达策略）",
+        "dm.comm.persuasion_route（6.9 说服加工路径）",
+        "dm.comm.reactance（6.10 心理抗拒）",
+        "dm.coop.repeated_game（7.2 重复博弈策略偏好）",
+        "dm.coop.alliance（7.7 联盟与群体合作）",
+        "dm.coop.social_exchange（7.8 社会交换与关系互依）",
+        "dm.conflict.aggression_punishment（8.3 攻击、报复与惩罚）",
+        "dm.norm.structural_function（9.2 结构功能主义视角）",
+        "dm.norm.conflict_theory（9.3 冲突理论视角）",
+        "dm.norm.system_justification_tightness（9.5 系统合理化与文化紧密性—松散性）",
+        "dm.norm.group_dynamics（9.7 群体极化、群体思维与责任分散）",
+        "dm.norm.collective_action（9.14 集体行动与搭便车）",
+        "dm.norm.moral_disengagement（9.15 道德脱离）"
+      ]
+    },
+    {
+      "topic": "未归入快变 / 慢变 / 类别的 dynamic 构念（状态变化规则 §5.0）",
+      "items": [
+        "d.affect.regulation_state",
+        "d.cognition.attention",
+        "d.cognition.attribution",
+        "d.cognition.task_self_efficacy",
+        "d.cognition.self_responsibility",
+        "d.cognition.other_model",
+        "d.cognition.tom_level",
+        "d.goal.threat_to_goal",
+        "d.goal.goal_conflict",
+        "d.goal.action_orientation",
+        "d.goal.revision_candidate",
+        "d.relation.power_asymmetry",
+        "d.group.membership",
+        "d.group.alliance",
+        "d.group.boundary",
+        "d.group.responsibility_allocation",
+        "d.policy.current_strategy",
+        "d.policy.fallback_strategy",
+        "d.policy.switch_condition",
+        "d.policy.learning_state",
+        "d.policy.mechanism_preference_state"
+      ]
+    },
+    {
+      "topic": "来源没有写明自知程度的构念（使用时按不可自知处理）",
+      "items": [
+        "s.identity.social_roles",
+        "s.identity.resources",
+        "s.traits.motivation.source_activation",
+        "s.traits.motivation.need_vector",
+        "s.traits.motivation.goal_computation",
+        "s.traits.affect.emotion_baseline",
+        "s.traits.affect.appraisal_bias",
+        "s.traits.affect.regulation_capacity",
+        "s.traits.affect.empathy",
+        "s.traits.affect.emotional_intelligence",
+        "s.traits.affect.expression",
+        "s.traits.self.self_concept",
+        "s.traits.self.self_esteem",
+        "s.traits.self.self_discrepancy",
+        "s.traits.self.identity_status",
+        "s.traits.self.role_identity",
+        "s.traits.self.social_identity",
+        "m.entry",
+        "m.accessibility",
+        "m.reactivation"
+      ]
+    },
+    {
+      "topic": "可选项文字里夹有说明的决策过程（说明已从可选项中拿出，放在 notes）",
+      "items": [
+        "dm.cog.dual_process_mode",
+        "dm.cog.satisficing",
+        "dm.cog.uncertainty_closure",
+        "dm.affect.primary_secondary_appraisal",
+        "dm.affect.threat_reward_policy",
+        "dm.affect.emotion_regulation",
+        "dm.affect.defense",
+        "dm.social.sip",
+        "dm.choice.risk_ambiguity",
+        "dm.choice.social_value_orientation",
+        "dm.choice.planned_behavior",
+        "dm.comm.directness",
+        "dm.coop.structure_recognition",
+        "dm.coop.alliance",
+        "dm.conflict.conflict_mode",
+        "dm.conflict.escalation",
+        "dm.conflict.attachment_activation",
+        "dm.norm.norm_violation",
+        "dm.prosocial.helping_care"
+      ]
+    },
+    {
+      "topic": "登记 §4.10 先验映射表的候选项不在 §7 该过程的可选项里",
+      "items": [
+        "dm.affect.defense：理智化与隔离情感",
+        "dm.affect.defense：投射与贬低",
+        "dm.affect.defense：利他与升华",
+        "dm.affect.threat_reward_policy：回避或暂停",
+        "dm.affect.threat_reward_policy：冻结",
+        "dm.choice.risk_ambiguity：收益情境寻求",
+        "dm.choice.risk_ambiguity：损失情境厌恶",
+        "dm.choice.risk_ambiguity：模糊厌恶",
+        "dm.choice.fairness_allocation：平均",
+        "dm.choice.fairness_allocation：程序公平",
+        "dm.learn.norm_culture_learning：反从众",
+        "dm.comm.self_disclosure：深度与互惠",
+        "dm.comm.deception_concealment：选择性披露与遗漏",
+        "dm.comm.deception_concealment：直接说谎与操纵",
+        "dm.comm.assertion_boundary：协商式"
+      ]
+    }
+  ]
+}

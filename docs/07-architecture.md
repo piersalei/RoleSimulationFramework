@@ -91,6 +91,7 @@ flowchart TB
 | 记忆 | `memory.py` | 只增；前情固定在前；较早条目按字符二元组相似度 + 显著性召回；最近 12 条完整保留 | 完成，未接 Mem0 服务 |
 | 接口合同 | `contract.py` | Event / ProposedAction / AgentState / StateDelta 数据类与校验 | 完成（按环境组合同 v0） |
 | 接口 v2 | `agent_api.py` | 环境组 2026-11-07 版：`initialize` / `act` / 环境 `act` 的数据类型、双方校验、记录拆分与可见性 | 完成（[plan/08](../plan/08-framework-oop-design.md) 第 8 节） |
+| 心理学登记 | `registry.py`、`data/registry.json` | `IRegistry`：从心理学组 v1 文件生成 87 个构念、75 个决策过程、11 个算子规则（写入白名单、阶段权限、依赖组），每项带原文出处；原文改动而未重新生成时测试失败 | 完成；`review` 清单待心理学组确认 |
 | 关键接口 | `interfaces.py` | [plan/10](../plan/10-interfaces.md) 的 4 个顶层接口与子接口：Protocol 签名、数据类型（产物、画像、状态、变化不可变）及其最基本的不变量检查 | 只有契约，尚无按这些接口的实现（`adapter.py` 满足 `IRoleAgent`） |
 | 角色适配器 | `adapter.py` | 把 `Agent` 放到 `initialize` / `act` 后面；`interaction_id + character_id` 路由、记录转事件、请求幂等、中途到场建关系 | 完成；只出台词，无思考与外显行动 |
 | 本地参考运行器 | `loop.py` | 按接口 v2 跑一场：先 initialize，再轮流 act，运行器保存观察记录；环境用 `EchoEnvironment` 替身 | 完成；不生成审计报告 |
@@ -102,7 +103,7 @@ flowchart TB
 | 可读记录 | `readable.py` | 运行结束后自动把运行目录整理成 `transcript.md`（背景、角色、逐句对话、结果）；只读落盘文件，不重新计算 | 完成 |
 | 评审包 | `package.py` | 盲化评审包导出 | 完成 |
 | 角色与剧情文件 | `roles.py`、`roles/`、`scenes/` | 角色文件与剧情文件的读取校验、`fit` / `fit_cast` 入座检查、`seat` 为每个角色座位组装 Agent、`run` | 完成 |
-| 入口 | `__main__.py` | `catalog` `list` `validate` `compile` `skills` `run` `audit` `package` `readable` | 完成 |
+| 入口 | `__main__.py` | `catalog` `registry` `list` `validate` `compile` `skills` `run` `audit` `package` `readable` | 完成 |
 | 示例与重建 | `roles/`、`scenes/`、`scripts/bootstrap_examples.py` | 三个虚构角色 role1（林澄，项目组一方）、role2（周越，合作方一方）、role3（王岚，项目负责人）+ 三个剧情 test1（交付沟通）、test2（剩余数据跟进），各最多 8 次发言；test3（三方会议 + 会议室环境 agent），最多 12 次发言 | 虚构设定 |
 
 ## 4. 一轮发言怎么被处理

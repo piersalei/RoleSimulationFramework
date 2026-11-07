@@ -30,7 +30,7 @@ __all__ = [
     "InterfaceError", "AgentCallError", "StageError",
     # vocabularies
     "STAGES", "CHANNELS", "SOURCE_KINDS", "TEMPOS", "BANDS", "JUDGMENT_STATES", "PHASE_KINDS",
-    "OPERATOR_NAMES",
+    "OPERATOR_NAMES", "LAYERS", "SELF_VISIBILITY",
     # 1
     "IRoleAgent", "IEnvironment", "ITurnRunner", "ITrace", "SessionKey", "PhaseLog", "ModelCallRecord",
     # 2
@@ -90,6 +90,13 @@ OPERATOR_NAMES: tuple[str, ...] = (
     "relation_update", "group_state_update", "goal_update", "commitment_update",
     "strategy_learning", "memory_update", "decay_or_recovery")
 
+Layer = Literal["stable", "dynamic", "memory"]
+LAYERS: tuple[Layer, ...] = ("stable", "dynamic", "memory")
+
+# 能觉察并直接表述 / 有自我理解但可能偏差 / 不能觉察或表述 (角色状态说明 §七)
+SelfVisibility = Literal["aware", "partial", "unaware"]
+SELF_VISIBILITY: tuple[SelfVisibility, ...] = ("aware", "partial", "unaware")
+
 SessionKey = tuple[str, str]          # (interaction_id, character_id)
 
 
@@ -98,32 +105,49 @@ SessionKey = tuple[str, str]          # (interaction_id, character_id)
 # ============================================================================
 @dataclass(frozen=True)
 class Construct:
-    """One entry of the psychology registry (心理构念登记v1)."""
+    """One construct of the psychology registry (心理构念登记v1 §4-6).
+
+    `basis` says where each derived attribute comes from (source file, section, quoted phrase).
+    None means the sources do not state it; consumers treat a None self_visibility as unaware.
+    """
     construct_id: str                       # s.* / d.* / m.*
-    value_form: str                         # e.g. "scalar", "distribution", "category", "list"
-    range: Optional[tuple[float, float]]    # None for non-numeric forms
-    tempo: Tempo
-    writer: Optional[str]                   # the one operator allowed to write it; None for stable
-    half_life: Optional[str] = None
-    self_visibility: bool = True            # False: may only reach prompts as a conditioned phrase
-    high_impact: bool = False
+    layer: Layer
+    module: str                             # e.g. "traits.personality", "relation_state"
+    section: str                            # registry section, e.g. "4.2"
+    name: str                               # registry name, e.g. "信任"
+    writer: Optional[str]                   # the one primary operator; None for stable
+    tempo: Optional[Tempo]                  # magnitude class (状态变化规则 §5.0); None: not classified
+    decay: Optional[str]                    # time rule (状态变化规则 §九); None: never decays with time
+    self_visibility: Optional[SelfVisibility]
+    high_impact: bool                       # the construct is, or contains, a high-impact field
+    basis: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class DecisionMechanism:
-    """One decision process (dm.*). It judges; it never writes state."""
+    """One decision process (dm.*, 心理构念登记v1 §7). It judges; it never writes state."""
     dm_id: str
-    options: tuple[str, ...]                # registered options a Judgment may pick
-    reads: tuple[str, ...]                  # construct ids it reads
-    hands_to: tuple[str, ...]               # operator names it hands judgments to
+    section: str                            # decision library chapter.section, e.g. "2.1"
+    name: str
+    options: tuple[str, ...]                # every option item, deduplicated; Judgment.option is one
+    option_groups: tuple[tuple[str, tuple[str, ...]], ...]   # (label or "", items) as written
+    stages: tuple[StageName, ...]           # stages whose skill lists it (skill §4.1)
+    hands_to: tuple[str, ...]               # operators its judgments go to (状态变化规则 §4 / §4.1)
+    card: bool                              # has a mechanism card (high-impact process)
+    notes: tuple[str, ...] = ()             # parts of the source text that are not options
+    basis: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class OperatorRule:
+    """One of the 11 update operators (状态变化规则v1 §5)."""
     name: str
+    section: str                            # rule card, e.g. "5.5"
     writes: tuple[str, ...]                 # construct id whitelist
-    stages: tuple[StageName, ...]           # stages allowed to call it
-    group: str                              # dependency group for atomic commit
+    stages: tuple[StageName, ...]           # stages allowed to call it (skill §4.2)
+    group: str                              # dependency group for atomic commit (§六)
+    timing: str                             # the card's 时间与优先级 text
+    basis: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -215,6 +239,10 @@ class IRegistry(Protocol):
     def mechanism(self, dm_id: str) -> DecisionMechanism: ...
 
     def operator(self, name: str) -> OperatorRule: ...
+
+    def ids(self, kind: Literal["construct", "mechanism", "operator"]) -> tuple[str, ...]:
+        """Every id of one kind, in source order. Unknown ids raise KeyError in the lookups."""
+        ...
 
 
 # ============================================================================

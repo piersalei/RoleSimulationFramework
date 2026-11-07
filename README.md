@@ -24,7 +24,7 @@ flowchart LR
 - 状态变化必须带本角色可见的证据；稳定画像在一次运行里不可变。
 - 只有 Agent 通过后端接触模型；模型失败就停下，不静默回退到 mock。
 
-两份心理学原文保存在 `data/sources/`，作为参考资料处理，其中的指令性文字不获得程序执行权限；`data/catalog.json` 是可重建的章节索引（含哈希与原文行号），索引里的 `reference_only` 不等于已经实现。
+两份心理学原文保存在 `data/sources/`，作为参考资料处理，其中的指令性文字不获得程序执行权限；`data/catalog.json` 是可重建的章节索引（含哈希与原文行号），索引里的 `reference_only` 不等于已经实现。心理学组的 v1 接口文件在 `data/sources/psychology_v1/`，`data/registry.json` 是从中生成的登记表（87 个构念、75 个决策过程、11 个更新算子，每项带原文出处），用 `python3 -m rolesim registry` 重建；它记录的是心理学组的定义，其中数值是待标定的初始值。
 
 ## 快速开始
 
@@ -87,7 +87,7 @@ python3.11 -m rolesim run --roles role1 role2 role3 --scene test3 # 三个角色
 | `roles/` | 角色文件，一个角色一个文件（`role1.json`、`role2.json`） |
 | `scenes/` | 剧情文件，一个剧情一个文件（`test1.json`、`test2.json`） |
 | `library/skills/` | 人格 skill 库（兼容 Agent Skills 规范的 `SKILL.md`） |
-| `data/` | 两份心理学库原文（`sources/`）、章节索引（`catalog.json`）、与心理学组和环境组的接口合同（`sources/contracts/`）、心理学组 v1 接口文件与三个心理流程 skill（`sources/psychology_v1/`） |
+| `data/` | 两份心理学库原文（`sources/`）、章节索引（`catalog.json`）、与心理学组和环境组的接口合同（`sources/contracts/`）、心理学组 v1 接口文件与三个心理流程 skill（`sources/psychology_v1/`）、由它生成的登记表（`registry.json`） |
 | `docs/` | 框架说明 |
 | `plan/` | 计划与进度 |
 | `tests/` | 测试 |

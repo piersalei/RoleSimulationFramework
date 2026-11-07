@@ -50,6 +50,14 @@ HTTP 测试使用本机临时回环服务器，返回固定结果。它验证传
 
 同日把对外接口改名：`AgentAdapter` → `IRoleAgent`、`EnvironmentAdapter` → `IEnvironment`（签名不变，环境组文档里仍是原名），`tests/test_interfaces.py` 加一项检查本地 `EchoEnvironment` 与 `IEnvironment` 签名一致。`python3 -m unittest discover -s tests`：**216 项通过**（Python 3.13.12）。
 
+## 2026-11-07：IRegistry（心理学登记表）
+
+新增 `rolesim/registry.py`、`data/registry.json` 和命令 `python3 -m rolesim registry`。构建从 `data/sources/psychology_v1/` 的 7 份文件抽取 87 个构念（42 stable / 42 dynamic / 3 memory）、75 个决策过程、11 个更新算子，数量与原文自述一致。另有几条结构检查：每个 dynamic / memory 构念恰有一个主写入算子，没有算子写 stable，衰减算子的写入范围就是 §九 列出的构念，各阶段 skill 引用的决策库章节都已登记。叙述性内容（依赖组、快慢变、衰减、自知程度、高影响字段、12 个决策过程的可选项断句）放在带原文引语的对照表里；引语在原文里找不到时构建失败。`interfaces.py` 的 `Construct` / `DecisionMechanism` / `OperatorRule` 按实际能抽取的内容调整了字段，`IRegistry` 加了 `ids(kind)`。
+
+`tests/test_registry.py` 25 项：文件与原文一致（含命令行生成）、数量、写入归属、阶段权限与依赖组、机制卡、可选项、带出处的抽查、查询接口与只读，以及 6 项"改动原文必须构建失败"的检查（逐项确认失败原因是预期的那一条）。`python3 -m unittest discover -s tests`（Python 3.13.12；本机没有 `python3.11`）：**241 项通过**。
+
+没覆盖：抽取结果是否符合心理学组的本意，要由他们核对 `review` 清单（5 类）和对照表；尚无任何运行时代码使用本接口（`state.OPERATORS` 仍是旧表）。
+
 ## 维护方式
 
 每次做出新的验证（测试数变化、新的模型运行、人工评审）就在这里加一节，写明日期、命令、结果、没覆盖的部分。测试数请以实际运行输出为准，上表来自计划文档的记录，不是本次重新统计。

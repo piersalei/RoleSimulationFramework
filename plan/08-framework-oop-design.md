@@ -120,6 +120,8 @@ flowchart TB
 
 这些对象把心理学组的 md 文件变成程序可查的表。**原文件不改**；另建一份机器可读的登记（建议 `data/registry/psy_v1.json`），由脚本从原文抽取、人工核对，带原文行号和哈希，和现在的 `catalog.json` 同一做法。
 
+> 2026-11-07 已实现为 `data/registry.json` + `rolesim/registry.py`。最终字段以 [plan/10 §2.2](10-interfaces.md) 为准：下面草图里的 `value_form`、`other_visibility`、`primary`、`reads`、`triggers` 等没有抽取，原因见那一节。
+
 ```python
 @dataclass(frozen=True)
 class Construct:                 # 一条构念（登记表 §4–§6）

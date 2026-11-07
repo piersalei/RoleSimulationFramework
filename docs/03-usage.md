@@ -90,6 +90,7 @@ python3.11 -m rolesim audit runs/<运行目录>                 # 重新审计�
 python3.11 -m rolesim readable runs/<运行目录>              # 重新生成 transcript.md
 python3.11 -m rolesim package runs/a runs/b --out outputs/review --seed 1   # 导出盲化评审包
 python3.11 -m rolesim catalog                               # 重建两份心理学库的章节索引
+python3.11 -m rolesim registry                              # 从心理学组 v1 文件重建 data/registry.json（构念、决策过程、算子规则）
 PYTHONPATH=. python3.11 scripts/bootstrap_examples.py       # 重建 roles/ 与 scenes/ 示例
 ```
 

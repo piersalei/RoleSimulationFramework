@@ -10,6 +10,7 @@ from .agent import MODES
 from .audit import write_report
 from .package import export_package
 from .readable import FILENAME, write_readable
+from .registry import build_registry
 from .roles import ROLES_DIR, SCENES_DIR, available, fit_cast, load_role, load_scene, run
 from .runtime import environment_agent, role_seats, run_name
 from .skills import load_library
@@ -25,6 +26,9 @@ def main():
     catalog = sub.add_parser("catalog", help="index source documents as reference data")
     catalog.add_argument("--sources", default="data/sources")
     catalog.add_argument("--out", default="data/catalog.json")
+    registry = sub.add_parser("registry", help="rebuild the psychology registry (IRegistry data) from the v1 sources")
+    registry.add_argument("--sources", default="data/sources/psychology_v1")
+    registry.add_argument("--out", default="data/registry.json")
     listing = sub.add_parser("list", help="list roles and scenes, or check one cast in one scene")
     listing.add_argument("--roles", nargs="+", help="one role id or path per seat, in seat order")
     listing.add_argument("--scene", help="scene id (scenes/<id>.json) or path")
@@ -62,6 +66,13 @@ def main():
             data = build_catalog(args.sources)
             write_json(args.out, data)
             print(f"Indexed {len(data['sections'])} reference sections; no theory was automatically enabled.")
+        elif args.command == "registry":
+            data = build_registry(args.sources)
+            write_json(args.out, data)
+            counts = ", ".join(f"{v} {k}" for k, v in data["counts"].items())
+            print(f"Registry: {counts} -> {args.out}")
+            for item in data["review"]:
+                print(f"  review: {len(item['items'])} {item['topic']}")
         elif args.command == "list":
             _list(args)
         elif args.command == "validate":
