@@ -76,6 +76,10 @@ class ChatBackend:
         self.opener = urllib.request.build_opener(*handlers)
 
     def _call(self, system, payload):
+        return self.chat(system, payload)[0]
+
+    def chat(self, system, payload):
+        """One chat-completions call: (parsed JSON content, raw content text)."""
         self.last_reasoning = None
         body = {"model": self.model, "temperature": self.sampling["temperature"], "top_p": self.sampling["top_p"],
                 "max_tokens": self.sampling["max_tokens"], "response_format": {"type": "json_object"},
@@ -99,7 +103,8 @@ class ChatBackend:
             message = data["choices"][0]["message"]
             reasoning = message.get("reasoning_content") or message.get("reasoning")
             self.last_reasoning = reasoning if isinstance(reasoning, str) and reasoning.strip() else None
-            return strict_json(_json_text(message["content"]))
+            raw_content = _json_text(message["content"])
+            return strict_json(raw_content), raw_content
         except urllib.error.HTTPError as exc:
             raise RuntimeError(f"Model API HTTP {exc.code}; response body omitted to protect credentials") from None
         except (urllib.error.URLError, TimeoutError):

@@ -93,6 +93,7 @@ flowchart TB
 | 接口 v2 | `agent_api.py` | 环境组 2026-11-07 版：`initialize` / `act` / 环境 `act` 的数据类型、双方校验、记录拆分与可见性 | 完成（[plan/08](../plan/08-framework-oop-design.md) 第 8 节） |
 | 心理学登记 | `registry.py`、`data/registry.json` | `IRegistry`：从心理学组 v1 文件生成 87 个构念、75 个决策过程、11 个算子规则（写入白名单、阶段权限、依赖组），每项带原文出处；原文改动而未重新生成时测试失败 | 完成；`review` 清单待心理学组确认 |
 | 状态写入（新） | `slots.py`、`magnitude.py`、`validator.py`、`operators.py`、`store.py` | [plan/10](../plan/10-interfaces.md) 第 4 节的 `IStateStore` / `IUpdateOperator` / `IMagnitude` / `IValidator`：状态按构念 ID 存（45 个 dynamic / memory 构念的布局），写入白名单、阶段权限、依赖组来自登记表，事件等级定幅度档、证据渠道封顶、人格敏感度移档，硬错整组拒绝、软异常标记，重试幂等 | 完成并有测试；尚未接入运行路径 |
+| 模型调用（新） | `model.py`、`schemas.py` | [plan/10](../plan/10-interfaces.md) 第 3.3 节的 `IModel`：每个阶段一次结构化调用（`ChatModel` 沿用 `ChatBackend` 的传输，`MockModel` 为离线夹具）；三个阶段的输出 schema 由登记表生成，解析成产物、判断和变化提议，不合 schema 或登记表即整阶段失败 | 完成并有测试；尚未接入运行路径 |
 | 关键接口 | `interfaces.py` | [plan/10](../plan/10-interfaces.md) 的 4 个顶层接口与子接口：Protocol 签名、数据类型（产物、画像、状态、变化不可变）及其最基本的不变量检查 | 只有契约，尚无按这些接口的实现（`adapter.py` 满足 `IRoleAgent`） |
 | 角色适配器 | `adapter.py` | 把 `Agent` 放到 `initialize` / `act` 后面；`interaction_id + character_id` 路由、记录转事件、请求幂等、中途到场建关系 | 完成；只出台词，无思考与外显行动 |
 | 本地参考运行器 | `loop.py` | 按接口 v2 跑一场：先 initialize，再轮流 act，运行器保存观察记录；环境用 `EchoEnvironment` 替身 | 完成；不生成审计报告 |

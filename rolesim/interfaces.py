@@ -27,7 +27,7 @@ from .agent_api import (AgentActionContent, CharacterBootstrap, IEnvironment, In
 
 __all__ = [
     # errors
-    "InterfaceError", "AgentCallError", "StageError",
+    "InterfaceError", "AgentCallError", "StageError", "ModelError",
     # vocabularies
     "STAGES", "CHANNELS", "SOURCE_KINDS", "TEMPOS", "BANDS", "JUDGMENT_STATES", "PHASE_KINDS",
     "OPERATOR_NAMES", "LAYERS", "SELF_VISIBILITY", "STAGE_OF_KIND", "STATUSES", "UNWRITABLE",
@@ -55,6 +55,10 @@ class AgentCallError(RuntimeError):
 
 class StageError(RuntimeError):
     """A stage failed (e.g. model output breaks the schema); it produces no proposals."""
+
+
+class ModelError(RuntimeError):
+    """A model call failed or its output breaks the requested schema. Never answered by a mock."""
 
 
 # -- vocabularies ------------------------------------------------------------
@@ -470,11 +474,18 @@ class IMechanism(Protocol):
 
 @dataclass(frozen=True)
 class PromptView:
-    """All a model call may see: self-known profile, visible records, state text, upstream."""
+    """All a model call may see: self-known profile, visible records, state text, upstream.
+
+    `task` is program-built, from the registry: the decision processes this stage may call
+    (with their options) and the constructs it may propose changes to (with their fields).
+    """
     self_profile: Mapping[str, str]         # not-self-visible fields already turned into phrases
     records: tuple[InteractionRecord, ...]
     state_text: str
     upstream: Mapping[str, Any] = field(default_factory=dict)
+    self_id: str = ""
+    present: Mapping[str, Any] = field(default_factory=dict)
+    task: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -66,6 +66,14 @@ HTTP 测试使用本机临时回环服务器，返回固定结果。它验证传
 
 没覆盖：新状态写入尚未接入运行路径（`Agent.step` 仍用旧的 `state.commit_phase`）；跨阶段累计上限、习惯化、按时间衰减等场景时间单位（F3）；"含对方真实隐状态"本方无法检查；数值都是心理学组的初始值，未标定。
 
+## 2026-11-07：通用 IModel 与三个阶段的输出 schema
+
+新增 `rolesim/schemas.py`（三个阶段的输出 schema：产物 + 判断 + 变化提议，S1 另有转述标注；judgments 的 dm_id、proposals 的 construct_id 按登记表限定在本阶段可用的范围；一个 JSON schema 子集校验器；把输出解析成产物、`Judgment`、`ChangeProposal` 的 `parse_output`）和 `rolesim/model.py`（`ChatModel`：每阶段一次调用，沿用 `ChatBackend` 的传输，本地按 schema 校验，失败抛 `ModelError`，不回退 mock；`MockModel`：离线夹具）。`ChatBackend` 拆出 `chat()`（同时返回原文），旧的 appraise / decide / express 不变。`PromptView` 加 self_id、present、task。
+
+`tests/test_model.py` 15 项：校验器、schema 与登记表一致（各阶段的过程、可写构念；S3 的情绪只能经衰减写）、task 数据、三个阶段的夹具输出都能解析成产物、各种违规整阶段失败（超出 schema、不在本阶段的过程、未登记的可选项、提议依据未判断的过程、选了被筛掉的候选、转述不写命题、证据升级、引用看不到的记录）、夹具三个阶段的提议进真实的 `ConstructStore` 全部接受且无软异常、`ChatModel` 用假传输和本地 HTTP 服务各测一遍。另做了 3 处变异检查（关掉可选项检查、关掉"提议须依据本阶段判断"、允许证据升级），对应测试都会失败。`python3 -m unittest discover -s tests`（Python 3.13.12）：**291 项通过**。
+
+没覆盖：真实模型能否稳定给出合 schema 的输出（没有跑真实模型）；结构化解码未接；新模型调用尚未接入运行路径。
+
 ## 维护方式
 
 每次做出新的验证（测试数变化、新的模型运行、人工评审）就在这里加一节，写明日期、命令、结果、没覆盖的部分。测试数请以实际运行输出为准，上表来自计划文档的记录，不是本次重新统计。

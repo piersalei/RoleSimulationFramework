@@ -197,7 +197,7 @@ class IMechanism(Protocol):
 
 没有写权限。可以由规则实现，也可以由模型实现（在 `IModel` 调用里作为检查项）。`option` 不在登记表里即拒绝。
 
-### 3.3 `IModel`：结构化模型调用
+### 3.3 `IModel`：结构化模型调用（已实现）
 
 ```python
 class IModel(Protocol):
@@ -206,10 +206,17 @@ class IModel(Protocol):
 
 | 类型 | 关键字段 |
 |---|---|
-| `PromptView` | 只含本角色自知层的画像（不能自知的字段已转成条件化语句）、可见记录、当前状态的文字描述、上游产物 |
+| `PromptView` | 只含本角色自知层的画像（不能自知的字段已转成条件化语句）、可见记录、当前状态的文字描述、上游产物；self_id、present（在场者）、task（程序按登记表生成：本阶段可调用的决策过程及其可选项、可提议修改的构念及字段、事件等级说明） |
 | `ModelResult` | output（符合 schema 的 dict）、raw、reasoning |
 
-每个阶段一次调用。证据集、心理理论上限、幅度区间、版本号由程序填，不进 schema。失败即抛错，不回退 mock。
+每个阶段一次调用。证据集、心理理论上限、幅度区间、版本号由程序填，不进 schema。失败即抛错（`ModelError`），不回退 mock。
+
+| | 内容 |
+|---|---|
+| 实现 | `rolesim/model.py`：`ChatModel`（沿用 `providers.ChatBackend` 的传输，每个阶段一段系统提示，载荷是 PromptView + task + output_schema，回复在本地按 schema 校验）、`MockModel`（离线夹具，三个阶段都给出合 schema、合登记表的输出，提议只新建条目，不碰需要当前数值的幅度档；内容不是心理学证据） |
+| 输出 schema | `rolesim/schemas.py` `stage_schema(stage, registry)`：product（三个产物各自的必备字段）、judgments（dm_id 只能是本阶段可调用的过程）、proposals（construct_id 只能是本阶段有算子可写的构念）；S1 另有 evidence_notes（哪些记录的内容是转述 / 推断） |
+| 解析 | `parse_output(stage, output, registry, evidence) -> StageOutput`：先按 schema 校验，再查登记表（option 必须是该过程的可选项；提议依据的过程必须在本阶段判断过；转述必须写出被转述的命题；证据只能降级，不能把转述升成亲见），任何一条不满足 → `StageError`，整阶段不产生提议。judgments 的 hands_to 由登记表填 |
+| 还没做 | 结构化解码（服务端按 schema 约束生成）没有接，现在用 `json_object` + 本地校验；task 数据每阶段约 8—14K 字符，以后可按需裁剪 |
 
 ### 3.4 `IExpresser`：行动计划 → 对外行动内容
 
@@ -311,7 +318,7 @@ IRoleAgent.act
 | 　S3 | ✗ | 无 | 整个阶段：预期对实际、承诺裁定、关系走向、学习归因 |
 | 3.1 IEvidenceGate | ◐ | 分散在 `adapter._unseen`（去掉他人思考）、`Agent._ingest`（去掉不在受众里的）、`memory.recall`（取回记忆） | 合成一个 `EvidenceSet`；记录每条证据的渠道（亲见 / 听说 / 推断…）和被排除的原因 |
 | 3.2 IMechanism | ◐ | `mechanisms.py` 5 张卡（verify / appraise / trust / repair / boundary），标为未校准的工程假设 | 统一输出 `Judgment`；其余决策过程。每个过程的输出字段要等 F2 |
-| 3.3 IModel | ◐ | `providers.ChatBackend` / `MockBackend`，固定三个方法 appraise / decide / express | 改成通用的 `complete(stage, view, schema)`；mock 要能给三个阶段产出合规的产物 |
+| 3.3 IModel | ✅ | `model.ChatModel` / `model.MockModel`，输出 schema 与解析在 `schemas.py` | 旧的 `ChatBackend.appraise / decide / express` 仍供 `Agent.step` 使用（第 5 步替换）；结构化解码未接 |
 | 3.4 IExpresser | ◐ | `Agent._express_payload` + `backend.express`，已做按需可见过滤 | 输入换成 `ActionPlan`；产出思考（只给本人）和外显行动 |
 | **4 IStateStore** | ✅ | `store.ConstructStore` + `slots.py` | 尚未接入运行路径：旧的 `Agent.step` 仍用 `state.commit_phase`（第 5 步替换）；跨阶段累计上限、习惯化、按时间衰减要等场景时间单位（F3） |
 | 4.1 IUpdateOperator | ✅ | `operators.Operator`（11 个，规则来自登记表） | 规则卡里要判断事件的部分（情绪方向、习惯化）由阶段提出、验证器检查，不在算子里计算 |
@@ -337,7 +344,7 @@ F1—F5（见 [09 §7](09-interface-and-field-spec.md)）：〔工程〕结构�
 
 1. ~~`IRegistry`：抽取脚本 + 只读查询。其余接口都要查它。~~ 已完成（2026-11-07）。
 2. ~~`IStateStore` + `IUpdateOperator` + `IValidator` + `IMagnitude`：状态改成按构念 ID，按登记表做权限和区间。~~ 已完成（2026-11-07），尚未接入运行路径。
-3. `IModel` 通用化，mock 能产出三个阶段的合规产物。
+3. ~~`IModel` 通用化，mock 能产出三个阶段的合规产物。~~ 已完成（2026-11-07），尚未接入运行路径。
 4. `IEvidenceGate` + 三个 `IStage` + `IExpresser`。
 5. `ITurnRunner` 替换 `Agent.step`；`ITrace` 自己落盘。
 6. `IRoleRepository` / `IProfileCompiler`：入场状态和档案编译。
