@@ -3,37 +3,37 @@
 本文按"接口在外、实现在内"的思路，说明角色 Agent 对外暴露什么、内部持有什么属性。目的是让维护者只需要关注**接口边界**：边界以内的实现可以替换，边界以外的运行器不受影响。
 
 - 协议原文（环境组，2026-11-07）：[Agent接口说明_环境组_2026-11-07.md](../data/sources/contracts/Agent接口说明_环境组_2026-11-07.md)。它取代了此前的 [Agent接口定义_v1.md](../data/sources/contracts/Agent接口定义_v1.md)（act / perceive / 认知五字段），本仓库称新版为**接口 v2**
-- 可执行定义：[rolesim/agent_api.py](../rolesim/agent_api.py)
+- 可执行定义：[rolesim/agent_api.py](../rolesim/agent_api.py)；我们内部各接口的契约：[rolesim/interfaces.py](../rolesim/interfaces.py)、[plan/10](../plan/10-interfaces.md)
 - 与 v1、与框架设计的差异及对齐结果：[plan/08](../plan/08-framework-oop-design.md) 第 8 节；早先的对接记录：[plan/07](../plan/07-agent-adapter-integration.md)
 - 证据层级：本文是工程对接说明（本地工程检查），不涉及任何心理机制有效性的结论。
 
 ## 1. 分层与职责
 
 ```
-┌──────────────────────────────────────────────┐
-│ 运行器 / 环境（环境组；本地参考实现 loop.py）│  导演调度、在场范围、行动校验、接收范围解析、
-│                                              │  生成记录、保存每个角色的观察记录
-└───────────────┬──────────────────────────────┘
+┌───────────────────────────────────────────────────┐
+│ 运行器 / 环境（环境组；本地参考实现 loop.py）      │  导演调度、在场范围、行动校验、接收范围解析、
+│                                                   │  生成记录、保存每个角色的观察记录
+└───────────────┬───────────────────────────────────┘
                 │  只依赖 Protocol：IRoleAgent / IEnvironment
-┌───────────────▼──────────────────────────────┐
-│ 接口层  agent_api.py                         │  数据类型、双向校验、split / visible
-└───────────────┬──────────────────────────────┘
-┌───────────────▼──────────────────────────────┐
-│ 适配层  adapter.py  RoleAgentAdapter         │  interaction_id + character_id 路由、
-│                                              │  每角色每互动一个 Session、request_id 幂等、
-│                                              │  串行加锁、记录→Event 转换
-└───────────────┬──────────────────────────────┘
-┌───────────────▼──────────────────────────────┐
-│ 实现层  agent.py  Agent                      │  评价→机制卡→决策→表达→提交状态快照
-└───────────────┬──────────────────────────────┘
-                │  persona（稳定属性） + state（动态状态）
+┌───────────────▼───────────────────────────────────┐
+│ 接口层  agent_api.py                              │  数据类型、双向校验、split / visible
+└───────────────┬───────────────────────────────────┘
+┌───────────────▼───────────────────────────────────┐
+│ 公共层  adapter.py  RoleAgentBase                 │  interaction_id + character_id 路由、选角色、
+│                                                   │  每角色每互动一个 Session、request_id 幂等、串行
+└───────────────┬───────────────────────────────────┘
+┌───────────────▼───────────────────────────────────┐
+│ 实现    staged.py  StagedRoleAgent                │  入场（IRoleRepository）→ ITurnRunner：
+│                                                   │  S1 / S3 / S2 → IStateStore → IExpresser
+└───────────────┬───────────────────────────────────┘
+                │  稳定画像（StableProfile） + 动态状态（AgentState）
 ```
 
 | | 运行器 / 环境 | 角色 Agent |
 |---|---|---|
 | 导演调度、谁行动、在场范围 | ✔ | |
 | 行动校验、接收范围解析、生成记录 | ✔ | |
-| 保存每个角色的观察记录 | ✔ | 内部另存完整心理状态，不交给运行器 |
+| 保存每个角色的观察记录 | ✔ | 内部另存完整心理状态与轨迹，不交给运行器 |
 | 角色初始化、思考、发言、外显行动 | | ✔ `IRoleAgent.initialize / act` |
 | 环境反应（广播、电话、声音） | ✔ `IEnvironment.act` | |
 
@@ -73,7 +73,7 @@ class IEnvironment(Protocol):    # 环境组实现（环境组：EnvironmentAdap
 | `relationships` | `list[str]` | 关系句 |
 | `history_memory` | `str \| null` | 互动前实际经历或获知的内容 |
 | `personality` | `dict` | 分支指定的人格配置；可选 `role_ref`：角色文件 ID（与 `character_id` 不同时才需要） |
-| `mechanism` | `dict` | 分支指定的行动机制配置；可选 `mode`：消融档位（`profile_only` / `profile_state` / `profile_state_mechanisms`），可选 `enable_config`：启用配置 ID（先记录，未生效） |
+| `mechanism` | `dict` | 分支指定的行动机制配置；可选 `mode`：消融模式（`profile_only` / `profile_state` / `profile_state_mechanisms`），可选 `enable_config`：启用配置 ID（先记录，未生效） |
 
 **`CharacterTurnInput`**（`act` 传入）：`bootstrap`（恒为 null）、`observations`（本角色看到过的全部记录，按发生顺序）、`present_characters`（`{角色ID: {name}}`，当前在场者）。
 
@@ -117,97 +117,98 @@ class IEnvironment(Protocol):    # 环境组实现（环境组：EnvironmentAdap
 4. 原文允许思考发给别人；我们自己的思考只发给本人。若运行器把别人的思考放进我们的观察记录，不吸收、不进任何提示，只记告警。
 5. 同一 `request_id` 重发返回第一次的结果；同一个 id 配不同输入会被拒绝；出错时抛异常且不记入缓存，可以重来。重复 `initialize` 同一份资料无副作用，资料不同则拒绝。
 
-## 3. 适配层（`adapter.py`）
+## 3. 实现：`StagedRoleAgent`（`staged.py`）
 
-`RoleAgentAdapter(roles, backend, mode, use_skills, appraise_state, allowed_actions)`：
+`StagedRoleAgent(roles, registry, model, trace=None, repository=None, store=None, mode="profile_state_mechanisms", use_skills=True)` 是 `IRoleAgent` 的唯一实现，继承 `adapter.RoleAgentBase`。
 
-- **选角色**：依次看 `bootstrap.personality.role_ref`、`character_id` 是否为角色库（`roles/`）里的 ID、`name` 是否匹配档案名。同一互动里一个角色文件只能对应一个角色 ID。
-- **消融档位**：`bootstrap.mechanism.mode` 给出时，该角色在该互动里用这个档位，否则用适配器的默认档位。
-- **Session**：每个 `(interaction_id, character_id)` 一个，保存 bootstrap、`Agent`（第一次 `act` 时建立，此时才知道在场者）、已吸收的记录编号 `seen`、已选动作 `moves` 和告警。
-- **在场变化**：新到场的角色在第一次相遇时建立关系状态；离场的角色仍保留在已知角色里，只是不再出现在接收者中。
-- **记录转 Event**：未吸收的记录转成环境合同里的 `Event`，`event_id` 取 `record_id`，可见范围由行动者加接收者得出；覆盖本人和全部已知角色为 `public`，否则 `private`。思考一律不吸收。
-- **act 流程**：校验 → 准备 Agent → 补入未吸收的记录（包括自己上一轮的发言）→ `Agent.step` → 返回 `{thought: null, speech: {内容, recipient_ids: null}, action: null, order: ["speech"]}`。
-- `Agent` 失败时抛 `AgentCallError`，已标记为见过的记录会撤销，重试时可再次吸收。
-- **并发**：所有模型调用共用一把锁，在 `asyncio.to_thread` 里串行执行。
-- **审计**：每次成功的 `act` 在 `adapter.log` 追加一条，含路由键、评价、控制层输入、决策、状态变化、返回结果。
+**公共层（`RoleAgentBase`）**
 
-### 3.1 另一个实现：`StagedRoleAgent`（`staged.py`）
+- **选角色**：依次看 `bootstrap.personality.role_ref`、`character_id` 是否为角色库（`roles/`）里的 ID、`name` 是否匹配角色名。同一互动里一个角色文件只能对应一个角色 ID。
+- **Session**：每个 `(interaction_id, character_id)` 一个，保存 bootstrap、消融模式、`enable_config`（只记录）、已吸收的记录编号 `seen` 和告警。
+- **幂等与并发**：同一 `request_id` 返回第一次的结果；所有模型调用共用一把锁，在 `asyncio.to_thread` 里串行执行。
 
-与 `RoleAgentAdapter` 共用 `RoleAgentBase`（选角色、Session、`request_id` 重试、串行），内部换成新的分阶段管线（[06-runtime-flow.md](06-runtime-flow.md) 第 13 节）：第一次 `act` 时从角色文件和 bootstrap 入场；每次 `act` 把未吸收的记录交给 `TurnRunner`；返回的内容可以同时有 `thought`（只发给本人）、`speech`、`action`，接收者来自计划的受众（没写即在场所有人）。阶段失败抛 `AgentCallError`，已提交的阶段保留，换 `request_id` 重试时接着做。还没有消融档位。
+**`StagedRoleAgent` 自己做的**
+
+- **第一次 `act` 时入场**（此时才知道在场者）：`IRoleRepository.load`（`profiles/<id>.json`，没有则转换角色文件，由 `IProfileCompiler` 编译）→ `enter`（档案入场状态 → 开场设定的目标与前情 → bootstrap 的总体目标与此前经历 → 角色状态说明 §8.2 的默认值）→ 取绑定的人格 skill 与开场设定 → `ITurnRunner.begin`。
+- **每次 `act`**：只把没吸收过的记录交给 `ITurnRunner.run(key, 新记录, 在场者)`；别人的思考即使出现在观察记录里也不吸收，只记告警。一次行动内部的阶段顺序见 [06-runtime-flow.md](06-runtime-flow.md) 第 2 节。
+- **返回**：`{thought, speech, action, order}`。思考只发给本人；发言和动作发给 S2 计划里的受众（没写即当前全部在场者）。不返回任何内部状态。
+- **消融模式**：`bootstrap.mechanism.mode` 给出时，该角色在该互动里用这个模式，否则用构造时的默认模式；不认识的模式抛 `InterfaceError`。模式只决定提示和输出 schema，状态在三种模式下都照常提议、校验、写入和记录：
+
+| 模式（`interfaces.MODES`） | 提示里的动态状态与感受 | 决策过程判断 |
+|---|---|---|
+| `profile_only` | 没有 | 没有（schema 限 0 条） |
+| `profile_state` | 有 | 没有 |
+| `profile_state_mechanisms`（默认） | 有 | 有 |
+
+- **失败**：阶段或模型出错抛 `AgentCallError`；已提交的阶段保留，这次的新记录不标为已吸收；换一个 `request_id` 重试时从待做的反馈 / 计划接着做，不重复已提交的阶段。
+- **记录**：每次成功的 `act` 在 `agent.log` 追加一条（路由键、吸收的记录编号、状态 ID、返回内容）；完整的阶段记录和模型调用由 `ITrace` 写到 `trace/<interaction_id>/<character_id>/`。
+- **在场变化**：在场者随每次 `act` 传入；计划的受众只能是在场者。与某个角色的关系、对他的他人模型都按角色 ID 存，只由阶段按可见证据提议写入，入场时不预设（bootstrap 的关系句只进情境背景）。
 
 ## 4. 智能体属性
 
-运行器只看到我们返回的行动内容；稳定属性和动态状态都留在内部。接口 v2 不再回传认知摘要，原来的 `cognition.py` 已删除。
+运行器只看到我们返回的行动内容；稳定画像和动态状态都留在内部。接口 v2 不回传认知摘要。
 
-### 4.1 稳定属性（`persona.py`，schema 2.0）
+### 4.1 稳定画像（`StableProfile`，`profile.py`）
 
-整场互动内不可变：`Agent` 在每次调用时检查，档案变化会直接报错。
+来源是 `profiles/<id>.json`（profile-1 档案）；没有档案时由 `profile.profile_from_role` 把角色文件（persona 2.0，见 [04-authoring.md](04-authoring.md)）转换过来，再由 `ProfileCompiler` 编译。
 
-| 顶层字段 | 内容 |
-|---|---|
-| `id`、`name`、`public_description`、`self_view` | 标识、对外描述、角色自视 |
-| `stable.identity` | `demographics`、`social_roles`、`resources`、`life_history` |
-| `stable.traits` | `personality`（P1：30 个 facet，取值 -2 到 2）、`attachment`、`motivation_baseline`、`affective_capacities`、`cognitive_style` 等 8 个子对象 |
-| `stable.values` | `schwartz_priorities`（19 个价值权重，和为 1）、`investment` 等 |
-| `stable.core_goals` | 1 到 3 个主要目标，各带优先级、稳定性、至多 2 个子目标 |
-| `stable.speech_style` | `baseline.directness`、`situational_rules` |
-| `stable.mechanism_priors` | 各机制卡的先验权重 |
-| `stable.module_status` | 每个稳定模块的状态：active / unknown / not_modeled / disabled |
-| `provenance` | 每个 active 模块的来源、赋值方式、置信度 |
+- 按稳定构念 ID（`s.*`）组织，每项是一个 `StableModule`：取值、状态（`active` / `unknown` / `inactive` / `disabled` / `not_modeled` / `not_applicable`）、来源类型（`explicit` / `inferred` / `model_inferred` / `default` / `unknown`）、置信度、是否待审核、原文依据、条件化语句及其理由。
+- 缺失的测量是 `unknown`，不用中性数字代替；模型推断的项必须带原文引用，并进入待审核清单（`rolesim profile ROLE` 列出）。
+- **整场不变**：状态里只记画像快照 ID；任何写稳定构念的提议都以硬错 `writes_stable` 拒绝；审计复核快照 ID 不变。
+- **自知层**：提示里只放登记表标为能自知 / 部分自知的模块；不能自知的模块只以条件化语句出现在"说不出来、但会影响你的倾向"里，不带名字和数值。
 
-缺失的测量是 unknown（null），不用中性数字代替。`compile_views()` 从同一份档案编译出四个视图，做到按需可见：`system_truth`（完整，仅系统）、`role_self`（角色自己）、`other_visible`（别人能看到的公开描述）、`controller_only`（控制层的条件规则、需求、价值、目标）。
+### 4.2 动态状态（`AgentState`，`IStateStore`）
 
-### 4.2 动态状态（`state.py`，state-v1）
+- 按构念 ID 存：42 个动态构念（`d.*`）和 3 个记忆构念（`m.*`），布局见 `slots.py`；入场状态的 ID 为 `{角色ID}@entry`，之后每次提交形如 `{角色ID}@{事件}#{序号}.{类型}`，前后相连成状态链。
+- 唯一的写入口是 `ConstructStore.commit`：阶段的提议 → 登记表授权的算子 → 幅度档 → 验证 → 按依赖组原子提交。每条变化记下变化前后的值、证据（记录编号）、依据的决策过程、幅度档和软异常；越界一律拒绝，不截断。
+- 动态状态只能由本角色可见的证据更新（证据门：本人行动或被明确发送的记录；别人的思考、本人的思考、没发给自己的记录都排除）。
 
-六个域：`affect_state`、`cognition_state`、`goal_state`、`relation_state`、`group_state`、`policy_state`。由 11 个更新算子（情绪更新、信念修正、他人模型、关系更新等）改写，每个算子只能写指定路径。每条变化都记录 `path`、`before`、`after`、`evidence`（事件 ID）、`mechanism`、`reason`；数值越界一律拒绝，不截断。每次调用提交一个快照，`state_id` 形如 `{角色ID}@t003`，快照串成状态链并可回放。动态状态只能由角色可见的证据更新。
+### 4.3 开场设定与人格 skill
 
-## 5. 实现层内部流程（`agent.py`）
+- **开场设定**（角色文件的 `setup`，`briefing.py` 校验）：互动目标写成当前目标 `g-setup`，前情写成入场记忆；S1 / S2 / S3 看得到全部内容（包括不打算说出口的事和打算怎么不说），表达调用只看到目标和可以说出的部分。
+- **人格 skill**（角色文件的 `skills`，库在 `library/skills/*/SKILL.md`）：S2 看到全部绑定 skill 的名称与说明，以及被 S1 的线索或开场设定激活的至多 3 个 skill 的决策要点和不会做的事；表达调用拿到被激活 skill 的表达要点。`use_skills=False`（命令行 `--no-skills`）时 skill 留在记录里，不进任何提示。
 
-`Agent(backend, allowed_actions, others, mode, skills, briefing, seat, appraise_state)`
+隔离原则：S1 / S2 / S3 和表达的提示都不含他人的任何状态、思考和开场设定，也不含 `world_private`；表达调用另外看不到状态数值、构念与过程 ID、其他候选、假设和不打算说的事。
 
-- `begin(profile)`：校验并载入稳定档案，建立初始状态；适配器在角色第一次 `act`（在场名单已知）时调用。
-- `meet(role_id, title)`：中途新到场的角色在第一次相遇时建立关系状态（与开场时同样的工程初值），记入状态日志。
-- `step`（对应 `act`）：吸收新事件 → 若事件没有环境线索，由模型自己评价（`backend.appraise`）→ 机制卡把线索转为状态变化 → 选卡 → 决策（`backend.decide`，在动作词表里选一个）→ 表达（`backend.express`，生成台词，上限 600 字）→ 提交状态快照。
-- `perceive`：吸收新事件 → 提交快照。只在环境合同 v0 的 `run_dialogue` 流程里使用；接口 v2 没有 perceive。
-- 模式 `MODES`：`profile_only`（提示词里不出现状态）、`profile_state`（出现状态摘要）、`profile_state_mechanisms`（再加机制卡）。状态在三档下都计算并记录，模式只决定提示词内容。
-- 动作词表（`vocab.py`）：`request_evidence`、`ask_clarification`、`propose_plan`、`set_boundary`、`wait`、`agree`、`close`。线索词表：`uncertainty`、`pressure`、`commitment`、`repair`、`conflict`。
-- Agent 与适配器之间沿用环境合同 v0 的数据类（`contract.py`：`Event`、`StepRequest` / `StepResponse`、`PerceiveRequest` / `PerceiveResponse`）。这一层是内部接口，不对运行器暴露。
-
-隔离原则：控制层和表达层的提示词不含他人隐藏心理、`world_private`、机制名或状态数值；表达层只拿到角色口吻的状态描述。
-
-## 6. 本地参考运行器（`loop.py`）
+## 5. 本地参考运行器（`loop.py`）
 
 按环境组接口实现的参考运行器，供离线联调和回归测试使用：
 
-- `LocalRunner(episode, agents, environment, on_call, interaction_id)`：先对每个角色 `initialize` 一次；每轮先处理导演指令（调环境、拆分、按接收者写进各角色的观察记录），再让当前角色 `act`，拆分后同样写进观察记录。不调用任何 perceive。
+- `LocalRunner(episode, agents, environment, on_call, interaction_id, mode)`：先对每个角色 `initialize` 一次；每轮先处理导演指令（调环境、拆分、按接收者写进各角色的观察记录），再让当前角色 `act`，拆分后同样写进观察记录。不调用任何 perceive。跑满剧情文件的 `max_turns`。
 - `EchoEnvironment`：环境桩，把导演指令原样当作环境的 action 输出，可限定接收者。
-- `episode()` 从角色文件和场景生成运行输入，`character_id` 取角色文件 ID；`bootstrap()` 生成每个角色的初始化资料（`mechanism.mode` 为本次运行的档位）；场景的环境规则变成导演指令；不读 `world_private`。
-- `run_agent_api()`：落盘到运行目录：`manifest.json`（含 `interaction_id`）、`records.jsonl`（全部记录）、`calls.jsonl`（每次调用的完整输入输出，含 initialize）、`roles/<角色>/audit.jsonl`、`states.jsonl`、`mechanism_log.jsonl`、`transcript.md`。
+- `episode()` 从角色文件和场景生成运行输入，`character_id` 取角色文件 ID；`bootstrap()` 生成每个角色的初始化资料（`mechanism.mode` 为本次运行的模式）；场景的环境规则变成导演指令；不读 `world_private`。
+- `run_scene()`：把 `StagedRoleAgent` 放到这个运行器后面，写出运行目录（文件清单见 [06-runtime-flow.md](06-runtime-flow.md) 第 5 节），结束时写自动审计和 `transcript.md`。
 
 ```bash
-python3.11 -m rolesim run --roles role1 role2 role3 --scene test3 --interface agent-api
+python3.11 -m rolesim run --roles role1 role2 role3 --scene test3
 ```
 
 （具体参数见 [03-usage.md](03-usage.md)。）
 
-## 7. 现在的限制与待定
+## 6. 现在的限制与待定
 
 | 项 | 现状 |
 |---|---|
-| 输出形态 | 旧管线只出发言（`thought`、`action` 恒为 null）；新管线（`StagedRoleAgent`）可出思考、发言、动作 |
+| 输出形态 | 思考（只给本人）、发言、动作，接收者来自 S2 计划的受众 |
 | 感知时机 | 没有 perceive，别人的言行要等本角色下次行动时才评价；中间不行动的角色状态不变（已确认接受） |
 | `personality` / `mechanism` | 读 `role_ref`、`mode`；`enable_config` 只记录 |
 | 跨互动 | 每场互动从角色库的入场状态开始，不延续上一场的动态状态和记忆 |
-| `core_goals` | 作为本次互动的总体目标写进情境背景文本，不写入稳定画像的 `core_goals` |
+| `core_goals` | 写成本次互动的当前目标 `g-entry`（优先级取中性默认值 0.5），也进情境背景；不写入稳定画像的核心目标 |
 | 并发 | 模型调用全局串行 |
-| 结束对话 | 接口没有这个信号，本地运行器读 `adapter.closed_by(interaction_id)` |
-| 审计与打包 | `agent-api` 运行目录暂不能用 `audit_report` 和 `rolesim package` |
-| 环境线索 | 接口没有 `signals`，角色一律自评线索 |
+| 结束对话 | 接口没有这个信号，分阶段管线也没有"结束这次沟通"的动作；本地运行跑满 `max_turns` |
+| 环境线索 | 接口没有 `signals`；S1 自己给出线索强度（压力、不确定、承诺、修复、冲突，0—1），只用来激活人格 skill |
+| 审计与打包 | 只认分阶段的运行目录（`manifest.pipeline == "stages"`）：`rolesim audit` / `package` / `readable` |
 | 待环境组确认 | 见 [plan/08](../plan/08-framework-oop-design.md) 第 8.1 节 |
 
-## 8. 测试
+## 7. 测试
 
-`tests/test_agent_api.py` 覆盖类型和校验、`split` / `visible`；`tests/test_adapter.py` 覆盖初始化路由、未初始化即行动被拒、输出只有行动内容、幂等、自己的记录下次吸收、他人思考不进提示、状态变化可追溯到记录、新到场角色建立关系、互动之间隔离、失败可重试、私有事件只到指定角色、`world_private` 不外泄。运行：
+- `tests/test_agent_api.py`：类型和校验、`split` / `visible`。
+- `tests/test_runner.py`：每个记录组一次事件阶段、反馈只来自计划的受众且每个计划一次、已吸收的记录跳过、计划被拒重做、失败后接着做、会话按互动与角色分开、返回内容合规、别人的思考丢弃、阶段失败可重试、`world_private` 不外泄、私有的环境事件只进接收者的提示、命令行。
+- `tests/test_ports.py`：开场设定入场与隔离、skill 进计划与表达、`--no-skills`、三种模式对提示的影响、按角色的模式、初始化路由、未初始化即行动被拒、互动之间隔离。
+- `tests/test_offline.py`：运行目录的自动审计（篡改后能查出：提示泄露场景私有数据或别人的隐瞒条目、证据不可见、稳定画像变化、隐瞒条目进表达、表达里有系统 ID、状态链断开）、评审包、可读版。
+- `tests/test_interfaces.py`：`StagedRoleAgent` 与本地环境符合 Protocol。
+
+运行：
 
 ```bash
 python3.11 -m unittest discover -s tests -v

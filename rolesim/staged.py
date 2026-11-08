@@ -9,7 +9,8 @@ the runner ever shows one, is dropped with a warning. The result is the full tho
 action content of IExpresser; nothing about the internal state is returned.
 
 Character ids are role-library ids (the same in every interaction), so relation state is keyed
-by character id directly. mechanism.mode (ablation modes) is not supported by this pipeline yet.
+by character id directly. mechanism.mode picks the ablation mode per character (interfaces.MODES);
+the role's opening setup and bound persona skills come from the repository.
 """
 import copy
 
@@ -18,7 +19,7 @@ from .agent_api import MODE, InterfaceError, record_id
 from .profile import ProfileCompiler
 from .repository import ProfileRepository
 from .expresser import ModelExpresser
-from .interfaces import AgentCallError, ModelError, StageError
+from .interfaces import FULL_MODE, MODES, AgentCallError, ModelError, StageError
 from .runner import TurnRunner
 from .stages import model_stages
 from .store import ConstructStore
@@ -28,9 +29,14 @@ from .trace import MemoryTrace
 class StagedRoleAgent(RoleAgentBase):
     """IRoleAgent: evidence gate -> S1 / S3 / S2 -> store -> expression, per act."""
 
-    def __init__(self, roles, registry, model, trace=None, repository=None, store=None):
-        self._setup(roles, None)
-        self.registry, self.model = registry, model
+    def __init__(self, roles, registry, model, trace=None, repository=None, store=None, mode=FULL_MODE,
+                 use_skills=True):
+        """`mode` is the default ablation mode (a bootstrap's mechanism.mode overrides it per
+        character); `use_skills` False keeps the skills on record but out of every prompt."""
+        if mode not in MODES:
+            raise ValueError(f"unknown mode: {mode}")
+        self._setup(roles, mode)
+        self.registry, self.model, self.use_skills = registry, model, bool(use_skills)
         self.trace = trace if trace is not None else MemoryTrace()
         self.repository = repository or ProfileRepository(registry, ProfileCompiler(registry, model), roles)
         self.store = store or ConstructStore(registry)
@@ -38,9 +44,9 @@ class StagedRoleAgent(RoleAgentBase):
                                  ModelExpresser(registry, model, self.trace), self.trace)
 
     def _check_mode(self, mode):
-        if mode is not None:
-            raise InterfaceError(f"bootstrap.mechanism.{MODE}: the staged pipeline has no ablation modes yet")
-        return None
+        if mode not in MODES:
+            raise InterfaceError(f"bootstrap.mechanism.{MODE}: unknown mode {mode!r}; one of {list(MODES)}")
+        return mode
 
     def _begin(self, session):
         key = (session.interaction_id, session.character_id)
@@ -48,7 +54,9 @@ class StagedRoleAgent(RoleAgentBase):
             return key
         profile = self.repository.load(session.role_id)
         state = self.repository.enter(profile, session.bootstrap)
-        self.runner.begin(key, state, profile, self.repository.background(session.role_id, session.bootstrap))
+        skills = self.repository.skills(session.role_id) if self.use_skills else []
+        self.runner.begin(key, state, profile, self.repository.background(session.role_id, session.bootstrap),
+                          session.mode, tuple(skills), self.repository.setup(session.role_id))
         return key
 
     def _act(self, session, context, request_id):

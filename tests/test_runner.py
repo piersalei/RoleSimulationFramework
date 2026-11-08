@@ -13,7 +13,7 @@ from rolesim import interfaces as I
 from rolesim.agent_api import validate_action_content
 from rolesim.repository import ENTRY_GOAL, ENTRY_MEMORY, ProfileRepository, background
 from rolesim.expresser import ModelExpresser
-from rolesim.loop import run_staged
+from rolesim.loop import run_scene
 from rolesim.model import MockModel
 from rolesim.registry import Registry
 from rolesim.roles import load_role, load_scene
@@ -106,7 +106,8 @@ class Entry(unittest.TestCase):
         self.assertEqual((state.status["d.goal.goals_now"], state.status["m.entry"], state.status["d.relation.trust"]),
                          ("active", "active", "unknown"))
         bare = repo.enter(repo.load("role1"), {**BOOT, "core_goals": None, "history_memory": None})
-        self.assertEqual((bare.dynamic["d.goal.goals_now"], bare.memory["m.entry"]), ({}, {}))
+        self.assertEqual(list(bare.dynamic["d.goal.goals_now"]), ["g-setup"])          # the role's own setup goal
+        self.assertEqual(sorted(bare.memory["m.entry"]), sorted(i["id"] for i in ROLES[0]["setup"]["recap"]))
         self.assertEqual(background(BOOT)["总体目标"], "按期交付可核验的数据")
 
 
@@ -213,7 +214,7 @@ class Agent(unittest.TestCase):
         self.assertIs(type(self.turn([ENV, ZHOU], "r1")), dict)               # retried request: same result
         self.assertEqual(self.turn([ENV, ZHOU], "r1"), content)
 
-    def test_other_thoughts_are_dropped_and_modes_refused(self):
+    def test_other_thoughts_are_dropped_and_unknown_modes_refused(self):
         asyncio.run(self.agent.initialize("i1", "role1", BOOT))
         secret = rec("t002-role2", 1, "role2", "thought", "SECRET", ["role1"])
         self.turn([ZHOU, secret], "r1")
@@ -222,7 +223,7 @@ class Agent(unittest.TestCase):
         calls = json.dumps([c for c in self.agent.trace.calls], ensure_ascii=False)
         self.assertNotIn("SECRET", calls)
         with self.assertRaises(I.InterfaceError):
-            asyncio.run(self.agent.initialize("i2", "role1", {**BOOT, "mechanism": {"mode": "profile_only"}}))
+            asyncio.run(self.agent.initialize("i2", "role1", {**BOOT, "mechanism": {"mode": "no_such_mode"}}))
 
     def test_stage_failure_is_an_agent_call_error_and_can_be_retried(self):
         self.agent = StagedRoleAgent(ROLES, REG, Flaky(REG, {("S1", 1): I.ModelError("down")}))
@@ -238,7 +239,7 @@ class Scene(unittest.TestCase):
         scene = load_scene("test3")
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "run"
-            manifest = run_staged(ROLES, scene, MockModel(REG), out, REG)
+            manifest = run_scene(ROLES, scene, MockModel(REG), out, REG)
             self.assertEqual((manifest["status"], manifest["pipeline"]), ("completed", "stages"))
             for name in ("records.jsonl", "calls.jsonl", "manifest.json", "transcript.md"):
                 self.assertTrue((out / name).exists(), name)
@@ -247,9 +248,10 @@ class Scene(unittest.TestCase):
             secrets = [s for s in _strings(json.loads((ROOT / "scenes" / "test3.json").read_text())["world_private"]) if len(s) >= 4]
             self.assertTrue(secrets)
             for path in out.rglob("*"):
-                if path.is_file():
+                if path.is_file() and path.name != "scene.json":       # scene.json is the scene as given
                     text = path.read_text(encoding="utf-8")
                     self.assertFalse([s for s in secrets if s in text], path)
+            self.assertTrue(all(s in (out / "scene.json").read_text(encoding="utf-8") for s in secrets))
             trace = out / "trace" / manifest["interaction_id"]
             for r in records:
                 if r["actor"]["actor_id"] == "environment" and len(r["recipients"]) == 1:
@@ -259,12 +261,12 @@ class Scene(unittest.TestCase):
 
     def test_cli(self):
         with tempfile.TemporaryDirectory() as tmp:
-            done = subprocess.run([sys.executable, "-m", "rolesim", "run", "--interface", "agent-api", "--pipeline", "stages",
-                                   "--backend", "mock", "--scene", "test1", "--out", str(Path(tmp) / "r")],
+            done = subprocess.run([sys.executable, "-m", "rolesim", "run", "--backend", "mock", "--scene", "test1",
+                                   "--out", str(Path(tmp) / "r")],
                                   cwd=ROOT, capture_output=True, text=True)
             self.assertEqual(done.returncode, 0, done.stderr)
             self.assertEqual(json.loads((Path(tmp) / "r" / "manifest.json").read_text())["status"], "completed")
-            refused = subprocess.run([sys.executable, "-m", "rolesim", "run", "--pipeline", "stages", "--backend", "mock",
+            refused = subprocess.run([sys.executable, "-m", "rolesim", "run", "--mode", "no_such_mode", "--backend", "mock",
                                       "--out", str(Path(tmp) / "r2")], cwd=ROOT, capture_output=True, text=True)
             self.assertNotEqual(refused.returncode, 0)
 

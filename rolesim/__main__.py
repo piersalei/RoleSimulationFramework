@@ -3,16 +3,14 @@ import json
 import sys
 from pathlib import Path
 
-from .catalog import build_catalog, write_json
-from .persona import compile_views
-from .providers import ChatBackend, MockBackend
-from .agent import MODES
 from .audit import write_report
+from .catalog import build_catalog, write_json
+from .interfaces import FULL_MODE, MODES
 from .package import export_package
 from .readable import FILENAME, write_readable
 from .registry import build_registry
-from .roles import ROLES_DIR, SCENES_DIR, available, fit_cast, load_role, load_scene, run
-from .runtime import environment_agent, role_seats, run_name
+from .roles import ROLES_DIR, SCENES_DIR, available, fit_cast, load_role, load_scene
+from .scene import environment_agent, role_seats, run_name
 from .skills import load_library
 
 DEFAULT_ROLES = ["role1", "role2"]
@@ -36,11 +34,8 @@ def main():
     listing = sub.add_parser("list", help="list roles and scenes, or check one cast in one scene")
     listing.add_argument("--roles", nargs="+", help="one role id or path per seat, in seat order")
     listing.add_argument("--scene", help="scene id (scenes/<id>.json) or path")
-    for name in ("validate", "compile"):
-        item = sub.add_parser(name, help=f"{name} a role file")
-        item.add_argument("role", help="role id or path")
-        if name == "compile":
-            item.add_argument("--out", required=True)
+    validate = sub.add_parser("validate", help="validate a role file")
+    validate.add_argument("role", help="role id or path")
     skills = sub.add_parser("skills", help="validate the skill library and, optionally, a role's skills")
     skills.add_argument("role", nargs="?")
     audit = sub.add_parser("audit", help="re-audit a finished run directory")
@@ -49,19 +44,14 @@ def main():
     package.add_argument("run_dirs", nargs="+")
     package.add_argument("--out", required=True)
     package.add_argument("--seed", type=int, default=0)
-    demo = sub.add_parser("run", help="two to six roles talking in a background-only scene")
+    demo = sub.add_parser("run", help="two to six roles in a background-only scene, behind the agent interface v2")
     demo.add_argument("--roles", nargs="+", default=DEFAULT_ROLES,
                       help="one role id (roles/<id>.json) or path per seat, in seat order")
     demo.add_argument("--scene", default=DEFAULT_SCENE, help="scene id (scenes/<id>.json) or path")
     demo.add_argument("--no-skills", action="store_true", help="keep the roles' skills on record but out of the prompts")
     demo.add_argument("--backend", choices=["mock", "chat"], default="mock")
-    demo.add_argument("--mode", choices=list(MODES), default="profile_state_mechanisms")
-    demo.add_argument("--appraise-state", choices=["on", "off"], default="on",
-                      help="off keeps the role's state out of the appraisal prompt (control)")
-    demo.add_argument("--interface", choices=["env-contract", "agent-api"], default="env-contract",
-                      help="agent-api runs the roles behind the agent interface v2 (initialize / act) with the local runner")
-    demo.add_argument("--pipeline", choices=["agent", "stages"], default="agent",
-                      help="stages runs the new staged pipeline (S1 / S2 / S3 + store + expression); needs --interface agent-api")
+    demo.add_argument("--mode", choices=list(MODES), default=FULL_MODE,
+                      help="ablation: profile_only / profile_state / profile_state_mechanisms (full)")
     demo.add_argument("--out", default=None,
                       help="run directory; default runs/<YYYYMMDD-HHMMSS>_<scene>_<model>")
     readable = sub.add_parser("readable", help="(re)write transcript.md for finished run directories")
@@ -86,9 +76,6 @@ def main():
         elif args.command == "validate":
             role = load_role(args.role)
             print(f"VALID: {role['id']} ({role['persona']['name']})")
-        elif args.command == "compile":
-            write_json(args.out, compile_views(load_role(args.role)["persona"]))
-            print(args.out)
         elif args.command == "skills":
             library = load_library()
             print(f"Library: {len(library)} skills ({', '.join(library)})")
@@ -105,31 +92,24 @@ def main():
             for run_dir in args.run_dirs:
                 print(write_readable(run_dir))
         else:
-            roles, scene = [load_role(r) for r in args.roles], load_scene(args.scene)
-            backend = MockBackend() if args.backend == "mock" else ChatBackend()
-            output = args.out or str(RUNS_DIR / run_name(scene["id"], backend.model))
-            print(f"run directory: {output}", file=sys.stderr, flush=True)
-            if args.pipeline == "stages":
-                if args.interface != "agent-api":
-                    raise ValueError("--pipeline stages runs behind --interface agent-api")
-                from .loop import run_staged
-                from .model import ChatModel, MockModel
-                from .registry import Registry
-                registry = Registry.load()
-                model = MockModel(registry) if args.backend == "mock" else ChatModel(backend)
-                result = run_staged(roles, scene, model, output, registry)
-            elif args.interface == "agent-api":
-                from .loop import run_agent_api
-                result = run_agent_api(roles, scene, backend, output, args.mode, not args.no_skills,
-                                       args.appraise_state == "on")
-            else:
-                result = run(roles, scene, backend, output, args.mode, not args.no_skills,
-                             args.appraise_state == "on")
-            print(json.dumps({"output": output, "transcript": str(Path(output) / FILENAME), **result},
-                             ensure_ascii=False, indent=2))
+            _run(args)
     except (ValueError, OSError, RuntimeError, KeyError, TypeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
+
+
+def _run(args):
+    from .loop import run_scene
+    from .model import ChatModel, MockModel
+    from .registry import Registry
+    registry = Registry.load()
+    library = load_library()
+    roles, scene = [load_role(r, library=library) for r in args.roles], load_scene(args.scene)
+    model = MockModel(registry) if args.backend == "mock" else ChatModel()
+    output = args.out or str(RUNS_DIR / run_name(scene["id"], "mock" if args.backend == "mock" else model.model))
+    print(f"run directory: {output}", file=sys.stderr, flush=True)
+    result = run_scene(roles, scene, model, output, registry, args.mode, not args.no_skills)
+    print(json.dumps({"output": output, "transcript": str(Path(output) / FILENAME), **result}, ensure_ascii=False, indent=2))
 
 
 def _profile(args):

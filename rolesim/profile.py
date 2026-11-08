@@ -40,7 +40,8 @@ from .interfaces import (EnableConfig, InterfaceError, PromptView, ReviewItem, S
 from .persona import FACET_KEYS, SCHWARTZ_VALUES
 
 PROFILE_FORMAT = "profile-1"
-PROFILE_KEYS = {"format", "id", "name", "summary", "self_view", "text", "stable", "entry", "provenance"}
+PROFILE_KEYS = {"format", "id", "name", "summary", "self_view", "text", "stable", "entry", "setup", "skills", "provenance"}
+SKILL_KEYS = {"name", "priority", "note"}
 ENTRY_KEYS = {"value", "source", "basis", "confidence", "phrase", "status", "reason"}
 SOURCES = ("explicit", "inferred", "model_inferred", "default")
 SCHEMES = ("s.traits.personality.p1_big_five", "s.traits.personality.p2_16pf", "s.traits.personality.p3_jung_hexaco")
@@ -175,6 +176,16 @@ class ProfileCompiler:
         extra = set(raw) - PROFILE_KEYS
         if extra:
             raise InterfaceError(f"profile: unexpected fields {sorted(extra)}")
+        if raw.get("setup") is not None:
+            from .briefing import validate_briefing
+            from .scene import RESERVED_IDS
+            try:
+                validate_briefing(raw["setup"], RESERVED_IDS)
+            except ValueError as exc:
+                raise InterfaceError(f"profile.setup: {exc}") from None
+        skills = raw.get("skills") or []
+        if not isinstance(skills, list) or any(not isinstance(i, Mapping) or set(i) != SKILL_KEYS for i in skills):
+            raise InterfaceError(f"profile.skills: a list of {sorted(SKILL_KEYS)}")
         stable = raw.get("stable") or {}
         if not isinstance(stable, Mapping):
             raise InterfaceError("profile.stable must map construct ids to entries")
@@ -315,4 +326,16 @@ def profile_from_persona(persona, role_id):
     for key, source in (("summary", "public_description"), ("self_view", "self_view")):
         if persona.get(source):
             profile[key] = persona[source]
+    return profile
+
+
+def profile_from_role(role):
+    """A profile-1 object from a loaded role file (roles.load_role): the persona's mappable modules,
+    the opening setup and the skill binding."""
+    profile = profile_from_persona(role["persona"], role["id"])
+    if role.get("setup") is not None:
+        profile["setup"] = role["setup"]
+    items = (role.get("file") or {}).get("skills") or []
+    if items:
+        profile["skills"] = [dict(i) for i in items]
     return profile

@@ -6,7 +6,9 @@ load(role_ref)   profiles/<role_ref>.json (profile-1) when it exists, else the r
 enter(profile, bootstrap, config)
                  the entry state of 角色状态说明v1 §8.2, in this order:
                    1. the profile's explicit entry state ("entry", checked against the layout)
-                   2. the bootstrap: core_goals -> a current goal; history_memory -> an entry memory
+                   2. the opening setup: goal -> the current goal g-setup; recap items -> entry
+                      memories (same ids); then the bootstrap: core_goals -> a current goal;
+                      history_memory -> an entry memory
                    3. defaults written there: emotion intensity 0 and label empty, valence /
                       arousal from the emotion baseline; stress and threat / reward activation
                       without extra load; no regulation going on (inactive); shame and face cost 0;
@@ -27,12 +29,12 @@ from pathlib import Path
 from typing import Mapping
 
 from .interfaces import AgentState, EnableConfig, InterfaceError
-from .profile import ProfileCompiler, profile_from_persona
+from .profile import ProfileCompiler, profile_from_role
 from .slots import SLOTS, blank_state, check_instance, put
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILES_DIR = ROOT / "profiles"
-ENTRY_GOAL, ENTRY_MEMORY = "g-entry", "m-entry"
+ENTRY_GOAL, ENTRY_MEMORY, SETUP_GOAL = "g-entry", "m-entry", "g-setup"
 TOM_RULE = "角色状态说明 §8.2：1.1.4 为 -2 → 0 阶；1.5.2 ≤ -1 → 1 阶；否则 2 阶（两项未赋值取 default 0）；约 4 岁以下 ≤ 0 阶，4—6 岁 ≤ 1 阶"
 
 
@@ -81,7 +83,7 @@ class ProfileRepository:
         self.roles = {r["id"]: r for r in roles}
         self.root = Path(root)
         self.config = config or EnableConfig()
-        self._raw, self._profiles = {}, {}
+        self._raw, self._profiles, self._library = {}, {}, None
         self.review, self.entry_notes = {}, {}
 
     def raw(self, role_ref):
@@ -92,7 +94,7 @@ class ProfileRepository:
                 if data.get("id") != role_ref:
                     raise InterfaceError(f"{path}: id {data.get('id')!r} does not match the file name")
             elif role_ref in self.roles:
-                data = profile_from_persona(self.roles[role_ref]["persona"], role_ref)
+                data = profile_from_role(self.roles[role_ref])
             else:
                 raise InterfaceError(f"no profile and no role file for {role_ref!r}")
             self._raw[role_ref] = data
@@ -106,6 +108,24 @@ class ProfileRepository:
 
     def background(self, role_ref, bootstrap):
         return background(bootstrap, self.raw(role_ref))
+
+    def setup(self, role_ref):
+        """The role's opening setup (briefing.py), or None."""
+        return self.raw(role_ref).get("setup")
+
+    def skills(self, role_ref):
+        """The role's bound persona skills, by priority (skills.py); [] when it binds none."""
+        items = self.raw(role_ref).get("skills") or []
+        if not items:
+            return []
+        from .skills import load_library
+        if self._library is None:
+            self._library = load_library()
+        unknown = [i["name"] for i in items if i["name"] not in self._library]
+        if unknown:
+            raise InterfaceError(f"{role_ref}: unknown skills {unknown}")
+        bound = [{**self._library[i["name"]], "priority": i["priority"]} for i in items]
+        return sorted(bound, key=lambda s: (-s["priority"], s["name"]))
 
     def enter(self, profile, bootstrap, config=None):
         config = config or self.config
@@ -148,7 +168,14 @@ class ProfileRepository:
                  "core_goal": None, "source": "场景", "reason": "入场时给出的总体目标；优先级取中性默认值"})
             status["d.goal.goals_now"] = "active"
             notes.append("d.goal.goals_now: bootstrap 的 core_goals（优先级为中性默认值 0.5）")
-        memories = []
+        setup = (self._raw.get(profile.role_ref) or {}).get("setup")
+        if setup and "d.goal.goals_now" not in explicit and writable("d.goal.goals_now"):
+            put(dynamic, "d.goal.goals_now", SETUP_GOAL, None,
+                {"goal_id": SETUP_GOAL, "content": setup["goal"], "priority": 0.5, "stage": "进行中", "core_goal": None,
+                 "source": "场景", "reason": "开场设定的互动目标；优先级取中性默认值"})
+            status["d.goal.goals_now"] = "active"
+            notes.append("d.goal.goals_now: 开场设定的互动目标（优先级为中性默认值 0.5）")
+        memories = [(item["id"], item["text"][:400], 0.5) for item in (setup or {}).get("recap", [])]
         life = _value(profile, "s.identity.life_history")
         for i, item in enumerate(life if isinstance(life, list) else [], 1):
             text = item if isinstance(item, str) else next((item.get(k) for k in ("event", "text", "description", "summary")
@@ -165,7 +192,7 @@ class ProfileRepository:
                      "channel": "入场前", "importance": importance, "valence": 0.0, "interpretations": []})
                 put(memory, "m.accessibility", entry_id, None, importance)
             status["m.entry"] = status["m.accessibility"] = "active"
-            notes.append("m.entry: 生命经历与 bootstrap 的 history_memory 生成入场记忆（推断来源，可及性取重要性）")
+            notes.append("m.entry: 开场设定的前情、生命经历与 bootstrap 的 history_memory 生成入场记忆（可及性取重要性）")
 
         emotion = {"label": [], "intensity": 0.0}
         baseline = _value(profile, "s.traits.affect.emotion_baseline")

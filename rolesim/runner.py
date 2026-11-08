@@ -21,7 +21,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
 from .agent_api import ENV_ID, record_id
-from .interfaces import InterfaceError, PhaseLog, Phase, StageContext, StageError
+from .interfaces import FULL_MODE, InterfaceError, PhaseLog, Phase, StageContext, StageError
 
 PLAN_GROUP = "goal_commitment_strategy"
 
@@ -38,6 +38,10 @@ class _Session:
     pending_feedback: Optional[tuple] = None          # (action_id, group, S1 product) awaiting S3
     pending_plan: Optional[tuple] = None              # (ActionPlan, StageContext) committed, not yet expressed
     phase_no: int = 0
+    mode: str = FULL_MODE
+    skills: tuple = ()
+    briefing: Any = None
+    latest_cues: dict = field(default_factory=dict)   # S1's skill cues for the coming plan
 
 
 class TurnRunner:
@@ -48,12 +52,14 @@ class TurnRunner:
         self.replans = replans
         self._sessions = {}
 
-    def begin(self, key, state, stable, background=None):
-        """Open a session from its entry state (IRoleRepository.enter) and stable profile."""
+    def begin(self, key, state, stable, background=None, mode=FULL_MODE, skills=(), briefing=None):
+        """Open a session from its entry state (IRoleRepository.enter) and stable profile; `mode`,
+        `skills` and `briefing` reach every stage of this session."""
         if key in self._sessions:
             raise InterfaceError(f"{key}: already begun")
         self.store.open(key, state)
-        self._sessions[key] = _Session(stable, dict(background or {}))
+        self._sessions[key] = _Session(stable, dict(background or {}), mode=mode, skills=tuple(skills),
+                                       briefing=briefing)
 
     def started(self, key):
         return key in self._sessions
@@ -77,7 +83,7 @@ class TurnRunner:
         for action_id, group in groups.items():
             out, _, _ = self._phase(key, s, "S1", "event", action_id, group, present,
                                     {"S1": s.latest_s1, "plan": s.last_plan})
-            s.latest_s1 = out.product
+            s.latest_s1, s.latest_cues = out.product, dict(out.cues)
             s.history.extend(group)
             s.absorbed.update(record_id(r) for r in group)
             if self._responds(s, me, group):
@@ -96,7 +102,8 @@ class TurnRunner:
         state = self.store.snapshot(key)
         ctx = StageContext(Phase(event_id, s.phase_no, kind), state, s.stable, tuple(records),
                            {k: v for k, v in upstream.items() if v is not None}, dict(present), key,
-                           tuple(s.history if history is None else history), s.background)
+                           tuple(s.history if history is None else history), s.background, s.mode, s.skills,
+                           s.briefing)
         output = self.stages[stage].run(ctx)
         result = self.store.commit(ctx, output)
         if self.trace is not None:
@@ -127,7 +134,8 @@ class TurnRunner:
         rejected = None
         for _ in range(self.replans + 1):
             out, ctx, result = self._phase(key, s, "S2", "plan", "plan", fresh, present,
-                                           {"S1": s.latest_s1, "plan": s.last_plan, "rejected": rejected},
+                                           {"S1": s.latest_s1, "plan": s.last_plan, "rejected": rejected,
+                                            "cues": s.latest_cues or None},
                                            history=seen_before)
             refused = [r for r in result.rejected if r.error.kind == "hard" and r.group == PLAN_GROUP]
             if not refused:

@@ -35,6 +35,8 @@ STAGE_PROMPTS = {
     "S1": ("阶段 S1 事件建模：判断这些新记录对本角色意味着什么。依次做情境定义与规范意义、初级与次级评价、归因与责任、"
            "他心假设（1—3 个，各带确信度、支持与反向证据、区分条件；证据不足时保留多个假设或暂缓判断）、信念修订与信心校准、信息需求。"
            "evidence_notes 标出哪些记录的内容是别人转述的（hearsay，写出被转述的命题 claim）或只能推断的（inferred）。"
+           "cues 给五个工程线索各 0—1：pressure（压力）、uncertainty（不确定）、commitment（承诺）、repair（修复）、"
+           "conflict（冲突），表示本角色此刻主观感到的强度，只用来挑选角色的惯用策略，不写状态；没感到的省略。"
            "不制定行动计划，不提议关系、目标、承诺和策略的变化。"),
     "S2": ("阶段 S2 行动计划：在已提交的情境解释（upstream.S1）基础上选择行动。列出候选行动（含被筛掉的及原因），"
            "选主行动和备选，写出可观察的切换条件、所依赖的假设、预期结果、是否形成承诺，以及表达的目标、受众和方式。"
@@ -122,6 +124,14 @@ class ChatModel:
 
 # -- offline fixture ---------------------------------------------------------------------------
 CONFLICT_WORDS = ("不能", "不行", "为什么", "没有", "必须", "马上")
+CUE_WORDS = {"pressure": ("今天", "尽快", "马上", "必须", "催"), "uncertainty": ("？", "?", "能不能", "哪", "多久"),
+             "commitment": ("承诺", "约定", "保证", "答应", "交付"), "repair": ("先", "一部分", "核验", "抱歉", "可以"),
+             "conflict": ("不能", "不行", "为什么", "没有")}
+
+
+def _without_mechanisms(schema):
+    judgments = schema.get("properties", {}).get("judgments", {})
+    return judgments.get("maxItems") == 0
 
 
 class MockModel:
@@ -158,6 +168,10 @@ class MockModel:
         if build is None:
             raise ModelError(f"unknown stage {stage!r}")
         output = build(view, last, rid, partner, evidence)
+        if stage in STAGE_PROMPTS and _without_mechanisms(schema):
+            output["judgments"] = []
+            for proposal in output["proposals"]:
+                proposal["mechanisms"] = []
         errors = validate(schema, output)
         if errors:
             raise ModelError(f"mock {stage} output breaks the schema: {'; '.join(errors[:8])}")
@@ -188,7 +202,8 @@ class MockModel:
                             "support": evidence, "counter": [], "discriminator": "看对方是否给出具体期限"}],
             "judgment_state": "settled", "information_needs": [] if rid else ["发生了什么"],
             "relation_signals": {partner: "需要观察"} if partner else {}}
-        return {"product": product, "judgments": judgments, "proposals": proposals, "evidence_notes": []}
+        cues = {cue: 0.7 for cue, words in CUE_WORDS.items() if any(w in content for w in words)}
+        return {"product": product, "judgments": judgments, "proposals": proposals, "evidence_notes": [], "cues": cues}
 
     def _s2(self, view, last, rid, partner, evidence):
         conflict, choice = "dm.conflict.conflict_mode", "dm.choice.choice_rule"

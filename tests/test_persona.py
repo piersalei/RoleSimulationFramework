@@ -4,8 +4,7 @@ import unittest
 from pathlib import Path
 
 from rolesim.catalog import digest
-from rolesim.modules import STABLE_MODULES
-from rolesim.persona import SCHWARTZ_VALUES, compile_views, conditional_rules, validate_persona
+from rolesim.persona import SCHWARTZ_VALUES, STABLE_MODULES, validate_persona
 from fixtures import load, setup
 
 
@@ -119,44 +118,10 @@ class PersonaV2Tests(unittest.TestCase):
         self.bad(lambda p: p["provenance"].update({"stable.values.moral_reasoning": {
             "source_ref": "mind.4.2", "assignment": "x", "confidence": 0}}), "only active ones")
 
-    def test_situational_rule_text_has_exactly_one_shi(self):
-        def rules_for(when):
-            persona = copy.deepcopy(self.persona)
-            persona["stable"]["speech_style"]["situational_rules"] = [{"when": when, "style": "先承认对方处境"}]
-            validate_persona(persona)
-            return [r["rule"] for r in conditional_rules(persona) if r["source_field"] == "speech_style.situational_rules"]
-        for when in ("被催促或需要拒绝时", "被催促或需要拒绝", " 被催促或需要拒绝时 "):
-            self.assertEqual(rules_for(when), ["被催促或需要拒绝时：先承认对方处境"], when)
-        self.assertEqual(rules_for("时"), ["时：先承认对方处境"])           # a lone 时 is left alone
-        self.assertEqual(rules_for("分歧出现时"), ["分歧出现时：先承认对方处境"])
-
-    def test_no_shipped_role_renders_a_doubled_shi(self):
-        for path in sorted((ROOT / "roles").glob("*.json")) + sorted((ROOT / "examples").glob("*.json")):
-            persona = json.loads(path.read_text())
-            persona = persona.get("persona", persona)
-            for rule in conditional_rules(persona):
-                self.assertNotIn("时时", rule["rule"], f"{path.name}: {rule['rule']}")
-
     def test_stable_snapshot_id_covers_module_status(self):
         changed = copy.deepcopy(self.persona)
         changed["stable"]["module_status"][DEMOGRAPHICS]["reason"] = "另一个理由"
         self.assertNotEqual(digest(self.persona["stable"]), digest(changed["stable"]))
-
-    def test_views_carry_goals_values_and_situational_rules_to_the_controller_only(self):
-        views = compile_views(self.persona)
-        controller = views["controller_only"]
-        self.assertEqual(controller["core_goals"][0]["id"], "g1")
-        self.assertIn("weights", controller["values"])
-        sources = [r["source_field"] for r in controller["conditional_rules"]]
-        self.assertIn("speech_style.situational_rules", sources)
-        self.assertIn("speech_style.baseline.directness", sources)
-        blob = json.dumps([views["role_self"], views["other_visible"]], ensure_ascii=False)
-        for secret in ("core_goals", "schwartz", "module_status", "weights", "g1a"):
-            self.assertNotIn(secret, blob)
-        no_rules = copy.deepcopy(self.persona)
-        no_rules["stable"]["speech_style"]["situational_rules"] = []
-        self.assertNotIn("speech_style.situational_rules", [r["source_field"] for r in conditional_rules(no_rules)])
-
 
 if __name__ == "__main__":
     unittest.main()

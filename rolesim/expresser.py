@@ -11,10 +11,11 @@ The reply becomes AgentActionContent (schemas.parse_expression): our own thought
 role alone; speech and action go to the plan's audience, or to everyone present when it names
 nobody. A failure raises StageError; nothing is sent.
 """
+from . import skills as sk
 from .evidence import EvidenceGate
 from .interfaces import ModelCallRecord, ModelError, PromptView, StageError
 from .schemas import EXPRESS_KINDS, EXPRESS_SCHEMA, parse_expression
-from .stages import self_profile, visible_records
+from .stages import active_skills, expression_briefing, self_profile, visible_records
 
 EXPRESSION_MODULES = ("s.identity.demographics", "s.core_goals.primary", "s.speech_style.baseline")
 RECENT = 12
@@ -54,9 +55,17 @@ class ModelExpresser:
                                             "manner": plan.expression.manner},
                              "commitment": {"formed": plan.commitment.formed, "content": plan.commitment.content}}}
         task = {"kinds": list(EXPRESS_KINDS), "audience": {a: present[a].get("name", a) for a in audience}}
+        if ctx.skills:
+            hints = sk.expression_hints(list(ctx.skills), active_skills(ctx))
+            if hints:
+                task["skill_style"] = hints
+        background = dict(ctx.background)
+        if ctx.briefing:
+            background["开场设定"] = expression_briefing(ctx.briefing)
+        feeling = feeling_text(ctx.state) if ctx.mode != "profile_only" else ""
         records = visible_records(ctx, self.gate.build(ctx), self.recent)
-        return PromptView(self_profile(ctx.stable, self.registry, EXPRESSION_MODULES), records, feeling_text(ctx.state),
-                          upstream, ctx.key[1], present, task, dict(ctx.background))
+        return PromptView(self_profile(ctx.stable, self.registry, EXPRESSION_MODULES), records, feeling,
+                          upstream, ctx.key[1], present, task, background)
 
     def realize(self, plan, ctx):
         view = self.view(plan, ctx)

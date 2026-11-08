@@ -4,10 +4,10 @@ import inspect
 import unittest
 
 from rolesim import interfaces as I
-from rolesim.adapter import AgentCallError as AdapterError
-from rolesim.adapter import RoleAgentAdapter
+from rolesim import staged
 from rolesim.loop import EchoEnvironment
-from rolesim.state import OPERATORS
+from rolesim.runner import TurnRunner
+from rolesim.staged import StagedRoleAgent
 
 EV = (I.EvidenceRef("r1", "witnessed"),)
 
@@ -50,8 +50,7 @@ def plan(chosen="解释原因"):
 
 
 class Vocabulary(unittest.TestCase):
-    def test_operators_match_state_module(self):
-        self.assertEqual(set(I.OPERATOR_NAMES), set(OPERATORS))
+    def test_eleven_operators(self):
         self.assertEqual(len(I.OPERATOR_NAMES), 11)
 
     def test_exports_resolve(self):
@@ -59,7 +58,7 @@ class Vocabulary(unittest.TestCase):
             self.assertTrue(hasattr(I, name), name)
 
     def test_one_agent_call_error(self):
-        self.assertIs(AdapterError, I.AgentCallError)
+        self.assertIs(staged.AgentCallError, I.AgentCallError)
 
 
 class Hierarchy(unittest.TestCase):
@@ -83,9 +82,14 @@ class Hierarchy(unittest.TestCase):
     def test_role_agent_is_async_and_adapter_conforms(self):
         for m in ("initialize", "act"):
             self.assertTrue(inspect.iscoroutinefunction(getattr(I.IRoleAgent, m)))
-            self.assertTrue(inspect.iscoroutinefunction(getattr(RoleAgentAdapter, m)))
+            self.assertTrue(inspect.iscoroutinefunction(getattr(StagedRoleAgent, m)))
             self.assertEqual(list(inspect.signature(getattr(I.IRoleAgent, m)).parameters),
-                             list(inspect.signature(getattr(RoleAgentAdapter, m)).parameters))
+                             list(inspect.signature(getattr(StagedRoleAgent, m)).parameters))
+
+    def test_turn_runner_conforms(self):
+        for m in ("begin", "run"):
+            self.assertEqual(list(inspect.signature(getattr(I.ITurnRunner, m)).parameters),
+                             list(inspect.signature(getattr(TurnRunner, m)).parameters))
 
     def test_local_environment_conforms(self):
         self.assertTrue(inspect.iscoroutinefunction(EchoEnvironment.act))

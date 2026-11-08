@@ -11,7 +11,6 @@ from pathlib import Path
 from rolesim import interfaces as I
 from rolesim.registry import (FILES, REGISTRY_PATH, SOURCE_DIR, Registry, RegistryBuildError,
                               build_registry)
-from rolesim.state import OPERATORS
 
 ROOT = Path(__file__).resolve().parents[1]
 REG = Registry.load()
@@ -40,7 +39,6 @@ class Counts(unittest.TestCase):
         self.assertEqual((layers.count("stable"), layers.count("dynamic"), layers.count("memory")), (42, 42, 3))
         self.assertEqual(len(REG.ids("mechanism")), 75)
         self.assertEqual(REG.ids("operator"), I.OPERATOR_NAMES)
-        self.assertEqual(set(REG.ids("operator")), set(OPERATORS))
 
 
 class Writers(unittest.TestCase):

@@ -106,7 +106,7 @@ class EnvironmentActorView(TypedDict):
 
 
 class IRoleAgent(Protocol):
-    """The role side. Ours: adapter.RoleAgentAdapter. (Environment group: AgentAdapter.)"""
+    """The role side. Ours: staged.StagedRoleAgent. (Environment group: AgentAdapter.)"""
 
     async def initialize(self, interaction_id: str, character_id: str, bootstrap: CharacterBootstrap) -> None: ...
 

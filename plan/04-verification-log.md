@@ -98,6 +98,18 @@ HTTP 测试使用本机临时回环服务器，返回固定结果。它验证传
 
 没覆盖：真实模型读自然语言档案；§4.10 决策偏好先验映射与派生字段未做；示例角色还没有 profile-1 档案，也没有条件化语句（新管线目前用转换后的角色文件）。
 
+## 2026-11-08：删除旧路径，离线工具改到新格式（第 7 步）
+
+删除旧的运行路径：`agent.py`（`Agent.step`）、`state.py`（六域状态）、`stateview.py`（三档视图）、`mechanisms.py`（5 张机制卡）、`contract.py` 与 `runtime.py`（环境契约 v0 路径）、`modules.py`；`adapter.RoleAgentAdapter`、`providers.py` 的 appraise / decide / express 与 `MockBackend`、`memory.add / recall`；命令行的 `compile`、`--interface`、`--pipeline`、`--appraise-state`；`closed_by`（分阶段管线没有"结束沟通"的动作，它从不触发）。`runtime.py` 里仍要用的剧情工具搬到新的 `scene.py`，模块状态工具并入 `persona.py`。`run` 只剩一条管线：接口 v2 → `StagedRoleAgent` → `TurnRunner`。
+
+移到新管线的三项：开场设定（目标 → 当前目标 `g-setup`，前情 → 入场记忆；S1 / S2 / S3 看到全部，表达只看到目标和可以说出的部分）、人格 skill（S1 给出线索，至多激活 3 个；S2 看到目录和被激活 skill 的决策要点，表达拿到表达要点；`--no-skills`）、消融模式（`interfaces.MODES` 重新定义，按 `mechanism.mode` 每个角色选；只改提示和输出 schema）。`ITurnRunner.begin` 的 Protocol 补上这三个参数，并加了实现与 Protocol 签名一致的测试。离线工具改读新格式：`audit.py`（10 项检查；提示隔离新增"别人开场设定里的隐瞒条目不进本角色的提示，除非那个角色说给了本角色"）、`package.py`（盲化单元：评审样本、该角色看得到的记录、对照真值、开场设定、标注模板、自动审计）、`readable.py`。
+
+测试：删掉旧管线的 9 个测试文件；新增 `tests/test_scene.py` 11 项（剧情格式、环境 agent、来源索引、严格 JSON、代码版本、运行目录名）、`tests/test_ports.py` 9 项（开场设定入场与隔离、skill 进计划与表达、`--no-skills`、三种模式对提示的影响、按角色的模式、初始化路由、未初始化即行动被拒、互动之间隔离）、`tests/test_offline.py` 7 项（干净运行通过全部 10 项审计；7 种篡改各被对应检查查出；评审包单元与盲化；拒绝失败和旧格式的运行；可读版确定且完整；失败运行也能生成可读版）；`tests/test_memory.py` 改为只测 `search`。另做了 4 处变异检查（隐瞒条目放进表达视图、审计不查别人的隐瞒条目、`profile_only` 也给状态、忽略 `--no-skills`），对应测试都会失败。`python3 -m unittest discover -s tests`（Python 3.13.12；本机没有 `python3.11`）：**218 项通过**（此前 338 项，减少的是旧管线的测试）。
+
+按 CI 的命令在本地跑了一遍（mock）：校验三个角色、skill、列表；默认（test1）、换座位（test2）、`--no-skills`、`--mode profile_only` 各 8 轮、17 条记录、37 次模型调用，test3 三个角色加环境 agent 12 轮、31 条记录、68 次模型调用，五次运行的自动审计都通过；两个运行导出评审包，得到 R01–R05 五个单元。CI 新增 `profile_only` 一次运行与审计。
+
+没覆盖：真实模型（mock 只说明管线可用，不是心理学证据）；远端 CI 没有跑（没有推送）；剧情的 `allowed_actions` 与环境事件的 `cues` 只校验、不影响角色；没有结束对话的信号，本地运行跑满 `max_turns`；§4.10 决策偏好先验映射与派生字段、示例角色的 profile-1 档案与条件化语句、F1–F5 仍未做或待确认。
+
 ## 维护方式
 
 每次做出新的验证（测试数变化、新的模型运行、人工评审）就在这里加一节，写明日期、命令、结果、没覆盖的部分。测试数请以实际运行输出为准，上表来自计划文档的记录，不是本次重新统计。

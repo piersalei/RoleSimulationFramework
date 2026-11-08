@@ -30,7 +30,7 @@ __all__ = [
     "InterfaceError", "AgentCallError", "StageError", "ModelError",
     # vocabularies
     "STAGES", "CHANNELS", "SOURCE_KINDS", "TEMPOS", "BANDS", "JUDGMENT_STATES", "PHASE_KINDS",
-    "OPERATOR_NAMES", "LAYERS", "SELF_VISIBILITY", "STAGE_OF_KIND", "STATUSES", "UNWRITABLE",
+    "OPERATOR_NAMES", "LAYERS", "SELF_VISIBILITY", "STAGE_OF_KIND", "STATUSES", "UNWRITABLE", "MODES", "FULL_MODE",
     # 1
     "IRoleAgent", "IEnvironment", "ITurnRunner", "ITrace", "SessionKey", "PhaseLog", "ModelCallRecord",
     # 2
@@ -89,6 +89,11 @@ JUDGMENT_STATES: tuple[JudgmentState, ...] = ("settled", "multiple", "suspended"
 PhaseKind = Literal["event", "feedback", "plan"]
 PHASE_KINDS: tuple[PhaseKind, ...] = ("event", "feedback", "plan")
 STAGE_OF_KIND: Mapping[str, str] = {"event": "S1", "plan": "S2", "feedback": "S3"}
+
+# Ablation modes: what the stage prompts may use. profile_only: profile, records, memories;
+# profile_state: + the dynamic state; profile_state_mechanisms (full): + the decision processes.
+MODES = ("profile_only", "profile_state", "profile_state_mechanisms")
+FULL_MODE = MODES[-1]
 
 # 状态标记 (心理构念登记 §3.2); only the last three block writes
 STATUSES = ("active", "unknown", "inactive", "disabled", "not_modeled", "not_applicable")
@@ -455,6 +460,9 @@ class StageContext:
     key: SessionKey = ("", "")
     history: tuple[InteractionRecord, ...] = ()   # records seen before this phase, oldest first
     background: Mapping[str, Any] = field(default_factory=dict)   # what the role was told at initialize
+    mode: str = FULL_MODE                         # ablation mode (MODES)
+    skills: tuple[Mapping[str, Any], ...] = ()    # the role's bound persona skills (skills.bind)
+    briefing: Optional[Mapping[str, Any]] = None  # the role's opening setup (briefing.py)
 
     @property
     def stage(self) -> str:
@@ -467,6 +475,7 @@ class StageOutput(Generic[P]):
     proposals: tuple[ChangeProposal, ...] = ()
     judgments: tuple[Judgment, ...] = ()
     evidence: EvidenceSet = field(default_factory=lambda: EvidenceSet(()))   # what the stage could see
+    cues: Mapping[str, float] = field(default_factory=dict)   # S1 only: skill-activation cues, never state
 
 
 @runtime_checkable
@@ -673,8 +682,11 @@ class PhaseLog:
 
 class ITurnRunner(Protocol):
     def begin(self, key: SessionKey, state: AgentState, stable: StableProfile,
-              background: Optional[Mapping[str, Any]] = None) -> None:
-        """Open a session from its entry state (IRoleRepository.enter) and stable profile."""
+              background: Optional[Mapping[str, Any]] = None, mode: str = FULL_MODE,
+              skills: tuple = (), briefing: Optional[Mapping[str, Any]] = None) -> None:
+        """Open a session from its entry state (IRoleRepository.enter) and stable profile.
+        `mode` is the ablation mode (MODES), `skills` the role's bound persona skills by
+        priority, `briefing` its opening setup; all three reach the stages via StageContext."""
         ...
 
     def run(self, key: SessionKey, new_records: list[InteractionRecord],

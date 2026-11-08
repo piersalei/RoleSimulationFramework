@@ -8,7 +8,93 @@ stable module. A module that is not modelled says so; a missing measurement is `
 import copy
 import math
 
-from .modules import STABLE_MODULES, check_consistency
+
+# -- module status (persona schema 2.0) ------------------------------------------------
+STATUSES = {"active", "unknown", "disabled", "not_modeled", "inactive", "not_applicable"}
+# Statuses that keep no value in the state tree (a slot, if present, must be null).
+NO_VALUE = STATUSES - {"active"}
+ORIGINS = {"default", "profile", "observed"}
+
+
+MISSING = object()
+
+# Registered stable modules (persona schema 2.0). A persona must carry a status entry for
+# exactly these paths; adding one is a schema change.
+STABLE_MODULES = (
+    "stable.identity.demographics", "stable.identity.social_roles", "stable.identity.resources",
+    "stable.identity.life_history",
+    "stable.traits.personality", "stable.traits.attachment", "stable.traits.motivation_baseline",
+    "stable.traits.affective_capacities", "stable.traits.social_cognition_71d",
+    "stable.traits.cognitive_style", "stable.traits.developmental_position",
+    "stable.traits.personality_function",
+    "stable.values.schwartz_priorities", "stable.values.investment", "stable.values.moral_reasoning",
+    "stable.values.cultural_orientation",
+    "stable.core_goals",
+    "stable.speech_style.baseline", "stable.speech_style.situational_rules",
+    "stable.mechanism_priors",
+)
+
+
+def entry(status, reason, source=None, origin=None, version="state-v1"):
+    if status not in STATUSES:
+        raise ValueError(f"unknown module status: {status}")
+    return {"status": status, "reason": reason, "source": list(source or []),
+            "origin": origin, "version": version}
+
+
+def lookup(tree, parts):
+    for part in parts:
+        if isinstance(tree, dict) and part in tree:
+            tree = tree[part]
+        else:
+            return MISSING
+    return tree
+
+
+def ungoverned(node, path, status):
+    """First leaf path under `node` that no registered module governs, else None."""
+    if path in status:
+        return None
+    if isinstance(node, dict):
+        for key, child in node.items():
+            found = ungoverned(child, f"{path}.{key}", status)
+            if found:
+                return found
+        return None
+    return path
+
+
+def validate_status(status):
+    if not isinstance(status, dict):
+        raise ValueError("module_status must be an object")
+    for path, item in status.items():
+        if not isinstance(item, dict) or item.get("status") not in STATUSES:
+            raise ValueError(f"{path}: unsupported module status")
+        if not isinstance(item.get("reason"), str) or not item["reason"].strip():
+            raise ValueError(f"{path}: module status requires a reason")
+        if not isinstance(item.get("source", []), list):
+            raise ValueError(f"{path}: source must be a list")
+        if item.get("origin") not in {None, *ORIGINS}:
+            raise ValueError(f"{path}: unsupported origin")
+
+
+def check_consistency(root, tree, status):
+    """Status and value must agree: active holds a value, unknown holds null, the rest hold none."""
+    validate_status(status)
+    for path, item in status.items():
+        value = lookup({root: tree}, path.split("."))
+        if item["status"] == "active":
+            if value is MISSING or value is None:
+                raise ValueError(f"{path}: active module requires a value; use unknown for missing evidence")
+        elif item["status"] == "unknown":
+            if value is MISSING or value is not None:
+                raise ValueError(f"{path}: unknown module must hold null")
+        elif value not in (MISSING, None, {}, []):
+            raise ValueError(f"{path}: {item['status']} module may not hold a value")
+    stray = ungoverned(tree, root, status)
+    if stray:
+        raise ValueError(f"{stray}: value is not governed by a registered module")
+
 
 SCHEMA_VERSION = "2.0"
 
@@ -216,52 +302,3 @@ def validate_persona(persona):
         text(source["assignment"], "assignment")
         bounded(source["confidence"], 0, 1, "confidence")
     return persona
-
-
-def _when_clause(when):
-    """A situation as a clause ending in 时, whether the author wrote "被催促" or "被催促时"."""
-    when = when.strip()
-    return when if when.endswith("时") else when + "时"
-
-
-def conditional_rules(persona):
-    """A small explicit compiler, not an unvalidated psychological score estimator."""
-    s = persona["stable"]
-    f = s["traits"]["personality"]["facets"]
-    rules = []
-    choices = [
-        ("neuroticism.anxiety", "面对含糊的催促容易担心出错，通常先确认要求；明确证据与承诺可缓解担忧。", "通常能容忍暂时的不确定；有明确风险证据时仍会认真核查。"),
-        ("conscientiousness.deliberation", "涉及不可逆承诺时倾向先核对条件；时间紧迫时可提出分阶段方案。", "低成本任务中倾向较快尝试；出现错误证据时应允许修正。"),
-        ("extraversion.assertiveness", "分歧中较愿意直接提出要求；对方有合理约束时可以协商。", "分歧中较少抢先主导；涉及重要承诺时仍可能明确表达。"),
-        ("agreeableness.compliance", "合作中倾向寻找双方可接受的方案；重要边界受损时可以拒绝。", "分歧中较愿意坚持条件；有可靠新证据或合理交换时也可以让步。"),
-    ]
-    for key, high, low in choices:
-        if abs(f[key]) >= .75:
-            rules.append({"source_field": f"traits.personality.facets.{key}", "rule": high if f[key] > 0 else low})
-    bias = s["traits"]["cognitive_style"]["verification_bias"]
-    rules.append({"source_field": "traits.cognitive_style.verification_bias", "rule":
-                  "对信息不足的任务通常优先索取证据；证据清楚且代价低时可以直接推进。"
-                  if bias >= .5 else
-                  "对可逆任务愿意在信息尚不完整时先推进；重要承诺仍需核对。"})
-    directness = s["speech_style"]["baseline"]["directness"]
-    rules.append({"source_field": "speech_style.baseline.directness", "rule":
-                  "通常直说条件和需求，关系修复时也可以解释原因。"
-                  if directness >= .5 else
-                  "通常先承认对方处境，再委婉提出条件；紧急时可以直说。"})
-    for rule in s["speech_style"]["situational_rules"] or []:
-        rules.append({"source_field": "speech_style.situational_rules", "rule": f"{_when_clause(rule['when'])}：{rule['style']}"})
-    return rules
-
-
-def compile_views(persona):
-    validate_persona(persona)
-    s = persona["stable"]
-    return {"system_truth": copy.deepcopy(persona),
-            "role_self": {"id": persona["id"], "name": persona["name"],
-                          "self_view": copy.deepcopy(persona["self_view"])},
-            "other_visible": {"id": persona["id"], "name": persona["name"],
-                              "description": persona["public_description"]},
-            "controller_only": {"conditional_rules": conditional_rules(persona),
-                                "needs": copy.deepcopy(s["traits"]["motivation_baseline"]),
-                                "values": copy.deepcopy(s["values"]["schwartz_priorities"]),
-                                "core_goals": copy.deepcopy(s["core_goals"])}}

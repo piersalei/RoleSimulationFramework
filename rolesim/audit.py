@@ -1,322 +1,223 @@
 """Automatic audit of a finished run directory (psychology reply, section 3.2-3.3).
 
-The audit re-derives its verdicts from the run's own artifacts instead of trusting the
-engine's bookkeeping. It covers only the dimensions the reply assigns to automatic audit:
-field validity, evidence and visibility, mechanism/write compatibility, stable
-consistency, traceability and state-change attribution (every change traced to a card,
-its rule and inputs that match the role's profile and appraisal). The other dimensions need human scoring, and a clean
-report says nothing about whether the simulated role is psychologically plausible.
+The audit re-derives its verdicts from the run's own files (records.jsonl, scene.json,
+roles/<id>/profile.json, setup.json, final_state.json, trace/<interaction>/<id>/phases.jsonl and
+model_calls.jsonl) instead of trusting the engine's bookkeeping, and checks the registry again.
+Per role:
+
+  trajectory_traceable      every phase reads the state the previous one wrote; the final state is
+                            the last one written                                  轨迹可追溯性
+  operator_write_compatible accepted changes: registered operator, construct on its write list, the
+                            stage it may run in, its dependency group, never stable  机制与写回相容性
+  evidence_visible          accepted changes cite only records the role acted in or was addressed by
+  prompt_isolation          model calls show only such records, never world-private facts, never
+                            another role's thought, never another role's concealed setup items
+                            (unless that role said them in a record this role saw) 证据与可见性
+  concealed_withheld        no concealed setup item ever reaches an expression call
+  unaware_withheld          stable values the role cannot be aware of (or whose self-visibility the
+                            sources leave open) never reach a prompt, by name or by value
+  thoughts_self_only        the role's thoughts are addressed to itself only
+  stable_unchanged          the final state still points at the compiled profile   稳定一致性
+  fields_valid              the final state's values fit the state layout          字段有效性
+Counted, not judged: soft flags and rejected changes by code, review items, spoken mentions of
+concealed / disclosable setup items (the plan may choose to reveal; only the expression prompt
+is checked).
+
+A clean report says nothing about psychological plausibility; mock runs never do.
 """
 import json
 import re
+from collections import Counter
 from pathlib import Path
 
-from .briefing import mentions, recap_entries
-from .catalog import digest, write_json
-from .mechanisms import CARD_SCHEMA, OPS, RULES, recompute
-from .state import OPERATORS, VERSIONS, may_write, validate_dynamic
-from .modules import governing
+from .briefing import mentions
+from .catalog import write_json
+from .registry import Registry
+from .slots import OPTION_SLOTS, SLOTS, check_instance
 
-HUMAN_DIMENSIONS = ["机制与写回相容性（理论层面）", "动态合理性", "角色可区分性", "外显行为与隐状态匹配",
-                    "错误推断的合理性"]
+HUMAN_DIMENSIONS = ["机制与写回相容性（理论层面）", "动态合理性", "角色可区分性", "外显行为与隐状态匹配", "错误推断的合理性"]
 MAX_DETAILS = 20
+ID_PATTERN = re.compile(r"\b[dsm]\.[a-z_]+\.[a-z_]+")
+
+
+def _read(path, default=None):
+    path = Path(path)
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
 
 
 def _lines(path):
     path = Path(path)
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
-def _check(check_id, dimension, failures, total, note=""):
-    return {"id": check_id, "dimension": dimension, "status": "fail" if failures else "pass",
-            "checked": total, "failures": len(failures), "details": failures[:MAX_DETAILS], "note": note}
-
-
-def _read(path):
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()] if path.exists() else []
 
 
 def _strings(value):
     if isinstance(value, str):
         yield value
     elif isinstance(value, dict):
-        for item in value.values():
-            yield from _strings(item)
+        for v in value.values():
+            yield from _strings(v)
     elif isinstance(value, list):
-        for item in value:
-            yield from _strings(item)
+        for v in value:
+            yield from _strings(v)
 
 
-def _prompts(rec):
-    """Everything this role's model calls were given in one turn."""
-    parts = [rec.get("controller_input"), rec.get("expression_input")]
-    parts += [a.get("input") for a in rec.get("appraisals", [])]
-    return json.dumps(parts, ensure_ascii=False)
+def _check(check_id, dimension, failures, checked, note=""):
+    return {"id": check_id, "dimension": dimension, "status": "pass" if not failures else "fail",
+            "checked": checked, "failures": len(failures), "details": failures[:MAX_DETAILS], "note": note}
 
 
-def _expected_inputs(rule, persona, cues, signals):
-    """What a rule's inputs must be, re-derived from the profile and what the role perceived."""
-    if rule == "tension_v1":
-        caps = persona["stable"]["traits"]["affective_capacities"]
-        return {"pressure": cues.get("pressure", 0), "threat_sensitivity": caps["threat_sensitivity"],
-                "recovery_rate": caps["recovery_rate"]}
-    if rule == "trust_v1":
-        return {"reliability_signal": signals.get("reliability_signal")}
-    return None
+def _rid(record):
+    return f"{record['action_id']}#{record['order_index']}"
 
 
-def _path_pattern(path):
-    return re.compile("^" + re.escape(path).replace(re.escape("{other}"), "[^.]+") + "$")
+def audit_role(run, cid, manifest, records, scene, registry):
+    folder = run / "roles" / cid
+    trace = run / "trace" / manifest["interaction_id"] / cid
+    phases, calls = _lines(trace / "phases.jsonl"), _lines(trace / "model_calls.jsonl")
+    profile, setup, final = _read(folder / "profile.json", {}), _read(folder / "setup.json", {}), _read(folder / "final_state.json")
+    visible = {_rid(r): r for r in records if r["actor"]["actor_id"] == cid or cid in r["recipients"]}
+    checks = []
 
-
-def _get(dynamic, path):
-    for key in path.split(".")[1:]:
-        dynamic = dynamic.get(key) if isinstance(dynamic, dict) else None
-    return dynamic
-
-
-def attribution(inputs, records, events, states, cast):
-    """State-change attribution: each committed change names a card whose effect may write
-    that path with that operator, its inputs agree with the profile and the role's own
-    perceived cues, and the rule re-derives the logged value. Cards shown to the decision
-    controller must have held: every matched condition re-observed from the logs."""
-    snap = inputs.get("mechanisms")
-    if not isinstance(snap, dict) or snap.get("schema") != CARD_SCHEMA:
-        return [{"error": f"run predates mechanism card schema {CARD_SCHEMA}; changes carry no card attribution"}], 0
-    cards = {c["id"]: c for c in snap["cards"]}
-    persona = inputs["persona"]
-    signals = {e["event_id"]: e.get("signals") or {} for e in events}
-    perceived = {eid: dict(sig.get("cues", {})) for eid, sig in signals.items()}
-    for rec in records:
-        for item in rec.get("appraisals", []):
-            perceived[item["event_id"]] = dict(item["output"]["cues"])
-    by_id = {s["state_id"]: s for s in states}
-    titles = {c["title"]: c["role_id"] for c in cast}
-    fails, checked, since = [], 0, []
-    for rec in records:
-        step = rec["step_delta"].get("changes", [])
-        for delta in (rec["step_delta"], rec["perceive_delta"]):
-            for change in delta.get("changes", []):
-                checked += 1
-                where = {"state_id": delta.get("to_state_id"), "path": change.get("path")}
-                card = cards.get(change.get("card"))
-                effect = next((e for e in (card or {}).get("effects", []) if e["rule"] == change.get("rule")), None)
-                if effect is None:
-                    fails.append({**where, "error": f"no card effect {change.get('card')}/{change.get('rule')}"})
-                    continue
-                if not _path_pattern(effect["path"]).match(change["path"]) or change["mechanism"] not in effect["operators"]:
-                    fails.append({**where, "error": "card effect may not write this path with this operator"})
-                    continue
-                if change.get("rule") not in RULES:
-                    fails.append({**where, "error": f"unknown rule {change.get('rule')!r}"})
-                    continue
-                if not isinstance(change.get("evidence"), list) or len(change["evidence"]) != 1 \
-                        or not isinstance(change.get("inputs"), dict):
-                    fails.append({**where, "error": "change lacks its single evidence event or rule inputs"})
-                    continue
-                event_id = change["evidence"][0]
-                expected = _expected_inputs(change["rule"], persona, perceived.get(event_id, {}),
-                                            signals.get(event_id, {}))
-                if expected is not None and change.get("inputs") != expected:
-                    fails.append({**where, "error": "rule inputs disagree with the profile or the perceived cues",
-                                  "logged": change.get("inputs"), "expected": expected})
-                elif recompute(change["rule"], change["before"], change["inputs"], effect["params"]) != change["after"]:
-                    fails.append({**where, "error": "rule does not re-derive the logged value"})
-        controller = rec.get("controller_input") or {}
-        since = since + step
-        cues = (controller.get("respond_to") or {}).get("cues", {})
-        state = by_id.get(rec["step_delta"].get("to_state_id"), {}).get("dynamic", {})
-        other = titles.get((controller.get("respond_to") or {}).get("actor"))
-        for shown in controller.get("active_mechanisms", []):
-            for cond in shown["matched"]:
-                checked += 1
-                path = cond.get("path", "").replace("{other}", other or "{other}")
-                if cond["kind"] == "cue":
-                    seen = cues.get(cond["name"])
-                elif cond["kind"] == "state":
-                    seen = _get(state, path)
-                else:
-                    moved = [c["after"] - c["before"] for c in since if c["path"] == path]
-                    seen = round(sum(moved), 4) if moved else None
-                card = cards.get(shown["id"], {})
-                if cond not in [{**c, "observed": cond["observed"]} for c in card.get("trigger", {}).get("any_of", [])]:
-                    fails.append({"turn": rec["turn"], "card": shown["id"], "error": "shown condition is not on the card"})
-                elif seen != cond["observed"] or not OPS[cond["op"]](seen, cond["value"]):
-                    fails.append({"turn": rec["turn"], "card": shown["id"], "error": "shown card's trigger did not hold",
-                                  "observed": cond["observed"], "re_observed": seen})
-        since = list(rec["perceive_delta"].get("changes", []))
-    return fails, checked
-
-
-def audit_role(run, role, manifest, events):
-    folder = run / "roles" / role
-    inputs = _read(folder / "inputs.json")
-    states = _lines(folder / "states.jsonl")
-    records = _lines(folder / "audit.jsonl")
-    mech_log = _lines(folder / "mechanism_log.jsonl")
-    briefing = inputs.get("briefing")
-    visible = {e["event_id"] for e in events if role in e["visibility"]["audience"]}
-    # The recap is the role's own memory of earlier history, seeded before the first event.
-    visible |= {e["id"] for e in recap_entries(briefing)}
-    hidden = [e for e in events if role not in e["visibility"]["audience"]]
-    by_id = {s["state_id"]: s for s in states}
-
-    # -- field validity -----------------------------------------------------
     failures = []
-    for snap in states:
+    for previous, phase in zip(phases, phases[1:]):
+        if phase["input_state_id"] != previous["output_state_id"]:
+            failures.append({"phase": phase["phase_no"], "reads": phase["input_state_id"], "previous_wrote": previous["output_state_id"]})
+    for phase in phases:
+        if phase["commit"]["output_state_id"] != phase["output_state_id"]:
+            failures.append({"phase": phase["phase_no"], "commit": phase["commit"]["output_state_id"], "log": phase["output_state_id"]})
+    if final is not None and phases and final["state_id"] != phases[-1]["output_state_id"]:
+        failures.append({"final_state": final["state_id"], "last_written": phases[-1]["output_state_id"]})
+    if final is None:
+        failures.append({"final_state": "missing"})
+    checks.append(_check("trajectory_traceable", "轨迹可追溯性", failures, len(phases) + 1))
+
+    accepted = [(p["phase_no"], c) for p in phases for c in p["commit"]["accepted"]]
+    write_fail, evidence_fail = [], []
+    for phase_no, c in accepted:
         try:
-            validate_dynamic(snap["dynamic"], snap["module_status"])
-        except (ValueError, KeyError, TypeError) as exc:
-            failures.append({"state_id": snap.get("state_id"), "error": str(exc)})
-    field_check = _check("dynamic_fields_valid", "字段有效性", failures, len(states),
-                         "ranges, null/active consistency, ungoverned values, source lists")
-
-    # -- stable consistency -------------------------------------------------
-    stable_id = digest(inputs["persona"]["stable"])
-    failures = [{"state_id": s["state_id"], "error": "stable differs from the run's persona"}
-                for s in states if digest(s["stable"]) != stable_id or s.get("stable_snapshot_id") != stable_id]
-    if manifest["roles"][role].get("stable_snapshot_id") not in (None, stable_id):
-        failures.append({"state_id": None, "error": "manifest stable_snapshot_id disagrees with inputs"})
-    stable_check = _check("stable_unchanged", "稳定一致性", failures, len(states))
-
-    # -- traceability -------------------------------------------------------
-    failures, previous = [], None
-    for snap in states:
-        if snap["prev_state_id"] != previous:
-            failures.append({"state_id": snap["state_id"], "error": f"prev_state_id {snap['prev_state_id']!r} != {previous!r}"})
-        if set(snap.get("versions", {})) != set(VERSIONS):
-            failures.append({"state_id": snap["state_id"], "error": "missing or extra version numbers"})
-        previous = snap["state_id"]
-    for entry in mech_log:
-        if entry.get("output_state_id") not in by_id:
-            failures.append({"commit_key": entry.get("commit_key"), "error": "mechanism_log points at an unknown state"})
-    if set(manifest.get("versions", {})) != set(VERSIONS):
-        failures.append({"state_id": None, "error": "manifest lacks the four version numbers"})
-    trace_check = _check("trajectory_traceable", "轨迹可追溯性", failures, len(states) + len(mech_log))
-
-    # -- evidence, visibility, write compatibility ---------------------------
-    ev_fail, write_fail, changes_seen = [], [], 0
-    own = set()
-    for rec in records:
-        own.add(rec["proposal"]["proposal_id"])
-        for delta in (rec["step_delta"], rec["perceive_delta"]):
-            snap = by_id.get(delta.get("to_state_id"))
-            known = (set(snap["memory"]) if snap else set()) | own | {e["id"] for e in recap_entries(briefing)}
-            for change in delta.get("changes", []):
-                changes_seen += 1
-                where = {"state_id": delta.get("to_state_id"), "path": change.get("path")}
-                evidence = change.get("evidence")
-                if not evidence or not isinstance(evidence, list):
-                    ev_fail.append({**where, "error": "change without evidence"})
-                    continue
-                for ref in evidence:
-                    if ref not in visible and ref not in own:
-                        ev_fail.append({**where, "error": f"evidence {ref!r} was never visible to the role"})
-                    elif ref not in known:
-                        ev_fail.append({**where, "error": f"evidence {ref!r} not yet seen at this state"})
-                operator, path = change.get("mechanism"), change.get("path", "")
-                if operator not in OPERATORS:
-                    write_fail.append({**where, "error": f"unregistered operator {operator!r}"})
-                elif not may_write(operator, path):
-                    write_fail.append({**where, "error": f"{operator} may not write {path}"})
-                elif snap is not None:
-                    module = governing(snap["module_status"], path)
-                    if module is None or snap["module_status"][module]["status"] != "active":
-                        write_fail.append({**where, "error": "write to a module that is not active"})
-                if str(path).startswith("stable"):
-                    write_fail.append({**where, "error": "change addresses stable"})
-        decision_ids = rec["decision"].get("evidence_ids", [])
-        if not decision_ids or any(i not in visible and i not in own for i in decision_ids):
-            ev_fail.append({"state_id": None, "turn": rec["turn"], "error": "decision cites unavailable information"})
-    # Role-invisible events must not appear in anything handed to this role's model calls.
-    prompts = [_prompts(rec) for rec in records]
-    leaks = [{"turn": i + 1, "event_id": e["event_id"], "error": "hidden event content reached the role's prompts"}
-             for e in hidden for i, text in enumerate(prompts)
-             if e["event_id"] in text or (len(e["content"]) > 6 and e["content"] in text)]
-    evidence_check = _check("evidence_visible", "证据与可见性", ev_fail + leaks,
-                            changes_seen + len(records) * (1 + len(hidden)))
-    write_check = _check("operator_write_compatible", "机制与写回相容性（权限层）", write_fail, changes_seen,
-                         "operator registry, path permission and module status only; theory fit needs human scoring")
-
-    # -- concealed information (role setup) ----------------------------------
-    secrets = briefing["conceal"] if briefing else []
-    conceal_fail, disclosed = [], []
-    for rec in records:
-        speech = rec["proposal"]["content"]
-        expression = json.dumps(rec.get("expression_input"), ensure_ascii=False)
-        for item in secrets:
-            if item["text"] in expression:
-                conceal_fail.append({"turn": rec["turn"], "item": item["id"],
-                                     "error": "concealed text reached the expression prompt"})
-        for item_id in mentions(speech, secrets):
-            conceal_fail.append({"turn": rec["turn"], "item": item_id, "error": "concealed item spoken"})
-        disclosed += [{"turn": rec["turn"], "item": i} for i in mentions(speech, briefing["disclose"] if briefing else [])]
-    conceal_check = _check("concealed_info_withheld", "证据与可见性", conceal_fail, len(records) * len(secrets),
-                           "keyword markers only; paraphrased leaks need human review")
-
-    # -- the other roles' private material and world-private data ------------
-    private = []
-    for other in manifest["cast"]:
-        if other["role_id"] == role:
+            rule = registry.operator(c["update_operator"])
+            construct = registry.construct(c["construct_id"])
+        except KeyError as exc:
+            write_fail.append({"phase": phase_no, "error": str(exc)})
             continue
-        theirs = _read(run / "roles" / other["role_id"] / "inputs.json").get("briefing") or {}
-        private += [(f"{other['role_id']}:{i['id']}", i["text"]) for i in theirs.get("conceal", [])]
-    private += [("world_private", s) for s in _strings(inputs["scenario"]["world_private"]) if len(s) >= 6]
-    cross_fail = [{"turn": rec["turn"], "item": label, "error": "another role's secret or world-private data "
-                   "reached this role's model calls"}
-                  for rec in records for label, value in private if value in _prompts(rec)]
-    cross_check = _check("cross_role_isolation", "证据与可见性", cross_fail, len(records) * len(private),
-                         "exact text of the other roles' concealed items and world-private strings")
+        problems = [p for p, bad in (("stable", construct.layer == "stable"), ("not_in_whitelist", c["construct_id"] not in rule.writes),
+                                     ("stage", c["stage"] not in rule.stages), ("group", c["group"] != rule.group)) if bad]
+        if problems:
+            write_fail.append({"phase": phase_no, "construct": c["construct_id"], "operator": rule.name, "problems": problems})
+        unseen = [e["event"] for e in c["evidence"] if e["event"] not in visible]
+        if not c["evidence"] or unseen:
+            evidence_fail.append({"phase": phase_no, "construct": c["construct_id"], "unseen": unseen or "no evidence"})
+    checks.append(_check("operator_write_compatible", "机制与写回相容性（权限层）", write_fail, len(accepted)))
+    checks.append(_check("evidence_visible", "证据与可见性", evidence_fail, len(accepted)))
 
-    # -- soft constraints, exceptions, rejections (reported, not failures) ---
-    flags = [{"commit_key": e["commit_key"], **f} for e in mech_log for f in e.get("flags", [])]
-    rejected = [{"commit_key": e["commit_key"], **r} for e in mech_log for r in e.get("rejected", [])]
-    candidates = sum(len(e.get("candidates", [])) for e in mech_log)
-    final = states[-1] if states else None
-    coverage = {}
-    if final:
-        for item in final["module_status"].values():
-            coverage[item["status"]] = coverage.get(item["status"], 0) + 1
+    secrets = [s for s in _strings(scene.get("world_private")) if len(s) >= 4]
+    other_thoughts = [r["content"] for r in records if r["kind"] == "thought" and r["actor"]["actor_id"] != cid and len(r["content"]) >= 4]
+    heard = json.dumps([r["content"] for r in visible.values()], ensure_ascii=False)
+    others_concealed = [i["text"] for m in manifest.get("cast", []) if m["character_id"] != cid
+                        for i in ((_read(run / "roles" / m["character_id"] / "setup.json", {}).get("briefing") or {}).get("conceal") or [])
+                        if len(i["text"]) >= 4 and i["text"] not in heard]
+    isolation_fail = []
+    for n, call in enumerate(calls):
+        shown = [_rid(r) for r in call["input"].get("records", [])]
+        text = json.dumps(call["input"], ensure_ascii=False)
+        unseen = [i for i in shown if i not in visible]
+        leaked = ([s for s in secrets if s in text] + [t[:20] for t in other_thoughts if t in text]
+                  + [t[:20] for t in others_concealed if t in text])
+        if unseen or leaked:
+            isolation_fail.append({"call": n, "stage": call["stage"], "unseen_records": unseen, "leaked": leaked})
+    checks.append(_check("prompt_isolation", "证据与可见性", isolation_fail, len(calls)))
 
-    # -- state-change attribution -------------------------------------------
-    failures, total = attribution(inputs, records, events, states, manifest["cast"])
-    attribution_check = _check("state_change_attribution", "机制与写回相容性（归因层）", failures, total,
-                               "card, rule, inputs and recomputed value per change; shown cards' triggers re-observed")
+    briefing = setup.get("briefing") or {}
+    concealed = [i["text"] for i in briefing.get("conceal", [])]
+    express = [c for c in calls if c["stage"] == "express"]
+    conceal_fail = [{"call": n, "item": t[:30]} for n, c in enumerate(express)
+                    for t in concealed if t in json.dumps(c["input"], ensure_ascii=False)]
+    checks.append(_check("concealed_withheld", "证据与可见性", conceal_fail, len(express) * max(len(concealed), 1)))
+    terms = [{"call": n, "found": sorted(set(ID_PATTERN.findall(text) + (["dm."] if "dm." in text else [])))}
+             for n, text in ((n, json.dumps(c["input"], ensure_ascii=False)) for n, c in enumerate(express))
+             if ID_PATTERN.search(text) or "dm." in text]
+    checks.append(_check("expression_need_to_know", "证据与可见性", terms, len(express)))
 
-    checks = [field_check, evidence_check, write_check, stable_check, trace_check, conceal_check, cross_check,
-              attribution_check]
-    return {
-        "run": run.name, "role_id": role, "manifest_status": manifest.get("status"),
-        "passed": all(c["status"] == "pass" for c in checks) and manifest.get("status") == "completed",
-        "checks": checks,
-        "soft_violations": [f for f in flags if f["flag"] == "soft_violation"],
-        "exceptions_approved": [f for f in flags if f["flag"] == "exception_approved"],
-        "rejected_groups": rejected,
-        "disclosed_items": disclosed,
-        "error_rate": {"candidate_changes": candidates, "rejected_groups": len(rejected)},
-        "module_coverage": coverage,
-        "status_transitions": manifest["roles"][role].get("status_transitions"),
-        "needs_human_scoring": HUMAN_DIMENSIONS,
-        "evidence_boundary": "Automatic audit of structure, evidence, visibility, write permission and "
-                             "stable consistency. Passing does not show psychological validity; "
-                             "mock runs never do.",
-    }
+    hidden = []
+    for construct_id, module in (profile.get("modules") or {}).items():
+        try:
+            construct = registry.construct(construct_id)
+        except KeyError:
+            continue
+        if module["status"] == "active" and module["value"] not in (None, {}, []) and construct.self_visibility not in ("aware", "partial"):
+            value = module["value"] if isinstance(module["value"], str) else json.dumps(module["value"], ensure_ascii=False, sort_keys=True)
+            hidden.append((construct_id, construct.name, value))
+    unaware_fail = []
+    for n, call in enumerate(calls):
+        text = json.dumps(call["input"], ensure_ascii=False, sort_keys=True)
+        names = json.dumps(call["input"].get("self_profile", {}), ensure_ascii=False)
+        for construct_id, name, value in hidden:
+            if f'"{name}"' in names or (len(value) >= 4 and value in text):
+                unaware_fail.append({"call": n, "stage": call["stage"], "construct": construct_id})
+    checks.append(_check("unaware_withheld", "证据与可见性", unaware_fail, len(calls) * max(len(hidden), 1)))
+
+    own_thoughts = [r for r in records if r["actor"]["actor_id"] == cid and r["kind"] == "thought"]
+    thought_fail = [{"record": _rid(r), "to": sorted(r["recipients"])} for r in own_thoughts if set(r["recipients"]) != {cid}]
+    checks.append(_check("thoughts_self_only", "证据与可见性", thought_fail, len(own_thoughts)))
+
+    stable_fail = [] if final and final["stable_snapshot_id"] == profile.get("snapshot_id") else \
+        [{"final": (final or {}).get("stable_snapshot_id"), "profile": profile.get("snapshot_id")}]
+    checks.append(_check("stable_unchanged", "稳定一致性", stable_fail, 1))
+
+    field_fail, checked = [], 0
+    for layer in ("dynamic", "memory"):
+        for construct_id, value in ((final or {}).get(layer) or {}).items():
+            slot = SLOTS.get(construct_id)
+            if slot is None:
+                field_fail.append({"construct": construct_id, "error": "not in the state layout"})
+                continue
+            for keys, item in ([((), value)] if not slot.keys else _instances(slot, value)):
+                checked += 1
+                options = None
+                if construct_id in OPTION_SLOTS and keys:
+                    try:
+                        options = set(registry.mechanism(keys[0]).options)
+                    except KeyError:
+                        options = None
+                problem = check_instance(slot, item, options)
+                if problem:
+                    field_fail.append({"construct": construct_id, "error": problem[1]})
+    checks.append(_check("fields_valid", "字段有效性", field_fail, checked))
+
+    spoken = [r["content"] for r in records if r["actor"]["actor_id"] == cid and r["kind"] in ("speech", "action")]
+    soft = Counter(f["code"] for p in phases for f in p["commit"]["soft_flags"])
+    rejected = Counter(r["error"]["code"] for p in phases for r in p["commit"]["rejected"])
+    return {"run": run.name, "role_id": cid, "manifest_status": manifest.get("status"),
+            "passed": all(c["status"] == "pass" for c in checks), "checks": checks,
+            "phases": len(phases), "model_calls": len(calls), "accepted_changes": len(accepted),
+            "soft_flags": dict(soft), "rejected_changes": dict(rejected),
+            "review_items": len(profile.get("review") or []),
+            "concealed_mentioned": sum(len(mentions(s, briefing.get("conceal", []))) for s in spoken),
+            "disclosed_mentioned": sum(len(mentions(s, briefing.get("disclose", []))) for s in spoken),
+            "needs_human_scoring": HUMAN_DIMENSIONS,
+            "evidence_boundary": "Automatic audit of structure, evidence, visibility, write permission and "
+                                 "stable consistency. Passing does not show psychological validity; mock runs never do."}
+
+
+def _instances(slot, value):
+    """(key parts, instance) pairs of a keyed construct's value."""
+    level = [((), value)]
+    for _ in slot.keys:
+        level = [(keys + (k,), v) for keys, node in level if isinstance(node, dict) for k, v in node.items()]
+    return level
 
 
 def render_markdown(report):
     lines = [f"# 自动审计报告：{report['run']}", "",
              f"- 角色：{report['role_id']}；运行状态：{report['manifest_status']}",
-             f"- 结论：{'通过' if report['passed'] else '未通过'}（仅结构与证据层）", "",
+             f"- 结论：{'通过' if report['passed'] else '未通过'}（仅结构、证据与可见性层）", "",
              "| 检查 | 维度 | 结果 | 检查数 | 失败数 |", "|---|---|---|---|---|"]
     for c in report["checks"]:
         lines.append(f"| {c['id']} | {c['dimension']} | {c['status']} | {c['checked']} | {c['failures']} |")
-    rate = report["error_rate"]
-    lines += ["", f"- 软约束违反：{len(report['soft_violations'])}；豁免：{len(report['exceptions_approved'])}",
-              f"- 被拒依赖组：{rate['rejected_groups']} / 候选变化 {rate['candidate_changes']}",
-              f"- 主动透露（简报 disclose 条目被说出）：{len(report['disclosed_items'])} 次（只统计，不判错）",
-              f"- 模块覆盖（末态）：{json.dumps(report['module_coverage'], ensure_ascii=False)}",
+    lines += ["", f"- 阶段 {report['phases']}；模型调用 {report['model_calls']}；写入的变化 {report['accepted_changes']}",
+              f"- 软异常：{json.dumps(report['soft_flags'], ensure_ascii=False)}；被拒绝的变化：{json.dumps(report['rejected_changes'], ensure_ascii=False)}",
+              f"- 档案待审核项：{report['review_items']}",
+              f"- 说出口的设定条目（只统计，不判错）：隐瞒 {report['concealed_mentioned']}，透露 {report['disclosed_mentioned']}",
               f"- 需人工评分的维度：{'、'.join(report['needs_human_scoring'])}", ""]
     for c in report["checks"]:
         if c["details"]:
@@ -327,26 +228,30 @@ def render_markdown(report):
     return "\n".join(lines)
 
 
-def audit_run(run_dir):
-    """Audit every role of a run; the run passes only if every role does."""
+def audit_run(run_dir, registry=None):
+    """Audit every role of a run; the run passes only if it completed and every role passes."""
     run = Path(run_dir)
     manifest = _read(run / "manifest.json")
-    events = _read(run / "environment_events.json")
-    roles = {c["role_id"]: audit_role(run, c["role_id"], manifest, events) for c in manifest["cast"]}
+    if manifest is None or manifest.get("pipeline") != "stages":
+        raise ValueError(f"{run}: not a run directory of the staged pipeline")
+    registry = registry or Registry.load()
+    records, scene = _lines(run / "records.jsonl"), _read(run / "scene.json", {})
+    roles = {m["character_id"]: audit_role(run, m["character_id"], manifest, records, scene, registry) for m in manifest["cast"]}
     return {"run": run.name, "manifest_status": manifest.get("status"),
-            "passed": manifest.get("status") == "completed" and all(r["passed"] for r in roles.values()),
-            "roles": roles}
+            "passed": manifest.get("status") == "completed" and all(r["passed"] for r in roles.values()), "roles": roles}
 
 
-def write_report(run_dir):
+def write_report(run_dir, registry=None):
     run = Path(run_dir)
-    report = audit_run(run)
-    for role, item in report["roles"].items():
-        write_json(run / "roles" / role / "audit_report.json", item)
-        (run / "roles" / role / "audit_report.md").write_text(render_markdown(item), encoding="utf-8")
+    report = audit_run(run, registry)
+    for cid, item in report["roles"].items():
+        folder = run / "roles" / cid
+        folder.mkdir(parents=True, exist_ok=True)
+        write_json(folder / "audit_report.json", item)
+        (folder / "audit_report.md").write_text(render_markdown(item), encoding="utf-8")
     write_json(run / "audit_report.json", report)
     head = [f"# 自动审计：{report['run']}", "", f"- 结论：{'通过' if report['passed'] else '未通过'}"]
-    head += [f"- {role}：{'通过' if item['passed'] else '未通过'}" for role, item in report["roles"].items()]
+    head += [f"- {cid}：{'通过' if item['passed'] else '未通过'}" for cid, item in report["roles"].items()]
     body = [render_markdown(item).replace("# ", "## ", 1) for item in report["roles"].values()]
     (run / "audit_report.md").write_text("\n".join(head + [""] + body), encoding="utf-8")
     return report

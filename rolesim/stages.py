@@ -21,14 +21,37 @@ the stage call, as the schema's judgments.
 """
 import json
 
+from . import skills as sk
 from .agent_api import record_id
 from .evidence import EvidenceGate
-from .interfaces import STAGE_OF_KIND, InterfaceError, ModelCallRecord, ModelError, PromptView, StageError
+from .interfaces import (FULL_MODE, MODES, STAGE_OF_KIND, InterfaceError, ModelCallRecord, ModelError, PromptView,
+                         StageError)
 from .schemas import parse_output, stage_schema, stage_task
+from .vocab import ACTIONS
 
 KIND_OF = {stage: kind for kind, stage in STAGE_OF_KIND.items()}
 HISTORY_WINDOW = 30
 SELF_KNOWN = ("aware", "partial")
+STRATEGY_TEXT = {"omission": "不提", "strategic_ambiguity": "说得模糊"}
+
+
+def controller_briefing(briefing):
+    """The opening setup as the role's own planning may use it: concealed items included."""
+    return {"互动目标": briefing["goal"], "想让对方知道": [i["text"] for i in briefing["disclose"]],
+            "知道但不打算说出口": [{"内容": i["text"], "方式": STRATEGY_TEXT[i["strategy"]]} for i in briefing["conceal"]]}
+
+
+def expression_briefing(briefing):
+    """The opening setup as the expression call may see it: never the concealed items."""
+    return {"互动目标": briefing["goal"], "可以说出的": [i["text"] for i in briefing["disclose"]]}
+
+
+def active_skills(ctx):
+    """Bound persona skills the S1 cues (or the setup's disclose / conceal items) activate, at most
+    skills.MAX_ACTIVE by priority x strength (skills.select)."""
+    if not ctx.skills:
+        return []
+    return sk.select(list(ctx.skills), {"cues": dict(ctx.upstream.get("cues") or {})}, ACTIONS, ctx.briefing)
 
 
 def _text(value):
@@ -65,10 +88,11 @@ def self_profile(stable, registry, modules=None, tendencies=True):
     return out
 
 
-def state_text(state, registry, memories=()):
-    """Active dynamic constructs the role can be aware of, with their values, then what it recalls."""
+def state_text(state, registry, memories=(), dynamic=True):
+    """Active dynamic constructs the role can be aware of, with their values (unless `dynamic` is
+    False, the profile_only mode), then what it recalls."""
     lines = []
-    for cid in registry.ids("construct"):
+    for cid in (registry.ids("construct") if dynamic else ()):
         construct = registry.construct(cid)
         value = state.dynamic.get(cid)
         if construct.layer != "dynamic" or state.status.get(cid) != "active" or value in (None, {}, []):
@@ -104,15 +128,27 @@ class ModelStage:
         self.gate = gate or EvidenceGate()
         self.trace = trace
         self.window = window
-        self.schema = stage_schema(name, registry)
-        self.task = stage_task(name, registry)
+        self.schemas = {mode: stage_schema(name, registry, mode == FULL_MODE) for mode in MODES}
+        self.tasks = {mode: stage_task(name, registry, mode == FULL_MODE) for mode in MODES}
+        self.schema, self.task = self.schemas[FULL_MODE], self.tasks[FULL_MODE]
 
     def view(self, ctx, evidence):
+        task = dict(self.tasks[ctx.mode])
+        if self.name == "S2" and ctx.skills:
+            task["skills"] = {"note": "该人物惯用的应对方式，供参考，不保证唯一反应",
+                              "catalog": sk.catalog(list(ctx.skills)),
+                              "active": [{"name": a["name"], "decision": a["decision"], "avoid": a["avoid"]}
+                                         for a in active_skills(ctx)]}
+        background = dict(ctx.background)
+        if ctx.briefing:
+            background["开场设定"] = controller_briefing(ctx.briefing)
         return PromptView(self_profile(ctx.stable, self.registry), visible_records(ctx, evidence, self.window),
-                          state_text(ctx.state, self.registry, evidence.retrieved_memories), dict(ctx.upstream),
-                          ctx.key[1], dict(ctx.present), self.task, dict(ctx.background))
+                          state_text(ctx.state, self.registry, evidence.retrieved_memories, ctx.mode != "profile_only"),
+                          dict(ctx.upstream), ctx.key[1], dict(ctx.present), task, background)
 
     def run(self, ctx):
+        if ctx.mode not in MODES:
+            raise InterfaceError(f"unknown mode {ctx.mode!r}; one of {MODES}")
         if ctx.phase.kind != KIND_OF[self.name]:
             raise InterfaceError(f"{self.name} runs in a {KIND_OF[self.name]} phase, not {ctx.phase.kind}")
         if self.name == "S3" and ctx.upstream.get("plan") is None:
@@ -120,12 +156,12 @@ class ModelStage:
         evidence = self.gate.build(ctx)
         view = self.view(ctx, evidence)
         try:
-            result = self.model.complete(self.name, view, self.schema)
+            result = self.model.complete(self.name, view, self.schemas[ctx.mode])
         except ModelError as exc:
             raise StageError(f"{self.name}: {exc}") from exc
         if self.trace is not None:
             self.trace.model_call(ctx.key, ModelCallRecord(self.name, view, result.raw, result.reasoning))
-        output = parse_output(self.name, result.output, self.registry, evidence)
+        output = parse_output(self.name, result.output, self.registry, evidence, ctx.mode == FULL_MODE)
         if self.name == "S2":
             me = ctx.key[1]
             strangers = [a for a in output.product.expression.audience if a not in ctx.present or a == me]

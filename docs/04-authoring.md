@@ -3,13 +3,13 @@
 本文是写给作者的：怎么新增一个角色文件、一个剧情文件，怎么换着搭配运行。输入是两类文件，互相独立：
 
 - `roles/<id>.json`：一个角色一个文件（档案 + skills + 开场设定）；
-- `scenes/<id>.json`：一个剧情一个文件（共享背景 + 在场的 agent：角色座位与可选的环境 agent + 动作范围）。
+- `scenes/<id>.json`：一个剧情一个文件（共享背景 + 在场的 agent：角色座位与可选的环境 agent）。
 
 心理学组要交付什么内容、按什么格式，见 [05-psychology-interface.md](05-psychology-interface.md)。命令怎么敲见 [03-usage.md](03-usage.md)。术语见 [02-concepts.md](02-concepts.md)。
 
 ## 1. 人物制作
 
-复制 `roles/role1.json`，改名为新编号（如 `roles/role3.json`，文件名必须等于 `persona.id`），在其中的 `persona`（persona schema 2.0）里修改人物身份、公开描述、自我理解、相关分面、动机基线、价值权重和核心目标。`stable.module_status` 必须列出全部登记模块：有值的写 `active` 并在 `provenance` 里给来源；没有资料的写 `unknown` 且值为 `null`，不要写成 0 或中性值；本版没有建模的写 `not_modeled` 并说明原因。运行 `validate` 后再 `compile` 检查视图。模板内的数值是虚构示例，应逐项审定，不是默认人群常模。示例由 `PYTHONPATH=. python3.11 scripts/bootstrap_examples.py` 重建。
+复制 `roles/role1.json`，改名为新编号（如 `roles/role3.json`，文件名必须等于 `persona.id`），在其中的 `persona`（persona schema 2.0）里修改人物身份、公开描述、自我理解、相关分面、动机基线、价值权重和核心目标。`stable.module_status` 必须列出全部登记模块：有值的写 `active` 并在 `provenance` 里给来源；没有资料的写 `unknown` 且值为 `null`，不要写成 0 或中性值；本版没有建模的写 `not_modeled` 并说明原因。运行 `validate` 后再 `profile` 看编译后的画像和待审核项。模板内的数值是虚构示例，应逐项审定，不是默认人群常模。示例由 `PYTHONPATH=. python3.11 scripts/bootstrap_examples.py` 重建。
 
 字段规则：
 
@@ -43,12 +43,12 @@
 
 | 字段 | 含义 | 去向 |
 |---|---|---|
-| `goal` | 角色在这场互动里的目标 | 决策提示；表达提示 |
-| `disclose` | 想让对方知道的信息（`id`、`text`、`markers`） | 决策提示（`want_known`）；表达提示（`may_share`） |
-| `conceal` | 角色知道、但不想让对方知道的信息；`strategy` 只能是 `omission`（遗漏）或 `strategic_ambiguity`（战略模糊），不支持直接说谎 | **只进决策提示**（`keep_private`），表达提示拿不到原文 |
-| `recap` | 前情提要，id 以 `recap:` 开头 | 作为记忆的第一批条目，可被决策引用为证据 |
+| `goal` | 角色在这场互动里的目标 | 入场时写成当前目标 `g-setup`；S1 / S2 / S3 提示（`互动目标`）；表达提示 |
+| `disclose` | 想让对方知道的信息（`id`、`text`、`markers`） | S1 / S2 / S3 提示（`想让对方知道`）；表达提示（`可以说出的`） |
+| `conceal` | 角色知道、但不想让对方知道的信息；`strategy` 只能是 `omission`（不提）或 `strategic_ambiguity`（说得模糊），不支持直接说谎 | **只进 S1 / S2 / S3 提示**（`知道但不打算说出口`，附方式），表达提示拿不到原文 |
+| `recap` | 前情提要，id 以 `recap:` 开头 | 入场时写成记忆（`m.entry`，条目编号即 id），阶段开始时可被取回 |
 
-`markers` 是自动审计用来检测"说出来了"的关键词（至少两个字）。前情提要里不能出现隐瞒条目的关键词，因为前情会进入表达提示。审计项 `concealed_info_withheld` 检查隐瞒内容没有进入表达提示、没有被说出；`disclose` 条目被说出只统计不判错。关键词检测抓不到换了说法的泄露，这部分仍需人工评分。
+`markers` 是自动审计用来统计"说出来了"的关键词（至少两个字）。前情提要里不能出现隐瞒条目的关键词（隐瞒的原文只放在 `conceal` 里）。审计项 `concealed_withheld` 检查隐瞒条目的原文没有进入表达提示；隐瞒和透露条目被说出都只统计（`concealed_mentioned` / `disclosed_mentioned`），不判错，因为计划可以决定说出来。关键词检测抓不到换了说法的泄露，这部分仍需人工评分。
 
 开场设定是写给角色本人看的："你""你方"都指角色自己这一方。内容要和角色坐的座位对得上：role1 的设定是项目组一方的，role2 是合作方一方的，role3 是项目负责人（只在三方剧情 test3 里入座）。程序只能检查 id 是否与环境事件（`open`、`speech:`、`world:`）冲突，内容是否相符要作者自己保证。
 
@@ -58,15 +58,15 @@
 
 | 字段 | 含义 |
 |---|---|
-| `background` | 在场各方都知道的背景，作为合同里的 `scene_context` 传给每个角色；写事实，不写"你要……" |
+| `background` | 在场各方都知道的背景，作为 `initialize` 资料里的触发事实传给每个角色；写事实，不写"你要……" |
 | `agents` | 在场者列表。`kind: "role"` 是角色座位（2–6 个），各有 `id` 和 `title`（如"项目组数据负责人"）；角色按座位顺序入座、按这个顺序轮流发言，彼此只知道别人的座位名。`kind: "environment"` 是环境 agent（至多 1 个），另带 `world` 和 `rules`，见下 |
-| `max_turns` | 最多发言几次（所有角色轮流，从角色数到 40）；任何一方选 `close` 也会结束 |
-| `allowed_actions` | 可选的交流动作：索要证据、提问澄清、提出方案、说明边界、暂缓、接受、结束 |
+| `max_turns` | 一共行动几次（所有角色轮流，从角色数到 40）；本地运行总是跑满 |
+| `allowed_actions` | 交流动作范围（索要证据、提问澄清、提出方案、说明边界、暂缓、接受、结束）：校验并记入运行输入；分阶段管线的计划是自由文本，目前不受这个范围约束 |
 | `world_private` | 世界私有数据，永不进入任何角色的模型调用 |
 
 旧的 1.x 场景（带 `events`、`partner` 等脚本字段）和 2.0 场景（带 `seats`）都会被拒绝，不做静默转换。
 
-环境做这几件事：开场时发一条旁白（有环境 agent 时附上世界状态）；把一个角色说的话原样转给所有在场角色；到轮数上限或有人结束时收尾。它不替任何一方说话，也不编造"对方同意了""记录已到"这类结果。
+本地运行器做这几件事：开场时发一条导演指令（有环境 agent 时附上世界状态）；把一个角色的行动按它指定的接收者分发（没指定即全部在场者）；到轮数上限收尾。它不替任何一方说话，也不编造"对方同意了""记录已到"这类结果。
 
 **环境 agent**（可选）不是人，没有心理状态，只按写好的规则改变世界并用旁白告诉角色：
 
@@ -75,9 +75,9 @@
 | `world` | 初始世界状态，键只能是 `time`（`HH:MM`）、`weather`、`place`、`noise`，值是文字 |
 | `rules.minutes_per_round` | 每轮（所有角色各说一句）过去多少分钟（0–240），需要 `world.time` |
 | `rules.announce_time` | 每轮开头是否报时 |
-| `rules.events` | 定时事件：`round`（≥ 2）、`text`（旁白），可选 `set`（改已声明的世界变量）、`audience`（座位 id 列表，只让这些角色知道）、`cues`（环境标注的线索，角色直接采用，不再调用模型评价） |
+| `rules.events` | 定时事件：`round`（≥ 2）、`text`（旁白），可选 `set`（改已声明的世界变量）、`audience`（座位 id 列表，只让这些角色知道）、`cues`（环境标注的线索：只校验，不传给角色，因为接口 v2 没有线索字段；角色的线索由 S1 自己给出） |
 
-例子见 `scenes/test3.json`：三方在会议室商量，每轮过 10 分钟，第 2 轮下雨，第 3 轮只有项目组数据负责人收到同事的消息，第 4 轮前台提醒会议室快到时间（带压力线索）。环境 agent 的事件 id 是 `world:{轮}:time` 和 `world:{轮}:{序号}`；世界变化记在运行目录的 `world.jsonl`。
+例子见 `scenes/test3.json`：三方在会议室商量，每轮过 10 分钟，第 2 轮下雨，第 3 轮只有项目组数据负责人收到同事的消息，第 4 轮前台提醒会议室快到时间（带压力线索）。世界变化以环境记录的形式出现在运行目录的 `records.jsonl` 里（行动者为 `environment`，接收者即 `audience`）。
 
 ## 5. 换角色、换剧情
 
@@ -89,13 +89,13 @@ python3.11 -m rolesim run --roles role2 role1 --scene test1   # 换座位
 python3.11 -m rolesim run --roles role1 role2 role3 --scene test3   # 三个角色 + 环境 agent
 ```
 
-`--roles` 按座位顺序为每个角色座位写一个编号或文件路径，`--scene` 写一个。新增角色或剧情只需要放一个新文件，不用改代码。入座检查（`fit_cast`）里，错误会阻止运行（例如座位数不对、同一角色坐两个座位、机制先验与启用的机制卡不一致、开场设定用了环境保留的 id）；提示只报告，例如"这个 skill 在该剧情里永远不会被激活"。运行记录 `manifest.json` 的 `origin` 字段记下用了哪些角色文件和剧情文件及其哈希。
+`--roles` 按座位顺序为每个角色座位写一个编号或文件路径，`--scene` 写一个。新增角色或剧情只需要放一个新文件，不用改代码。入座检查（`fit_cast`）里，错误会阻止运行（例如座位数不对、同一角色坐两个座位、开场设定用了环境保留的 id）；提示只报告，例如"这个 skill 在该剧情里永远不会被激活"。运行记录 `manifest.json` 的 `origin` 字段记下用了哪些角色文件和剧情文件及其哈希。
 
-给环境组接入用的是 `rolesim.roles.seat(roles, scene, backend)`：每个角色座位返回一个配置好的 Agent（剧情的可选动作、自己和其他在场者的座位名、角色的 skill 和开场设定），以及首轮 `step` 要带的 `role_profile`。之后环境按合同 v0 调 `step` / `perceive`，接口不变。
+给环境组接入用的是 `rolesim.staged.StagedRoleAgent`：按接口 v2 调 `initialize` / `act`，角色文件按 `character_id`（或 `personality.role_ref`、名字）选出，开场设定和 skill 由角色文件带来，见 [13-agent-interface.md](13-agent-interface.md)。
 
-## 6. 新管线的档案：`profiles/<id>.json`（profile-1）
+## 6. 档案：`profiles/<id>.json`（profile-1）
 
-`--pipeline stages` 先找 `profiles/<id>.json`，没有就把同名角色文件里能一一对应到登记表构念的部分转过来（P1 分面、依恋、施瓦兹价值、核心目标、表达基线、社会角色）。想写得更完整时，用下面的命令导出一个起点再改：
+运行时先找 `profiles/<id>.json`，没有就把同名角色文件里能一一对应到登记表构念的部分转过来（P1 分面、依恋、施瓦兹价值、核心目标、表达基线、社会角色）。想写得更完整时，用下面的命令导出一个起点再改：
 
 ```bash
 python3.11 -m rolesim profile role1 --export profiles/role1.json   # 编译并列出待审核项；--export 写出 profile-1

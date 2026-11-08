@@ -48,23 +48,24 @@ class IRoleAgent(Protocol):
 | 保证 | 同一 `request_id` 返回同一结果；不返回任何内部状态；他人的思考不进入本角色的任何提示 |
 | 出错 | 抛 `InterfaceError`（输入不合规）或 `AgentCallError`（内部失败），状态不前进 |
 
-实现要点：`initialize` 调 `IRoleRepository.enter` 得到入场状态；`act` 取出未处理的记录，交给 `ITurnRunner.run`。
+实现要点：`initialize` 选角色、记下 bootstrap；第一次 `act`（此时才知道在场者）调 `IRoleRepository.load / enter` 得到入场状态，再 `ITurnRunner.begin`；之后每次 `act` 取出未处理的记录，交给 `ITurnRunner.run`。
 
-现在有两个实现，共用 `adapter.RoleAgentBase`（角色库、按 `interaction_id + character_id` 的 Session、`request_id` 重试、一次一个调用）：`adapter.RoleAgentAdapter`（旧的 `Agent.step`，只出发言，CLI 默认）和 `staged.StagedRoleAgent`（新的分阶段管线，产出思考 / 发言 / 动作；`--pipeline stages`）。旧实现在第 7 步删除。
+唯一的实现是 `staged.StagedRoleAgent`，基于 `adapter.RoleAgentBase`（角色库、按 `interaction_id + character_id` 的 Session、`request_id` 重试、一次一个调用），产出思考 / 发言 / 动作；`bootstrap.mechanism.mode` 选每个角色的消融模式。旧的 `adapter.RoleAgentAdapter`（`Agent.step`）已在第 7 步删除。
 
 ### 1.1 `ITurnRunner`：一次 act 里怎样走三个阶段
 
 ```python
 class ITurnRunner(Protocol):
     def begin(self, key: SessionKey, state: AgentState, stable: StableProfile,
-              background: Optional[Mapping[str, Any]] = None) -> None: ...      # 入场
+              background: Optional[Mapping[str, Any]] = None, mode: str = FULL_MODE,
+              skills: tuple = (), briefing: Optional[Mapping[str, Any]] = None) -> None: ...   # 入场
     def run(self, key: SessionKey, new_records: list[InteractionRecord],
             present: dict[str, Present]) -> tuple[AgentActionContent, AgentState]: ...
 ```
 
 | | 内容 |
 |---|---|
-| 输入 | `SessionKey = (interaction_id, character_id)`；本次新看到的记录（已去掉吸收过的和思考）；当前在场者 |
+| 输入 | `begin`：入场状态、稳定画像、情境背景、消融模式、绑定的人格 skill、开场设定。`run`：`SessionKey = (interaction_id, character_id)`；本次新看到的记录（已去掉吸收过的和别人的思考）；当前在场者 |
 | 输出 | 对外的行动内容 + 最终提交的状态 |
 | 流程 | 新记录按 `action_id` 分组，每组一个事件阶段：`S1.run` → commit；若该组是对本角色此前行动 / 承诺的反馈，再 `S3.run` → commit。全部处理完后 `S2.run` → commit → `IExpresser.realize` |
 | 保证 | 每个阶段读上一次提交后的快照；同一阶段内不读未提交的候选；S2 的依赖组被拒时不发出行动 |
@@ -165,8 +166,8 @@ class IStage(Protocol[P]):
 
 | 类型 | 关键字段 |
 |---|---|
-| `StageContext` | phase（event_id、phase_no、kind）、state（本阶段唯一读的快照）、stable、records（本阶段的记录组）、history（本阶段之前看到过的记录，提示上下文，也可作证据）、background（initialize 时告诉角色的场景与自身情况）、upstream（已提交的上游产物：S2 拿到最新的 S1 产物和上次 ActionPlan，S3 拿到 ActionPlan 和反馈的 S1 产物）、present |
-| `StageOutput[P]` | product: P、proposals（[ChangeProposal]）、judgments（[Judgment]）、evidence（本阶段能用的 EvidenceSet，提交时据此核对证据可见） |
+| `StageContext` | phase（event_id、phase_no、kind）、state（本阶段唯一读的快照）、stable、records（本阶段的记录组）、history（本阶段之前看到过的记录，提示上下文，也可作证据）、background（initialize 时告诉角色的场景与自身情况）、upstream（已提交的上游产物：S2 拿到最新的 S1 产物、S1 的线索和上次 ActionPlan，S3 拿到 ActionPlan 和反馈的 S1 产物）、present、key、mode（消融模式，`MODES`）、skills（绑定的人格 skill）、briefing（开场设定；阶段看到全部，表达只看到目标和可以说出的部分） |
+| `StageOutput[P]` | product: P、proposals（[ChangeProposal]）、judgments（[Judgment]）、evidence（本阶段能用的 EvidenceSet，提交时据此核对证据可见）、cues（只有 S1：五种线索强度 0—1，只用来激活人格 skill） |
 | `ChangeProposal` | construct_id、key、field、after、reason、grade（本角色对这一维度的事件等级，数值变化必填）、evidence / mechanisms（这条变化依据的证据和决策过程；不填则取交给该算子的判断）、operator（不填即主写入算子；衰减要写明 `decay_or_recovery`）：阶段只能**提议**，不写状态 |
 
 三个产物的必备字段：
@@ -326,39 +327,43 @@ IRoleAgent.act
    └─ ITrace.phase / ITrace.model_call（每个阶段）
 ```
 
-## 6. 实现进度（2026-11-07）
+## 6. 实现进度（2026-11-08）
 
-契约（Protocol + 数据类型）已全部在 `rolesim/interfaces.py`。下表只看**实现**：✅ 已实现　◐ 旧代码承担了一部分　✗ 没有。
+契约（Protocol + 数据类型）已全部在 `rolesim/interfaces.py`。下表只看**实现**：✅ 已实现　◐ 部分实现　✗ 没有。运行路径只有一条：`IRoleAgent` → `ITurnRunner` → 各阶段与状态存储（第 7 步删除了旧的 `Agent.step`）。
 
 | 接口 | 状态 | 现在由谁承担 | 还缺什么 |
 |---|---|---|---|
-| **1 IRoleAgent** | ✅ | `staged.StagedRoleAgent`（新）；`adapter.RoleAgentAdapter`（旧，CLI 默认） | 旧实现在第 7 步删除；新管线还没有消融档位（`mechanism.mode`） |
-| 　（IEnvironment） | ✅ 本地替身 | `loop.EchoEnvironment` | 环境组实现，我们只调用 |
-| 1.1 ITurnRunner | ✅ | `runner.TurnRunner` | “反馈”目前按受众规则判断，不由模型判断 |
-| 1.2 ITrace | ✅ | `trace.JsonlTrace` / `MemoryTrace` | 离线工具（审计、评审包、可读版）还读旧格式（第 7 步） |
-| **2 IRoleRepository** | ✅ | `repository.ProfileRepository` | 权力差、群体成员资格要等场景结构；决策偏好在过程首次调用时播种策略未做；心理理论上限 3 / 4 阶要针对具体对象的证据 |
-| 2.1 IProfileCompiler | ✅ | `profile.ProfileCompiler`（profile-1 档案；自然语言经 `IModel` 的 "profile" 调用） | §4.10 决策偏好先验映射（约 60 个属性名要心理学组核对）、派生字段（P2 全局因素、HEXACO 领域、组织标签）、只检查了一部分模块的取值形式 |
-| 2.2 IRegistry | ✅ | `registry.Registry` + `data/registry.json` | 待心理学组核对 `review` 清单；`state.OPERATORS` 仍是旧的手写局部版，第 2 步改为查本接口 |
-| **3 IStage** S1 | ✅ | `stages.ModelStage("S1")` | 尚未接入运行路径（旧的 `backend.appraise` 仍供 `Agent.step` 使用，第 5 步替换） |
-| 　S2 | ✅ | `stages.ModelStage("S2")` | 同上（旧的 `backend.decide`） |
-| 　S3 | ✅ | `stages.ModelStage("S3")` | 什么算“对本角色此前行动 / 承诺的反馈”由 `ITurnRunner` 判断（第 5 步） |
-| 3.1 IEvidenceGate | ✅ | `evidence.EvidenceGate` | 记忆检索是字面相似度（沿用 `memory.search`），不是语义检索 |
-| 3.2 IMechanism | ◐ | 决策过程在阶段调用里由模型判断（schema 的 judgments），解析时查登记表 | 没有按规则实现的过程；旧的 5 张机制卡仍只供 `Agent.step` 使用；各过程输出字段要等 F2 |
-| 3.3 IModel | ✅ | `model.ChatModel` / `model.MockModel`，输出 schema 与解析在 `schemas.py` | 旧的 `ChatBackend.appraise / decide / express` 仍供 `Agent.step` 使用（第 5 步替换）；结构化解码未接 |
-| 3.4 IExpresser | ✅ | `expresser.ModelExpresser`（第 4 次模型调用 "express"） | 尚未接入运行路径（旧的 `backend.express` 仍在用） |
-| **4 IStateStore** | ✅ | `store.ConstructStore` + `slots.py` | 尚未接入运行路径：旧的 `Agent.step` 仍用 `state.commit_phase`（第 5 步替换）；跨阶段累计上限、习惯化、按时间衰减要等场景时间单位（F3） |
+| **1 IRoleAgent** | ✅ | `staged.StagedRoleAgent`（唯一实现，基于 `adapter.RoleAgentBase`）；按角色的消融模式 | 接口没有结束对话的信号，本地运行跑满 `max_turns`；`enable_config` 只记录 |
+| 　（IEnvironment） | ✅ 本地替身 | `loop.EchoEnvironment` | 环境组实现，我们只调用；剧情事件的 `cues` 不传给角色（接口没有线索字段） |
+| 1.1 ITurnRunner | ✅ | `runner.TurnRunner` | “反馈”按受众规则判断，不由模型判断 |
+| 1.2 ITrace | ✅ | `trace.JsonlTrace` / `MemoryTrace`；离线工具（`audit.py`、`package.py`、`readable.py`）读这个格式 | — |
+| **2 IRoleRepository** | ✅ | `repository.ProfileRepository`（档案、入场状态、开场设定、人格 skill） | 权力差、群体成员资格要等场景结构；决策偏好在过程首次调用时播种策略未做；心理理论上限 3 / 4 阶要针对具体对象的证据 |
+| 2.1 IProfileCompiler | ✅ | `profile.ProfileCompiler`（profile-1 档案；自然语言经 `IModel` 的 "profile" 调用） | §4.10 决策偏好先验映射（约 60 个属性名要心理学组核对）、派生字段（P2 全局因素、HEXACO 领域、组织标签）、只检查了一部分模块的取值形式；示例角色还没有 profile-1 档案 |
+| 2.2 IRegistry | ✅ | `registry.Registry` + `data/registry.json` | 待心理学组核对 `review` 清单 |
+| **3 IStage** S1 | ✅ | `stages.ModelStage("S1")`，另给出线索 | — |
+| 　S2 | ✅ | `stages.ModelStage("S2")`，看到 skill 目录与被激活的 skill | — |
+| 　S3 | ✅ | `stages.ModelStage("S3")` | 什么算反馈由 `ITurnRunner` 判断 |
+| 3.1 IEvidenceGate | ✅ | `evidence.EvidenceGate` | 记忆检索是字面相似度（`memory.search`），不是语义检索 |
+| 3.2 IMechanism | ◐ | 决策过程在阶段调用里由模型判断（schema 的 judgments，只在 `profile_state_mechanisms` 模式），解析时查登记表 | 没有按规则实现的过程；各过程输出字段要等 F2 |
+| 3.3 IModel | ✅ | `model.ChatModel` / `model.MockModel`，输出 schema 与解析在 `schemas.py`，传输在 `providers.py` | 结构化解码未接；还没有跑过真实模型 |
+| 3.4 IExpresser | ✅ | `expresser.ModelExpresser`（模型调用 "express"），带被激活 skill 的表达要点 | — |
+| **4 IStateStore** | ✅ | `store.ConstructStore` + `slots.py` | 跨阶段累计上限、习惯化、按时间衰减要等场景时间单位（F3） |
 | 4.1 IUpdateOperator | ✅ | `operators.Operator`（11 个，规则来自登记表） | 规则卡里要判断事件的部分（情绪方向、习惯化）由阶段提出、验证器检查，不在算子里计算 |
-| 4.2 IMagnitude | ✅ | `magnitude.Magnitude` | 人格敏感度只接了无条件映射（P1 分面、依恋焦虑、认知灵活性）；P2 / P3、违约后的尽责性、自尊不稳定性要等档案形状（第 6 步） |
+| 4.2 IMagnitude | ✅ | `magnitude.Magnitude` | 人格敏感度只接了无条件映射（P1 分面、依恋焦虑、认知灵活性）；P2 / P3、违约后的尽责性、自尊不稳定性未接 |
 | 4.3 IValidator | ✅ | `validator.Validator` | “含对方真实隐状态”本方无法检查；规则卡里的单条软规则（如“无调节过程而强度大幅下降”）未收 |
 
-### 6.1 旧代码里没有对应接口的部分
+### 6.1 旧代码的去向（第 7 步）
 
-| 模块 | 是什么 | 打算 |
+| 旧的 | 是什么 | 去向 |
 |---|---|---|
-| `skills.py` | 角色技能（应对 / 说话习惯的提示，不写状态） | 和心理学组的"skill"（= 阶段）不是一回事。可作为 `IStage` / `IExpresser` 的输入保留，待定 |
-| `briefing.py` | 角色入场设置：目标、想透露 / 想隐瞒的、前情 | 并入 `IRoleRepository.enter`；隐瞒内容只进 S2，不进 `IExpresser` |
-| `runtime.py`、`contract.py` | 旧的环境契约 v0 路径（CLI 默认仍是它） | `ITurnRunner` 替换 `Agent.step` 后删除，CLI 默认改为 agent-api |
-| `audit.py`、`package.py`、`readable.py` | 读运行目录的离线工具 | 跟着 `ITrace` 的新格式改 |
+| `skills.py` | 人格 skill（应对 / 说话习惯的提示，不写状态） | 保留：由 `IRoleRepository.skills` 取出，经 `StageContext.skills` 进入 S2 和表达；被 S1 的线索或开场设定激活，至多 3 个 |
+| `briefing.py` | 开场设定：目标、想透露 / 想隐瞒的、前情 | 保留：`IRoleRepository.setup` + `enter`（目标 → 当前目标 `g-setup`，前情 → 入场记忆）；隐瞒内容进 S1 / S2 / S3，不进 `IExpresser` |
+| 消融档位 | 旧的三档提示 | 重新定义为 `interfaces.MODES`：`profile_only` 提示里没有动态状态和决策过程判断，`profile_state` 有状态没有判断，`profile_state_mechanisms` 全部；只改提示和输出 schema，状态照常计算 |
+| `agent.py`、`state.py`、`stateview.py`、`mechanisms.py`、`contract.py`、`runtime.py`、`modules.py` | `Agent.step`、六域状态、三档视图、5 张机制卡、环境契约 v0 路径 | 删除；`runtime.py` 里还要用的剧情工具搬到 `scene.py`，`modules.py` 的模块状态工具并入 `persona.py` |
+| `adapter.RoleAgentAdapter`；`providers.py` 的 `appraise / decide / express` 与 `MockBackend` | 旧的接口实现与后端 | 删除；`adapter.py` 只剩公共的 `RoleAgentBase`，`providers.py` 只剩 chat-completions 传输 |
+| `memory.add / recall` | 旧 Agent 的记忆列表 | 删除；`memory.search` 留给证据门 |
+| `audit.py`、`package.py`、`readable.py` | 离线工具 | 改读新格式（只认 `manifest.pipeline == "stages"`）；审计 10 项检查 |
+| `compile`、`--interface`、`--pipeline`、`--appraise-state` | 命令行 | 删除；`run` 只有一条管线，加 `--mode`、`--no-skills` |
 
 ### 6.2 卡在外部的
 
@@ -369,11 +374,11 @@ F1—F5（见 [09 §7](09-interface-and-field-spec.md)）：〔工程〕结构�
 ### 6.3 建议顺序
 
 1. ~~`IRegistry`：抽取脚本 + 只读查询。其余接口都要查它。~~ 已完成（2026-11-07）。
-2. ~~`IStateStore` + `IUpdateOperator` + `IValidator` + `IMagnitude`：状态改成按构念 ID，按登记表做权限和区间。~~ 已完成（2026-11-07），尚未接入运行路径。
-3. ~~`IModel` 通用化，mock 能产出三个阶段的合规产物。~~ 已完成（2026-11-07），尚未接入运行路径。
-4. ~~`IEvidenceGate` + 三个 `IStage` + `IExpresser`。~~ 已完成（2026-11-08），尚未接入运行路径。
-5. ~~`ITurnRunner` 替换 `Agent.step`；`ITrace` 自己落盘。~~ 已完成（2026-11-08）：新管线可用（`--pipeline stages`），旧的仍是默认，第 7 步删除。
+2. ~~`IStateStore` + `IUpdateOperator` + `IValidator` + `IMagnitude`：状态改成按构念 ID，按登记表做权限和区间。~~ 已完成（2026-11-07），第 5 步接入运行路径。
+3. ~~`IModel` 通用化，mock 能产出三个阶段的合规产物。~~ 已完成（2026-11-07），第 5 步接入运行路径。
+4. ~~`IEvidenceGate` + 三个 `IStage` + `IExpresser`。~~ 已完成（2026-11-08），第 5 步接入运行路径。
+5. ~~`ITurnRunner` 替换 `Agent.step`；`ITrace` 自己落盘。~~ 已完成（2026-11-08）。
 6. ~~`IRoleRepository` / `IProfileCompiler`：入场状态和档案编译。~~ 已完成（2026-11-08）。
-7. 删除旧的 v0 路径，离线工具改到新格式。
+7. ~~删除旧的 v0 路径，离线工具改到新格式。~~ 已完成（2026-11-08）：开场设定、人格 skill、消融模式移到新管线；测试从 338 个变为 218 个（删掉的是旧管线的测试）。
 
 每一步结束时 `IRoleAgent` 都不变，现有测试保持通过。

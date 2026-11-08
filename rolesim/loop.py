@@ -1,42 +1,36 @@
-"""Local reference runner for the agent interface v2 (Agent接口说明_环境组_2026-11-07.md).
+"""The local reference runner for the agent interface v2 (Agent接口说明_环境组_2026-11-07.md).
 
-The real runner belongs to the environment group. This one follows the same rules so the
-role adapter can be run and tested offline, and so both sides have a worked example:
+The real runner belongs to the environment group. This one follows the same rules so the roles
+can be run and tested offline, and so both sides have a worked example:
 
     start: initialize every character once (interaction_id + character_id + bootstrap);
     each turn: environment directives (if any) -> env.act -> records; then the actor's act
     -> records. The runner keeps every character's observations; nobody is called to
     perceive: a character reads what it saw when it is next asked to act.
 
-Episode inputs come from the existing role and scene files: character ids are role-library ids
-(the role file ids, fixed in advance and the same in every interaction), the bootstrap carries
-the ablation mode in `mechanism.mode`, and the scene's environment
-rules become director directives (clock announcements and scheduled world events, with their
-audience). `EchoEnvironment` stands in for the environment group's IEnvironment: it plays
-each directive back as an objective action. Scene `world_private` is never read.
+Episode inputs come from the role and scene files: character ids are role-library ids (the role
+file ids, the same in every interaction), and the scene's environment rules become director
+directives (clock announcements and scheduled world events, with their audience).
+`EchoEnvironment` stands in for the environment group's IEnvironment: it plays each directive
+back as an objective action. Scene `world_private` never reaches a role.
 
-As agreed with the environment group, `present_characters` given to an actor contains everyone
-present, the actor included, so `recipient_ids=None` reaches the actor too.
+run_scene() puts StagedRoleAgent behind this runner and writes the run directory (see
+readable.FILES); the audit and the readable transcript are written at the end.
 """
 import asyncio
 import copy
-import datetime
 import json
 from pathlib import Path
 
-from .adapter import RoleAgentAdapter
 from .agent_api import (ENV_ID, ENV_NAME, MODE, split, validate_action_result, validate_bootstrap,
                         validate_environment_content, validate_environment_view, validate_turn_input,
                         visible)
 from .catalog import digest, write_json
-from .mechanisms import CARDS
+from .interfaces import FULL_MODE
 from .roles import fit_cast, origin
-from .runtime import WorldAgent, code_version, environment_agent, role_seats
-from .state import VERSIONS
+from .scene import WorldAgent, code_version, environment_agent, now, role_seats
 
 INTERFACE = "agent-api-v2"
-TRANSCRIPT = "transcript.md"
-KIND_TEXT = {"thought": "想", "speech": "说", "action": "做"}
 
 
 class EchoEnvironment:
@@ -101,7 +95,6 @@ class LocalRunner:
         self.observations = {cid: [] for cid in self.ids}
         self.history = []          # every record, in occurrence order
         self.requests = 0
-        self.closed_by = None
 
     def _request_id(self, call, who):
         self.requests += 1
@@ -173,10 +166,6 @@ class LocalRunner:
             records = split(result, cid, member["name"], context["present_characters"],
                             f"t{turn:03d}-{cid}", turn, order)
             self._publish(records)
-            closed = getattr(self.agents, "closed_by", None)
-            if closed and closed(self.interaction_id):
-                self.closed_by = closed(self.interaction_id)
-                break
         return turn
 
 
@@ -185,93 +174,33 @@ def _jsonl(path, items):
     path.write_text("".join(json.dumps(i, ensure_ascii=False) + "\n" for i in items), encoding="utf-8")
 
 
-def _now():
-    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+def _module(m):
+    return {"value": m.value, "status": m.status, "source_kind": m.source_kind, "confidence": m.confidence,
+            "needs_review": m.needs_review, "source_text": m.source_text, "phrase": m.phrase, "reason": m.reason}
 
 
-def write_transcript(output, episode, history, manifest):
-    lines = [f"# {episode['scene_id']}（{INTERFACE}{'，' + manifest['pipeline'] if manifest.get('pipeline') else ''}）", "",
-             f"- 状态：{manifest['status']}；轮数：{manifest.get('turns')}；后端：{manifest['backend']}；模式：{manifest['mode']}",
-             "- 证据层级：工程运行，只说明管线可用，不说明心理机制有效。", "", "## 互动记录", ""]
-    current = None
-    for r in history:
-        if r["turn_index"] != current:
-            current = r["turn_index"]
-            lines += ["", f"### 第 {current} 轮", ""]
-        who = r["actor"]["name"]
-        ids = set(r["recipients"])
-        to = "仅本人" if ids == {r["actor"]["actor_id"]} else "、".join(e["name"] for e in r["recipients"].values())
-        lines.append(f"- **{who}**{KIND_TEXT[r['kind']]}（给：{to}）：{r['content']}")
-    Path(output, TRANSCRIPT).write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def run_agent_api(roles, scene, backend, output, mode="profile_state_mechanisms", use_skills=True,
-                  appraise_state=True):
-    """Run a scene through the agent interface v2 with the local runner and the echo environment."""
-    ep = episode(roles, scene)
-    adapter = RoleAgentAdapter(roles, backend, mode, use_skills, appraise_state, ep["allowed_actions"])
-    output = Path(output)
-    output.mkdir(parents=True, exist_ok=False)
-    calls = []
-    runner = LocalRunner(ep, adapter, EchoEnvironment(), calls.append, mode=mode)
-    manifest = {"schema_version": "agent-api-run-1.0", "interface": INTERFACE, "status": "running",
-                "started_at": _now(), "backend": backend.label, "model": backend.model, "sampling": backend.sampling,
-                "mode": mode, "skills_enabled": bool(use_skills), "appraise_state": bool(appraise_state),
-                "versions": dict(VERSIONS), "code_version": code_version(), "scene_id": ep["scene_id"],
-                "scenario_hash": digest(scene["scenario"]), "mechanism_hash": digest(CARDS),
-                "cast": [{k: m[k] for k in ("character_id", "name", "role_id", "title")} for m in ep["cast"]],
-                "environment": "EchoEnvironment (local stand-in)", "origin": origin(roles, scene),
-                "evidence_boundary": "engineering run; no human-validity or method-effectiveness claim"}
-    write_json(output / "manifest.json", manifest)
-    try:
-        turns = asyncio.run(runner.run())
-        manifest.update(status="completed", turns=turns, closed_by=runner.closed_by)
-        return manifest
-    except Exception as exc:
-        manifest.update(status="failed", error_type=type(exc).__name__, error=str(exc)[:500])
-        raise
-    finally:
-        manifest.update(finished_at=_now(), api_calls=backend.calls, model_served=sorted(backend.served_models),
-                        records=len(runner.history), calls=len(calls),
-                        interaction_id=runner.interaction_id,
-                roles={s.role_id: {"name": s.name, "character_id": s.character_id, "moves": s.moves,
-                                   "warnings": s.warnings,
-                                   "final_state_id": s.agent.state_id if s.agent else None,
-                                   "visibility_warnings": s.agent.warnings if s.agent else []}
-                       for s in adapter.sessions.values()})
-        _jsonl(output / "records.jsonl", runner.history)
-        _jsonl(output / "calls.jsonl", calls)
-        for member in ep["cast"]:
-            folder = output / "roles" / member["role_id"]
-            folder.mkdir(parents=True)
-            entries = [e for e in adapter.log if e["role_id"] == member["role_id"]]
-            _jsonl(folder / "audit.jsonl", entries)
-            _jsonl(folder / "states.jsonl", [e["state_after"] for e in entries])
-            session = adapter.sessions.get((runner.interaction_id, member["character_id"]))
-            agent = session.agent if session else None
-            _jsonl(folder / "mechanism_log.jsonl", agent.mechanism_log if agent else [])
-        write_json(output / "manifest.json", manifest)
-        write_transcript(output, ep, runner.history, manifest)
-
-
-def run_staged(roles, scene, model, output, registry=None):
-    """Run a scene through the agent interface v2 with the staged pipeline (plan/10 §1):
-    StagedRoleAgent behind the local runner and the echo environment. The trace (phases and model
-    calls, per interaction and character) is written by the pipeline itself under trace/."""
+def run_scene(roles, scene, model, output, registry=None, mode=FULL_MODE, use_skills=True):
+    """Run a scene: StagedRoleAgent behind the local runner and the echo environment. The pipeline
+    writes its own trace under trace/; the audit and transcript.md follow at the end."""
+    from .audit import write_report
+    from .readable import write_readable
     from .registry import Registry
     from .staged import StagedRoleAgent
     from .trace import JsonlTrace
 
     registry = registry or Registry.load()
     ep = episode(roles, scene)
+    if not use_skills and not any((r.get("file") or {}).get("skills") for r in roles):
+        raise ValueError("--no-skills needs at least one role that lists skills")
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
-    agents = StagedRoleAgent(roles, registry, model, JsonlTrace(output / "trace"))
+    agents = StagedRoleAgent(roles, registry, model, JsonlTrace(output / "trace"), mode=mode, use_skills=use_skills)
     calls = []
     runner = LocalRunner(ep, agents, EchoEnvironment(), calls.append)
     transport = getattr(model, "transport", None)
-    manifest = {"schema_version": "agent-api-run-1.0", "interface": INTERFACE, "pipeline": "stages", "status": "running",
-                "started_at": _now(), "backend": model.label, "model": model.model, "mode": "stages",
+    write_json(output / "scene.json", scene["scenario"])
+    manifest = {"schema_version": "run-2.0", "interface": INTERFACE, "pipeline": "stages", "status": "running",
+                "started_at": now(), "backend": model.label, "model": model.model, "mode": mode, "use_skills": bool(use_skills),
                 "registry_sources": list(registry.sources), "code_version": code_version(), "scene_id": ep["scene_id"],
                 "scenario_hash": digest(scene["scenario"]),
                 "cast": [{k: m[k] for k in ("character_id", "name", "role_id", "title")} for m in ep["cast"]],
@@ -280,31 +209,52 @@ def run_staged(roles, scene, model, output, registry=None):
     write_json(output / "manifest.json", manifest)
     try:
         turns = asyncio.run(runner.run())
-        manifest.update(status="completed", turns=turns, closed_by=runner.closed_by)
+        manifest.update(status="completed", turns=turns)
         return manifest
     except Exception as exc:
         manifest.update(status="failed", error_type=type(exc).__name__, error=str(exc)[:500])
         raise
     finally:
-        states = {}
+        roles_info = {}
         for member in ep["cast"]:
-            key = (runner.interaction_id, member["character_id"])
+            cid = member["character_id"]
+            key = (runner.interaction_id, cid)
+            folder = output / "roles" / cid
+            folder.mkdir(parents=True, exist_ok=True)
+            session = agents.sessions.get(key)
+            info = {"name": member["name"], "role_id": member["role_id"], "warnings": session.warnings if session else []}
             if agents.runner.started(key):
+                profile = agents.repository.load(member["role_id"])
+                write_json(folder / "profile.json", {
+                    "snapshot_id": profile.snapshot_id, "role_ref": profile.role_ref,
+                    "modules": {c: _module(m) for c, m in profile.modules.items()},
+                    "review": [{"construct_id": r.construct_id, "value": r.value, "source_kind": r.source_kind,
+                                "source_text": r.source_text, "reason": r.reason}
+                               for r in agents.repository.review.get(member["role_id"], [])],
+                    "entry_notes": agents.repository.entry_notes.get(profile.role_ref, [])})
+                write_json(folder / "setup.json", {"seat": member["title"], "briefing": agents.repository.setup(member["role_id"]),
+                                                   "bound_skills": [i["name"] for i in agents.repository.raw(member["role_id"]).get("skills") or []],
+                                                   "skills_used": bool(use_skills)})
                 snap = agents.store.snapshot(key)
-                states[member["character_id"]] = snap
-                folder = output / "roles" / member["character_id"]
-                folder.mkdir(parents=True, exist_ok=True)
-                write_json(folder / "final_state.json", {"state_id": snap.state_id, "prev_state_id": snap.prev_state_id,
-                                                         "stable_snapshot_id": snap.stable_snapshot_id,
-                                                         "versions": dict(snap.versions), "status": dict(snap.status),
-                                                         "dynamic": snap.dynamic, "memory": snap.memory})
-        manifest.update(finished_at=_now(), records=len(runner.history), calls=len(calls),
-                        interaction_id=runner.interaction_id,
-                        model_calls=getattr(model, "calls", None) if transport is None else getattr(transport, "calls", None),
-                        roles={s.character_id: {"name": s.name, "role_id": s.role_id, "warnings": s.warnings,
-                                                "final_state_id": states[s.character_id].state_id if s.character_id in states else None}
-                               for s in agents.sessions.values()})
+                write_json(folder / "final_state.json", {
+                    "state_id": snap.state_id, "prev_state_id": snap.prev_state_id, "stable_snapshot_id": snap.stable_snapshot_id,
+                    "versions": dict(snap.versions), "status": dict(snap.status), "dynamic": snap.dynamic, "memory": snap.memory})
+                info.update(final_state_id=snap.state_id, profile_snapshot=profile.snapshot_id,
+                            review_items=len(agents.repository.review.get(member["role_id"], [])))
+            roles_info[cid] = info
+        manifest.update(finished_at=now(), records=len(runner.history), calls=len(calls),
+                        interaction_id=runner.interaction_id, roles=roles_info,
+                        model_calls=getattr(model, "calls", None) if transport is None else getattr(transport, "calls", None))
         _jsonl(output / "records.jsonl", runner.history)
         _jsonl(output / "calls.jsonl", calls)
         write_json(output / "manifest.json", manifest)
-        write_transcript(output, ep, runner.history, manifest)
+        if manifest["status"] == "completed":
+            try:
+                manifest["audit_passed"] = write_report(output, registry)["passed"]
+            except Exception as exc:
+                manifest["audit_error"] = f"{type(exc).__name__}: {exc}"
+            write_json(output / "manifest.json", manifest)
+        try:
+            write_readable(output)
+        except Exception as exc:
+            (output / "transcript_error.txt").write_text(f"{type(exc).__name__}: {exc}\n", encoding="utf-8")

@@ -22,5 +22,7 @@ jobs:
       - run: python -m rolesim audit runs/ci-swapped
       - run: python -m rolesim run --no-skills --out runs/ci-no-skills
       - run: python -m rolesim audit runs/ci-no-skills
+      - run: python -m rolesim run --mode profile_only --out runs/ci-profile-only
+      - run: python -m rolesim audit runs/ci-profile-only
       - run: python -m rolesim run --roles role1 role2 role3 --scene test3 --out runs/ci-three-roles
       - run: python -m rolesim audit runs/ci-three-roles

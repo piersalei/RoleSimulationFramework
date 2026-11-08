@@ -33,6 +33,7 @@ from .interfaces import (STAGE_OF_KIND, ActionCandidate, ActionPlan, Appraisal, 
                          InterfaceError, Judgment, RelationCourse, SituationInterpretation, StageError, StageOutput,
                          SwitchCondition)
 from .slots import SLOTS
+from .vocab import CUES
 
 STAGES = tuple(STAGE_OF_KIND.values())
 TEXT = {"type": "string", "minLength": 1, "maxLength": 400}
@@ -44,6 +45,10 @@ GRADES = {1: "日常事件：信息交换、例行互动、轻微的积极或消
           3: "显著事件：明确违约、公开羞辱、确证欺骗、明确兑现承诺或重要帮助",
           4: "重大事件：关系重大背叛、对安全或核心目标的严重威胁、身份转折"}
 CHANNEL_RANK = {"witnessed": 0, "hearsay": 1, "inferred": 2}
+# S1 also rates the five engineering cues persona skills are activated by (vocab.CUES): how
+# strongly the role feels each, 0..1. They choose prompt hints and never write state.
+CUES_SCHEMA = {"type": "object", "additionalProperties": False,
+               "properties": {cue: {"type": "number", "minimum": 0, "maximum": 1} for cue in CUES}}
 
 
 def _object(properties, required=None):
@@ -106,34 +111,38 @@ def _check_stage(stage):
         raise ValueError(f"stage must be one of {STAGES}, got {stage!r}")
 
 
-def stage_schema(stage, registry):
+def stage_schema(stage, registry, mechanisms=True):
+    """`mechanisms` False (the ablation modes without decision processes): no judgments, and
+    proposals rest on their evidence alone."""
     _check_stage(stage)
-    mechanisms = stage_mechanisms(stage, registry)
+    allowed = stage_mechanisms(stage, registry) if mechanisms else []
     properties = {
         "product": PRODUCTS[stage],
-        "judgments": {"type": "array", "items": _object({
-            "dm_id": {"enum": mechanisms}, "option": TEXT_OR_NULL, "output": {"type": "object"}, "evidence": IDS})},
+        "judgments": {"type": "array", **({} if mechanisms else {"maxItems": 0}), "items": _object({
+            "dm_id": {"enum": allowed}, "option": TEXT_OR_NULL, "output": {"type": "object"}, "evidence": IDS})},
         "proposals": {"type": "array", "items": _object({
             "construct_id": {"enum": stage_constructs(stage, registry)}, "key": TEXT_OR_NULL, "field": TEXT_OR_NULL,
             "after": {}, "reason": TEXT, "grade": {"type": ["integer", "null"], "minimum": 1, "maximum": 4},
-            "evidence": IDS, "mechanisms": {"type": "array", "items": {"enum": mechanisms}},
+            "evidence": IDS, "mechanisms": {"type": "array", **({} if mechanisms else {"maxItems": 0}),
+                                            "items": {"enum": allowed}},
             "operator": {"enum": stage_operators(stage, registry)}},
             required=["construct_id", "key", "field", "after", "reason", "grade", "evidence", "mechanisms"])},
     }
     if stage == "S1":
         properties["evidence_notes"] = {"type": "array", "items": _object({
             "event": {"type": "string", "minLength": 1}, "channel": {"enum": list(CHANNEL_RANK)}, "claim": TEXT_OR_NULL})}
+        properties["cues"] = CUES_SCHEMA
     return _object(properties)
 
 
-def stage_task(stage, registry):
+def stage_task(stage, registry, mechanisms=True):
     _check_stage(stage)
     operators = stage_operators(stage, registry)
-    mechanisms = []
-    for dm_id in stage_mechanisms(stage, registry):
+    listed = []
+    for dm_id in (stage_mechanisms(stage, registry) if mechanisms else []):
         m = registry.mechanism(dm_id)
-        mechanisms.append({"dm_id": dm_id, "name": m.name, "options": list(m.options),
-                           "hands_to": [op for op in m.hands_to if op in operators]})
+        listed.append({"dm_id": dm_id, "name": m.name, "options": list(m.options),
+                       "hands_to": [op for op in m.hands_to if op in operators]})
     constructs = []
     for cid in stage_constructs(stage, registry):
         c, slot = registry.construct(cid), SLOTS[cid]
@@ -141,7 +150,7 @@ def stage_task(stage, registry):
                            "operators": [op for op in operators if cid in registry.operator(op).writes],
                            "keys": list(slot.keys), "fields": dict(slot.fields), "tempo": c.tempo,
                            "banded": {f: scale for f, scale in slot.banded.items()}})
-    return {"stage": stage, "operators": operators, "mechanisms": mechanisms, "constructs": constructs,
+    return {"stage": stage, "operators": operators, "mechanisms": listed, "constructs": constructs,
             "grades": {str(g): text for g, text in GRADES.items()}, "bands": band_guide()}
 
 
@@ -259,10 +268,10 @@ def _refine(evidence, notes, stage):
     return EvidenceSet(tuple(refs[e.event] for e in evidence.included), evidence.excluded, evidence.retrieved_memories)
 
 
-def parse_output(stage, output, registry, evidence):
+def parse_output(stage, output, registry, evidence, mechanisms=True):
     """Model output -> StageOutput with the program's EvidenceSet (refined by S1's notes)."""
     _check_stage(stage)
-    errors = validate(stage_schema(stage, registry), output)
+    errors = validate(stage_schema(stage, registry, mechanisms), output)
     if errors:
         raise StageError(f"{stage}: output breaks the schema: {'; '.join(errors[:8])}")
     if stage == "S1":
@@ -292,7 +301,7 @@ def parse_output(stage, output, registry, evidence):
         product = _product(stage, output["product"])
     except InterfaceError as exc:
         raise StageError(f"{stage}: {exc}") from None
-    return StageOutput(product, tuple(proposals), tuple(judgments), evidence)
+    return StageOutput(product, tuple(proposals), tuple(judgments), evidence, dict(output.get("cues") or {}))
 
 
 # -- expression (IExpresser) -------------------------------------------------------------------------

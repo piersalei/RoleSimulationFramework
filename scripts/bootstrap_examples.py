@@ -9,10 +9,9 @@ import copy
 import json
 from pathlib import Path
 
-from rolesim.modules import STABLE_MODULES, entry
-from rolesim.persona import FACET_KEYS, SCHEMA_VERSION
+from rolesim.persona import FACET_KEYS, SCHEMA_VERSION, STABLE_MODULES, entry
 from rolesim.roles import ROLE_FORMAT
-from rolesim.runtime import SCENE_VERSION
+from rolesim.scene import SCENE_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = 'synthetic_authoring_fixture; 非量表测量、非心理学同学提供的实证数值'

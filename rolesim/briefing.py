@@ -6,9 +6,11 @@ the counterpart to know (`disclose`), what it knows but does not want to reveal
 memory). It travels with the role, not the scene: a scene is background and does not
 direct the role. The persona schema is unchanged.
 
-Information isolation: concealed text reaches the decision controller (the role knows
-it) but never the expression prompt, so the spoken line cannot quote it. `markers`
-are keywords the audit uses to detect a leak or a disclosure in the public speech.
+Information isolation: concealed text reaches the stages S1 / S2 / S3 (the role knows it)
+but never the expression prompt, so the spoken line cannot quote it. `markers` are keywords
+the audit uses to count concealed or disclosable items that were said anyway. A recap may not
+repeat a concealed item: the recap becomes the role's entry memories, and concealed text is
+kept in one place so the checks can find it.
 """
 from .persona import text
 
@@ -58,7 +60,7 @@ def validate_briefing(briefing, reserved_ids=()):
         for secret in briefing["conceal"]:
             if any(m in item["text"] for m in secret["markers"]):
                 raise ValueError(f"recap {item['id']} repeats concealed item {secret['id']}; "
-                                 "recap reaches the expression prompt")
+                                 "keep concealed text in `conceal` only")
     return briefing
 
 

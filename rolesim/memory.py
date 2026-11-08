@@ -1,26 +1,13 @@
-"""Role memory: a small, local, Mem0-style store over the role's own visible items.
+"""Memory retrieval for the evidence gate (IEvidenceGate, evidence.py): which of the role's own
+memory entries (m.entry) a stage is reminded of.
 
-Like Mem0's current ADD-only pipeline, entries are appended and never rewritten;
-relevance is resolved at retrieval time. Unlike Mem0 there is no LLM extraction and
-no embedding: retrieval is lexical (character bigrams) plus salience, so runs stay
-deterministic and standard-library only.
-
-What a prompt sees (decision library 1.2, recall windows): the recap pinned first,
-then up to `k` older entries recalled by similarity to the current event and goal,
-then the most recent `window` entries. While the memory is shorter than the window,
-the view is the full memory, so short episodes behave exactly as before.
+Lexical and deterministic, standard library only: character-bigram overlap with what was just
+seen, plus a salience weight (the gate passes importance x accessibility). No LLM extraction and
+no embedding. The entries themselves live in the state (m.entry, add-only through IStateStore);
+this module never writes.
 """
-import copy
-
-WINDOW = 12
 RECALL_K = 4
 SALIENCE_WEIGHT = .3
-
-
-def add(memory, entry):
-    if any(item["id"] == entry["id"] for item in memory):
-        raise ValueError(f"memory already holds {entry['id']!r}; entries are add-only")
-    memory.append(entry)
 
 
 def _grams(value):
@@ -43,13 +30,3 @@ def search(memory, query, k=RECALL_K):
             scored.append((score, position, entry))
     scored.sort(key=lambda item: (-item[0], -item[1]))
     return [entry for _, _, entry in scored[:k]]
-
-
-def recall(memory, query, window=WINDOW, k=RECALL_K):
-    pinned = [e for e in memory if e["type"] == "recap"]
-    rest = [e for e in memory if e["type"] != "recap"]
-    cut = max(0, len(rest) - window)
-    older, recent = rest[:cut], rest[cut:]
-    picked = {e["id"] for e in search(older, query, k)}
-    recalled = [{**e, "recalled": True} for e in older if e["id"] in picked]
-    return copy.deepcopy(pinned + recalled + recent)
