@@ -73,7 +73,10 @@ class StageSchemas(unittest.TestCase):
         self.assertEqual(appraisal["options"], list(REG.mechanism("dm.affect.primary_secondary_appraisal").options))
         self.assertEqual(appraisal["hands_to"], ["emotion_update", "self_state_update"])      # goal_update is not S1
         stress = next(c for c in task["constructs"] if c["construct_id"] == "d.affect.stress")
-        self.assertEqual((stress["fields"], stress["banded"], stress["operators"]), ({"level": "u"}, ["level"], ["emotion_update"]))
+        self.assertEqual((stress["fields"], stress["banded"], stress["operators"], stress["tempo"]),
+                         ({"level": "u"}, {"level": 1.0}, ["emotion_update"], "fast"))
+        self.assertEqual(task["bands"]["slow"]["3"], [.15, .30])               # guidance; the store checks
+        self.assertEqual(task["bands"]["fast"]["4"], [.45, .70])
         self.assertEqual(sorted(task["grades"]), ["1", "2", "3", "4"])
         self.assertEqual(len(task["mechanisms"]), len(stage_mechanisms("S1", REG)))
         with self.assertRaises(ValueError):

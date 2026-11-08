@@ -29,6 +29,10 @@ def main():
     registry = sub.add_parser("registry", help="rebuild the psychology registry (IRegistry data) from the v1 sources")
     registry.add_argument("--sources", default="data/sources/psychology_v1")
     registry.add_argument("--out", default="data/registry.json")
+    prof = sub.add_parser("profile", help="compile a role's profile (profiles/<id>.json, else its role file) and list what needs review")
+    prof.add_argument("role")
+    prof.add_argument("--export", help="write the profile-1 source (a starting point for profiles/<id>.json) to this path")
+    prof.add_argument("--backend", choices=["mock", "chat"], default="mock", help="model that reads natural-language profile text")
     listing = sub.add_parser("list", help="list roles and scenes, or check one cast in one scene")
     listing.add_argument("--roles", nargs="+", help="one role id or path per seat, in seat order")
     listing.add_argument("--scene", help="scene id (scenes/<id>.json) or path")
@@ -75,6 +79,8 @@ def main():
             print(f"Registry: {counts} -> {args.out}")
             for item in data["review"]:
                 print(f"  review: {len(item['items'])} {item['topic']}")
+        elif args.command == "profile":
+            _profile(args)
         elif args.command == "list":
             _list(args)
         elif args.command == "validate":
@@ -124,6 +130,28 @@ def main():
     except (ValueError, OSError, RuntimeError, KeyError, TypeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
+
+
+def _profile(args):
+    from collections import Counter
+    from .model import ChatModel, MockModel
+    from .profile import ProfileCompiler
+    from .registry import Registry
+    from .repository import ProfileRepository
+    registry = Registry.load()
+    library = load_library()
+    roles = [load_role(i, library=library) for i in available(ROLES_DIR)]
+    model = MockModel(registry) if args.backend == "mock" else ChatModel()
+    repo = ProfileRepository(registry, ProfileCompiler(registry, model), roles)
+    profile = repo.load(args.role)
+    counts = Counter((m.status, m.source_kind) for m in profile.modules.values())
+    print(f"Profile {args.role}: snapshot {profile.snapshot_id[:12]}; "
+          + ", ".join(f"{n} {status}/{kind}" for (status, kind), n in sorted(counts.items())))
+    for item in repo.review[args.role]:
+        print(f"  review: {item.construct_id}: {item.reason}")
+    if args.export:
+        write_json(args.export, repo.raw(args.role))
+        print(args.export)
 
 
 def _list(args):

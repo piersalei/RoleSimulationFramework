@@ -69,9 +69,9 @@ STAGES: tuple[StageName, ...] = ("S1", "S2", "S3")
 Channel = Literal["witnessed", "hearsay", "inferred", "own_action", "pre_entry"]
 CHANNELS: tuple[Channel, ...] = ("witnessed", "hearsay", "inferred", "own_action", "pre_entry")
 
-# 明写 / 规则推断 / 模型推断 / 无依据
-SourceKind = Literal["explicit", "inferred", "model_inferred", "unknown"]
-SOURCE_KINDS: tuple[SourceKind, ...] = ("explicit", "inferred", "model_inferred", "unknown")
+# 明写 / 规则推断 / 模型推断 / 默认先验 / 无依据 (角色状态说明 §8.1)
+SourceKind = Literal["explicit", "inferred", "model_inferred", "default", "unknown"]
+SOURCE_KINDS: tuple[SourceKind, ...] = ("explicit", "inferred", "model_inferred", "default", "unknown")
 
 # 快变 / 慢变 / 类别
 Tempo = Literal["fast", "slow", "categorical"]
@@ -161,19 +161,33 @@ class OperatorRule:
 
 @dataclass(frozen=True)
 class StableModule:
+    """One stable construct of a compiled profile.
+
+    `phrase` is the conditioned natural-language form of the value (心智建模库 5.4): it replaces
+    the value in prompts, and it is the only way a construct the role cannot be aware of reaches
+    a prompt. `reason` says why a module is unknown / disabled, or where an inferred value came from.
+    """
     construct_id: str
     value: Any
-    status: Literal["active", "inactive", "unknown"]
+    status: str                             # one of STATUSES
     source_kind: SourceKind
     confidence: Optional[float]
     needs_review: bool = False
     source_text: Optional[str] = None       # required when source_kind == "model_inferred"
+    phrase: Optional[str] = None
+    reason: Optional[str] = None
 
     def __post_init__(self):
+        if self.status not in STATUSES:
+            raise InterfaceError(f"{self.construct_id}: status {self.status!r}")
+        if self.source_kind not in SOURCE_KINDS:
+            raise InterfaceError(f"{self.construct_id}: source kind {self.source_kind!r}")
         if self.source_kind == "model_inferred" and not self.source_text:
             raise InterfaceError(f"{self.construct_id}: model_inferred needs source_text")
         if self.source_kind == "unknown" and self.value is not None:
             raise InterfaceError(f"{self.construct_id}: unknown must not carry a value")
+        if self.status != "active" and self.value is not None:
+            raise InterfaceError(f"{self.construct_id}: only an active module carries a value")
 
 
 @dataclass(frozen=True)

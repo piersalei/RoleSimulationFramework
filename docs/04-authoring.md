@@ -92,3 +92,34 @@ python3.11 -m rolesim run --roles role1 role2 role3 --scene test3   # 三个角�
 `--roles` 按座位顺序为每个角色座位写一个编号或文件路径，`--scene` 写一个。新增角色或剧情只需要放一个新文件，不用改代码。入座检查（`fit_cast`）里，错误会阻止运行（例如座位数不对、同一角色坐两个座位、机制先验与启用的机制卡不一致、开场设定用了环境保留的 id）；提示只报告，例如"这个 skill 在该剧情里永远不会被激活"。运行记录 `manifest.json` 的 `origin` 字段记下用了哪些角色文件和剧情文件及其哈希。
 
 给环境组接入用的是 `rolesim.roles.seat(roles, scene, backend)`：每个角色座位返回一个配置好的 Agent（剧情的可选动作、自己和其他在场者的座位名、角色的 skill 和开场设定），以及首轮 `step` 要带的 `role_profile`。之后环境按合同 v0 调 `step` / `perceive`，接口不变。
+
+## 6. 新管线的档案：`profiles/<id>.json`（profile-1）
+
+`--pipeline stages` 先找 `profiles/<id>.json`，没有就把同名角色文件里能一一对应到登记表构念的部分转过来（P1 分面、依恋、施瓦兹价值、核心目标、表达基线、社会角色）。想写得更完整时，用下面的命令导出一个起点再改：
+
+```bash
+python3.11 -m rolesim profile role1 --export profiles/role1.json   # 编译并列出待审核项；--export 写出 profile-1
+```
+
+格式按登记表的 stable 构念 ID 组织：
+
+```json
+{
+  "format": "profile-1", "id": "role1", "name": "林澄", "summary": "公开描述", "self_view": "角色怎么看自己",
+  "text": "自然语言档案（可选，由模型读取，每条推断必须带逐字引文）",
+  "stable": {
+    "s.traits.attachment.global": {"value": {"anxiety": 0.8, "avoidance": -0.3}, "source": "explicit",
+                                   "basis": "依据", "confidence": 0.8,
+                                   "phrase": "重要的人回复变慢时，你会更快担心被冷落……"}
+  },
+  "entry": {"d.relation.trust": {"role2": {"value": 0.6}}},
+  "provenance": "谁写的、依据是什么"
+}
+```
+
+- `source`：`explicit`（档案明写，默认）、`inferred`（按规则推断，`basis` 写规则）、`model_inferred`（模型推断，`basis` 写原文引文）、`default`（默认先验）。没有依据的构念不要写，编译后为 unknown，不随机补值；71 维未写的条目取 0 并标为 default。
+- 人格方案三选一（P1 / P2 / P3），另外两套自动关闭。
+- `phrase`：条件化的自然语言（心智建模库 5.4：通常倾向、典型触发、压力下的变化、例外条件、别人能看到的信号），不用心理学术语、数字，不写“总是”“绝不”。有 phrase 时提示里用它代替数值；**角色不能自知的构念（如 71 维能力、发展位置、人格功能）只能以 phrase 进入提示，没有 phrase 就不进任何提示**。
+- `entry`：档案给出的入场状态（dynamic / memory 构念，形状见 `rolesim/slots.py`）。没写的按角色状态说明 §8.2 取默认值（情绪强度为零、无额外压力、自我评价取自尊基线、心理理论上限按 71 维两项映射等），其余为 unknown。
+- 编译时列出待审核项：非明写的高影响字段（角色状态说明 §8.3）、不能自知又没有 phrase 的构念、没被采用的模型推断、被去掉的 phrase。
+

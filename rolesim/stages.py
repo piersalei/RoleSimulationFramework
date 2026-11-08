@@ -14,10 +14,10 @@ ModelStage(name) runs one stage on one StageContext:
 A model failure or an output that breaks the schema or the registry fails the whole stage
 (StageError) and proposes nothing.
 
-Not yet: stable modules the role cannot be aware of (unaware, or not stated in the sources) are
-withheld from every prompt; turning them into conditioned phrases (心智建模库 5.4) belongs to the
-profile compiler (plan/10 step 6). Rule-based IMechanism implementations are not used: the
-decision processes are judged inside the stage call, as the schema's judgments.
+Stable modules the role cannot be aware of reach a prompt only as their conditioned phrases
+(written in the profile or by the profile compiler, 心智建模库 5.4), never as values or names.
+Rule-based IMechanism implementations are not used: the decision processes are judged inside
+the stage call, as the schema's judgments.
 """
 import json
 
@@ -35,20 +35,33 @@ def _text(value):
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
-def self_profile(stable, registry, modules=None):
-    """The self-known layer of the stable profile: {construct name: text}. Modules the role
-    cannot be aware of, or whose self-visibility the sources leave open, are withheld."""
-    out = {}
+TENDENCIES = "说不出来、但会影响你的倾向"
+
+
+def self_profile(stable, registry, modules=None, tendencies=True):
+    """The stable profile as the role may meet it in a prompt (心智建模库 5.3 / 5.4):
+    {construct name: text} for modules the role can be aware of, the conditioned phrase in place
+    of the value when there is one; modules it cannot be aware of (or whose self-visibility the
+    sources leave open) appear only as their phrases, unnamed, under TENDENCIES, and not at all
+    without one. `modules` limits the named part; `tendencies` adds the unnamed part."""
+    out, hidden = {}, []
     for cid, module in (stable.modules.items() if stable is not None else ()):
-        if modules is not None and cid not in modules:
-            continue
         try:
             construct = registry.construct(cid)
         except KeyError:
             continue
-        if module.status != "active" or module.value is None or construct.self_visibility not in SELF_KNOWN:
+        if module.status != "active" or module.value is None:
             continue
-        out[construct.name] = ("（只有部分自知）" if construct.self_visibility == "partial" else "") + _text(module.value)
+        if construct.self_visibility not in SELF_KNOWN:
+            if tendencies and module.phrase:
+                hidden.append(module.phrase)
+            continue
+        if modules is not None and cid not in modules:
+            continue
+        out[construct.name] = ("（只有部分自知）" if construct.self_visibility == "partial" else "") + \
+            (module.phrase or _text(module.value))
+    if hidden:
+        out[TENDENCIES] = "；".join(hidden)
     return out
 
 

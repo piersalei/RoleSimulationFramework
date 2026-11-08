@@ -306,7 +306,8 @@ loop.run_agent_api
 
 ```
 StagedRoleAgent.act
-  第一次 act：RoleFileRepository.load（角色文件 → 稳定画像）+ enter（空白状态 + bootstrap 的目标与前史）→ TurnRunner.begin
+  第一次 act：ProfileRepository.load（profiles/<id>.json，没有则转换角色文件 → ProfileCompiler → 稳定画像 + 待审核项）
+             + enter（档案入场状态 → bootstrap 的目标与前史 → 角色状态说明 §8.2 的默认值）→ TurnRunner.begin
   TurnRunner.run（未吸收的记录；别人的思考丢弃并告警）
     每个记录组（同一 action_id）：
       S1 = ModelStage("S1").run  ── EvidenceGate → 自知层视图 → IModel → parse_output

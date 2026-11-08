@@ -139,9 +139,19 @@ def stage_task(stage, registry):
         c, slot = registry.construct(cid), SLOTS[cid]
         constructs.append({"construct_id": cid, "name": c.name,
                            "operators": [op for op in operators if cid in registry.operator(op).writes],
-                           "keys": list(slot.keys), "fields": dict(slot.fields), "banded": [f for f in slot.banded]})
+                           "keys": list(slot.keys), "fields": dict(slot.fields), "tempo": c.tempo,
+                           "banded": {f: scale for f, scale in slot.banded.items()}})
     return {"stage": stage, "operators": operators, "mechanisms": mechanisms, "constructs": constructs,
-            "grades": {str(g): text for g, text in GRADES.items()}}
+            "grades": {str(g): text for g, text in GRADES.items()}, "bands": band_guide()}
+
+
+def band_guide():
+    """Typical |change| per event grade for each tempo class (状态变化规则 §5.0), as guidance:
+    a banded field's scale multiplies it; personality and evidence quality may move it by one
+    band; the program checks the final value."""
+    from .magnitude import FAST, GRADE_LEVEL, SLOW
+    return {name: {str(g): list(table[level]) for g, level in GRADE_LEVEL.items()}
+            for name, table in (("slow", SLOW), ("fast", FAST))}
 
 
 # -- validation -----------------------------------------------------------------------------------
@@ -316,3 +326,27 @@ def parse_expression(output, actor_id, audience, present):
     except InterfaceError as exc:
         raise StageError(f"express: {exc}") from None
     return content
+
+
+# -- profile text (IProfileCompiler) ------------------------------------------------------------------
+def stable_constructs(registry):
+    return [cid for cid in registry.ids("construct") if registry.construct(cid).layer == "stable"]
+
+
+def profile_schema(registry):
+    """What the "profile" call returns: stable constructs read from the text, each with its quote."""
+    return _object({"modules": {"type": "array", "items": _object({
+        "construct_id": {"enum": stable_constructs(registry)}, "value": {},
+        "quote": {"type": "string", "minLength": 1, "maxLength": 400}, "phrase": TEXT_OR_NULL})}})
+
+
+def profile_task(registry, exclude=()):
+    """The constructs the text may speak to (those not written explicitly), and whether a
+    conditioned phrase is needed (the role cannot be aware of them)."""
+    out = []
+    for cid in stable_constructs(registry):
+        if cid in exclude:
+            continue
+        c = registry.construct(cid)
+        out.append({"construct_id": cid, "name": c.name, "needs_phrase": c.self_visibility not in ("aware", "partial")})
+    return {"stage": "profile", "constructs": out}

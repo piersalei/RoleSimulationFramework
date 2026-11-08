@@ -108,6 +108,8 @@ class IRoleRepository(Protocol):
 | `enter` | 生成入场状态：dynamic 按"档案入场状态 → bootstrap / 场景 → 先验"取值，`core_goals` 文本 → 当前目标，`history_memory` → 入场记忆；没有依据的字段为 unknown |
 | 关键类型 | `StableProfile`：snapshot_id、modules（`{construct_id: StableModule}`，每个带 status / source_kind / confidence / needs_review）。`AgentState`：state_id、prev_state_id、stable_snapshot_id、dynamic、memory（都按构念 ID 存，形状见 `rolesim/slots.py`）、versions、status（每个构念或实例的状态标记）。`EnableConfig`：每个模块 / 字段 / 决策过程是否启用 |
 | 出错 | 角色不存在、档案结构错 → 抛错；缺证据不报错，写 unknown |
+| 实现 | `rolesim/repository.py` `ProfileRepository`（已实现）：`profiles/<id>.json` 优先，否则把角色文件转换后编译；同一 ID 返回同一对象，待审核项在 `review[id]`。`enter` 依次取档案入场状态、bootstrap（core_goals → 当前目标，history_memory → 入场记忆）、角色状态说明 §8.2 的默认值（情绪强度 0 标签空、效价唤醒取情绪基线；压力与威胁 / 奖赏激活无额外负荷；调节 inactive；羞耻与面子成本 0；自我评价取自尊基线；心理理论上限按 71 维 1.1.4 / 1.5.2 和年龄，当前 = 上限，需审核；激活、威胁、冲突、修订候选为零；目标承诺取核心目标优先级；生命经历 → 入场记忆），其余 unknown；每个值的来源记在 `entry_notes[id]` |
+| `StableModule` | 另有 phrase（条件化语句，5.4）与 reason（为什么 unknown / 关闭，或推断依据）；source_kind 加 default；status 取全部六种状态标记 |
 
 ### 2.1 `IProfileCompiler`：档案 → 稳定画像
 
@@ -121,6 +123,8 @@ class IProfileCompiler(Protocol):
 | 输入 | 自然语言或半结构化档案 |
 | 输出 | 画像 + 待审核清单（`ReviewItem`：construct_id、value、source_kind、原文依据、原因） |
 | 规则 | 明写 → explicit；规则推断 → inferred；模型推断 → model_inferred（必须带原文）；无依据 → unknown，不随机补值。按登记表的装配顺序生成，派生字段最后计算 |
+| 实现 | `rolesim/profile.py` `ProfileCompiler`（已实现），档案格式 profile-1 见 [docs/04-authoring.md](../docs/04-authoring.md) 第 6 节。模型推断只补档案没明写的构念，引文必须逐字出现在原文里，否则进待审核清单；人格方案三选一；71 维未写取 0（default）；条件化语句不得含系统 ID、数字或“总是 / 绝不”。待审核：非明写的高影响字段、不能自知又没有语句的构念、没被采用的推断、被去掉的语句 |
+| 还没做 | §4.10 决策偏好的先验映射；派生字段；大部分模块的取值形式只检查是否为有限 JSON |
 
 ### 2.2 `IRegistry`：心理学登记表查询（已实现）
 
@@ -247,7 +251,7 @@ class IExpresser(Protocol):
 
 `rolesim/stages.py` `ModelStage(name)`：阶段与 phase.kind 必须对应（S1 ↔ event、S2 ↔ plan、S3 ↔ feedback），S3 要求 `upstream["plan"]`；`IEvidenceGate` → `PromptView`（只含自知层：登记表里 aware / partial 的 stable 模块、active 的 dynamic 构念及其值、取回的记忆、可见记录、上游产物、在场者、task）→ `IModel` → 写 `ITrace`（在解析之前，失败的输出也留下）→ `parse_output`；S2 的受众必须是在场的其他人。模型失败或输出不合规 → `StageError`，整阶段不产生提议。
 
-还没做：不能自知（或来源没写）的 stable 模块现在不进任何提示；按心智建模库 5.4 转成条件化语句是档案编译的事（第 6 步）。
+不能自知（或来源没写）的 stable 模块只以档案里的条件化语句进入提示，不带名字、不带数值，放在“说不出来、但会影响你的倾向”下；没有语句就不进任何提示。能自知的模块有语句时也用语句代替数值。
 
 ---
 
@@ -332,8 +336,8 @@ IRoleAgent.act
 | 　（IEnvironment） | ✅ 本地替身 | `loop.EchoEnvironment` | 环境组实现，我们只调用 |
 | 1.1 ITurnRunner | ✅ | `runner.TurnRunner` | “反馈”目前按受众规则判断，不由模型判断 |
 | 1.2 ITrace | ✅ | `trace.JsonlTrace` / `MemoryTrace` | 离线工具（审计、评审包、可读版）还读旧格式（第 7 步） |
-| **2 IRoleRepository** | ◐ | 过渡实现 `entry.RoleFileRepository`：手写角色文件里能一一对应到构念的模块（P1 分面、依恋、施瓦兹价值、核心目标、表达基线、社会角色）；入场时 `core_goals` → 当前目标、`history_memory` → 入场记忆 | 正式实现等档案编译（第 6 步）：来源类型、待审核清单、自然语言档案、不能自知字段的条件化语句 |
-| 2.1 IProfileCompiler | ✗ | `persona.validate_persona` 只做校验 | 不能从自然语言档案生成；字段没有来源类型、置信度、待审核清单 |
+| **2 IRoleRepository** | ✅ | `repository.ProfileRepository` | 权力差、群体成员资格要等场景结构；决策偏好在过程首次调用时播种策略未做；心理理论上限 3 / 4 阶要针对具体对象的证据 |
+| 2.1 IProfileCompiler | ✅ | `profile.ProfileCompiler`（profile-1 档案；自然语言经 `IModel` 的 "profile" 调用） | §4.10 决策偏好先验映射（约 60 个属性名要心理学组核对）、派生字段（P2 全局因素、HEXACO 领域、组织标签）、只检查了一部分模块的取值形式 |
 | 2.2 IRegistry | ✅ | `registry.Registry` + `data/registry.json` | 待心理学组核对 `review` 清单；`state.OPERATORS` 仍是旧的手写局部版，第 2 步改为查本接口 |
 | **3 IStage** S1 | ✅ | `stages.ModelStage("S1")` | 尚未接入运行路径（旧的 `backend.appraise` 仍供 `Agent.step` 使用，第 5 步替换） |
 | 　S2 | ✅ | `stages.ModelStage("S2")` | 同上（旧的 `backend.decide`） |
@@ -369,7 +373,7 @@ F1—F5（见 [09 §7](09-interface-and-field-spec.md)）：〔工程〕结构�
 3. ~~`IModel` 通用化，mock 能产出三个阶段的合规产物。~~ 已完成（2026-11-07），尚未接入运行路径。
 4. ~~`IEvidenceGate` + 三个 `IStage` + `IExpresser`。~~ 已完成（2026-11-08），尚未接入运行路径。
 5. ~~`ITurnRunner` 替换 `Agent.step`；`ITrace` 自己落盘。~~ 已完成（2026-11-08）：新管线可用（`--pipeline stages`），旧的仍是默认，第 7 步删除。
-6. `IRoleRepository` / `IProfileCompiler`：入场状态和档案编译。
+6. ~~`IRoleRepository` / `IProfileCompiler`：入场状态和档案编译。~~ 已完成（2026-11-08）。
 7. 删除旧的 v0 路径，离线工具改到新格式。
 
 每一步结束时 `IRoleAgent` 都不变，现有测试保持通过。

@@ -2,7 +2,8 @@
 
 Same routing as the old adapter (RoleAgentBase: role library, a session per interaction_id +
 character_id, retries by request_id, one call at a time). At a character's first act:
-IRoleRepository.load + enter (entry.RoleFileRepository for now) and ITurnRunner.begin. Each act
+IRoleRepository.load + enter (repository.ProfileRepository: profiles/<id>.json, else the role
+file converted; compiled by the profile compiler with the same model) and ITurnRunner.begin. Each act
 passes the records it has not taken in yet to ITurnRunner.run; another character's thought, if
 the runner ever shows one, is dropped with a warning. The result is the full thought / speech /
 action content of IExpresser; nothing about the internal state is returned.
@@ -14,7 +15,8 @@ import copy
 
 from .adapter import RoleAgentBase
 from .agent_api import MODE, InterfaceError, record_id
-from .entry import RoleFileRepository, background
+from .profile import ProfileCompiler
+from .repository import ProfileRepository
 from .expresser import ModelExpresser
 from .interfaces import AgentCallError, ModelError, StageError
 from .runner import TurnRunner
@@ -30,7 +32,7 @@ class StagedRoleAgent(RoleAgentBase):
         self._setup(roles, None)
         self.registry, self.model = registry, model
         self.trace = trace if trace is not None else MemoryTrace()
-        self.repository = repository or RoleFileRepository(roles, registry)
+        self.repository = repository or ProfileRepository(registry, ProfileCompiler(registry, model), roles)
         self.store = store or ConstructStore(registry)
         self.runner = TurnRunner(self.store, model_stages(registry, model, trace=self.trace),
                                  ModelExpresser(registry, model, self.trace), self.trace)
@@ -46,8 +48,7 @@ class StagedRoleAgent(RoleAgentBase):
             return key
         profile = self.repository.load(session.role_id)
         state = self.repository.enter(profile, session.bootstrap)
-        persona = self.roles[session.role_id]["persona"]
-        self.runner.begin(key, state, profile, background(session.bootstrap, persona))
+        self.runner.begin(key, state, profile, self.repository.background(session.role_id, session.bootstrap))
         return key
 
     def _act(self, session, context, request_id):

@@ -11,8 +11,7 @@ from pathlib import Path
 
 from rolesim import interfaces as I
 from rolesim.agent_api import validate_action_content
-from rolesim.catalog import digest
-from rolesim.entry import ENTRY_GOAL, ENTRY_MEMORY, RoleFileRepository, background
+from rolesim.repository import ENTRY_GOAL, ENTRY_MEMORY, ProfileRepository, background
 from rolesim.expresser import ModelExpresser
 from rolesim.loop import run_staged
 from rolesim.model import MockModel
@@ -70,9 +69,9 @@ def runner(model=None, trace=None):
     trace = trace if trace is not None else MemoryTrace()
     store = ConstructStore(REG)
     run = TurnRunner(store, model_stages(REG, model, trace=trace), ModelExpresser(REG, model, trace), trace)
-    repo = RoleFileRepository(ROLES, REG)
+    repo = ProfileRepository(REG, roles=ROLES)
     profile = repo.load("role1")
-    run.begin(KEY, repo.enter(profile, BOOT), profile, background(BOOT, ROLES[0]["persona"]))
+    run.begin(KEY, repo.enter(profile, BOOT), profile, repo.background("role1", BOOT))
     return run, store, trace
 
 
@@ -97,21 +96,10 @@ class Trace(unittest.TestCase):
             JsonlTrace("x").folder(("../up", "role1"))
 
 
-# -- the transitional repository ----------------------------------------------------------------------------
+# -- entry through the repository (more in test_profile.py) -------------------------------------------------
 class Entry(unittest.TestCase):
-    def test_load_maps_active_persona_modules(self):
-        profile = RoleFileRepository(ROLES, REG).load("role1")
-        stable = ROLES[0]["persona"]["stable"]
-        self.assertEqual(profile.snapshot_id, digest(stable))
-        self.assertEqual(profile.modules["s.traits.personality.p1_big_five"].value, stable["traits"]["personality"]["facets"])
-        self.assertEqual(profile.modules["s.traits.attachment.global"].value, {"anxiety": 0.8, "avoidance": -0.3})
-        self.assertIn("s.core_goals.primary", profile.modules)
-        self.assertNotIn("s.identity.demographics", profile.modules)        # unknown in the persona
-        with self.assertRaises(I.InterfaceError):
-            RoleFileRepository(ROLES, REG).load("nobody")
-
     def test_enter_takes_goal_and_memory_from_the_bootstrap(self):
-        repo = RoleFileRepository(ROLES, REG)
+        repo = ProfileRepository(REG, roles=ROLES)
         state = repo.enter(repo.load("role1"), BOOT)
         self.assertEqual(state.dynamic["d.goal.goals_now"][ENTRY_GOAL]["content"], "按期交付可核验的数据")
         self.assertEqual(state.memory["m.entry"][ENTRY_MEMORY]["channel"], "入场前")
