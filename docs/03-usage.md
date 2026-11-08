@@ -23,6 +23,7 @@ python3.11 -m rolesim run --roles role1 role2 --scene test1 --mode profile_state
 python3.11 -m rolesim run --roles role1 role2 --scene test1 --appraise-state off   # 感知评价不看状态的对照
 python3.11 -m rolesim run --roles role1 role2 role3 --scene test3   # 三个角色 + 环境 agent
 python3.11 -m rolesim run --roles role1 role2 role3 --scene test3 --interface agent-api   # 走环境组接口 v2（本地参考运行器）
+python3.11 -m rolesim run --roles role1 role2 role3 --scene test3 --interface agent-api --pipeline stages   # 新的分阶段管线
 ```
 
 `mock` 按关键词标线索、按候选顺序选动作、用固定台词表达，**只能用来验证流程**（紧张为"高"时会在台词前加一句"我有点担心"，用来检查状态确实传到了表达）。角色输出不同不构成心理有效性证据。
@@ -37,6 +38,7 @@ python3.11 -m rolesim run --roles role1 role2 role3 --scene test3 --interface ag
 | `--mode` | `profile_only` / `profile_state` / `profile_state_mechanisms` | `profile_state_mechanisms` |
 | `--appraise-state` | `off` 时感知评价提示不含状态（对照用），记入 `manifest.appraise_state` | `on` |
 | `--no-skills` | 保留 skill 绑定记录但不注入提示（对照用） | 关 |
+| `--pipeline` | `agent`：旧的 `Agent.step`；`stages`：新的分阶段管线（S1 / S2 / S3 + 状态存储 + 表达，见 [06-runtime-flow.md](06-runtime-flow.md) 第 13 节），只能配 `--interface agent-api` | `agent` |
 | `--interface` | `env-contract`：原来的 `step` / `perceive` 流程；`agent-api`：角色放在环境组接口 v2（`initialize` / `act`）后面，由本地参考运行器驱动（见 [06-runtime-flow.md](06-runtime-flow.md) 第 12 节） | `env-contract` |
 | `--out` | 运行目录 | `runs/<YYYYMMDD-HHMMSS>_<剧情>_<模型>/` |
 

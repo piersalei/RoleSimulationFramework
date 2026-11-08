@@ -95,6 +95,7 @@ flowchart TB
 | 状态写入（新） | `slots.py`、`magnitude.py`、`validator.py`、`operators.py`、`store.py` | [plan/10](../plan/10-interfaces.md) 第 4 节的 `IStateStore` / `IUpdateOperator` / `IMagnitude` / `IValidator`：状态按构念 ID 存（45 个 dynamic / memory 构念的布局），写入白名单、阶段权限、依赖组来自登记表，事件等级定幅度档、证据渠道封顶、人格敏感度移档，硬错整组拒绝、软异常标记，重试幂等 | 完成并有测试；尚未接入运行路径 |
 | 模型调用（新） | `model.py`、`schemas.py` | [plan/10](../plan/10-interfaces.md) 第 3.3 节的 `IModel`：每个阶段一次结构化调用（`ChatModel` 沿用 `ChatBackend` 的传输，`MockModel` 为离线夹具）；三个阶段的输出 schema 由登记表生成，解析成产物、判断和变化提议，不合 schema 或登记表即整阶段失败 | 完成并有测试；尚未接入运行路径 |
 | 证据、阶段与表达（新） | `evidence.py`、`stages.py`、`expresser.py` | [plan/10](../plan/10-interfaces.md) 第 3.1、3.4、3.5 节：`EvidenceGate`（可见记录、排除原因、记忆取回）、`ModelStage`（S1 / S2 / S3 各一次模型调用，提示只含自知层）、`ModelExpresser`（按需可见的表达调用，产出思考 / 发言 / 动作） | 完成并有测试；尚未接入运行路径 |
+| 一次行动（新） | `runner.py`、`staged.py`、`trace.py`、`entry.py` | [plan/10](../plan/10-interfaces.md) 第 1 节：`TurnRunner`（按记录组 S1、对上次计划的反馈做 S3、S2 被拒重做一次、表达；失败后接着做）、`StagedRoleAgent`（接口 v2 后面的新实现）、`JsonlTrace`（自己写阶段与模型调用记录）、`RoleFileRepository`（过渡：从角色文件和 bootstrap 入场） | 完成并有测试；`--pipeline stages` 可用，默认仍是旧管线 |
 | 关键接口 | `interfaces.py` | [plan/10](../plan/10-interfaces.md) 的 4 个顶层接口与子接口：Protocol 签名、数据类型（产物、画像、状态、变化不可变）及其最基本的不变量检查 | 只有契约，尚无按这些接口的实现（`adapter.py` 满足 `IRoleAgent`） |
 | 角色适配器 | `adapter.py` | 把 `Agent` 放到 `initialize` / `act` 后面；`interaction_id + character_id` 路由、记录转事件、请求幂等、中途到场建关系 | 完成；只出台词，无思考与外显行动 |
 | 本地参考运行器 | `loop.py` | 按接口 v2 跑一场：先 initialize，再轮流 act，运行器保存观察记录；环境用 `EchoEnvironment` 替身 | 完成；不生成审计报告 |

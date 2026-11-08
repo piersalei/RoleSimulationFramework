@@ -82,6 +82,14 @@ HTTP 测试使用本机临时回环服务器，返回固定结果。它验证传
 
 没覆盖：真实模型；新链路尚未接入运行路径（第 5 步）；不能自知的模块转成条件化语句（第 6 步）。
 
+## 2026-11-08：ITurnRunner、ITrace 与新的分阶段管线
+
+新增 `rolesim/runner.py`（`TurnRunner`：按记录组 S1 → 提交；上次计划的受众对本角色的第一次回应 → S3 → 提交，每个计划一次；S2 → 提交，计划自己的依赖组被拒时带原因重做一次；表达；失败后已提交的阶段保留，重试接着做）、`rolesim/trace.py`（`JsonlTrace` / `MemoryTrace`）、`rolesim/entry.py`（过渡的 `RoleFileRepository`：角色文件中能一一对应的模块 → 稳定画像，bootstrap 的目标与前史 → 入场状态）、`rolesim/staged.py`（`StagedRoleAgent`），`loop.run_staged` 和 CLI `--pipeline stages`。适配器的公共部分抽成 `RoleAgentBase`，旧的 `RoleAgentAdapter` 行为不变。`StageContext` / `PromptView` 加 background，`ITurnRunner` 加 `begin`。
+
+`tests/test_runner.py` 16 项：轨迹文件、过渡入场、一次行动的阶段与状态链、反馈只来自计划受众且每个计划一次、已吸收的记录跳过、S2 被拒重做与两次被拒失败、失败后接着做（表达失败、第二组 S1 失败、反馈判断失败三种）、接口后面的行动、别人思考被丢弃、档位被拒、阶段失败 → `AgentCallError` 后可重试、整场 test3 运行（`world_private` 不出现在任何输出文件里；思考只发给本人；只发给一个角色的环境消息只出现在该角色的模型调用里）、CLI。另做了 3 处变异检查（表达失败后重做计划、反馈判断不止一次、计划被拒不重做），对应测试都会失败。用 mock 跑了 test3：12 轮、31 条记录、68 次模型调用，没有被拒绝的变化，也没有软异常。`python3 -m unittest discover -s tests`（Python 3.13.12）：**323 项通过**。
+
+没覆盖：真实模型；离线工具（审计、评审包、可读版）还不认新格式；新管线没有消融档位；“反馈”按受众规则判断。
+
 ## 维护方式
 
 每次做出新的验证（测试数变化、新的模型运行、人工评审）就在这里加一节，写明日期、命令、结果、没覆盖的部分。测试数请以实际运行输出为准，上表来自计划文档的记录，不是本次重新统计。

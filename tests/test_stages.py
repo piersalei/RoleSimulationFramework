@@ -179,7 +179,7 @@ class Stages(unittest.TestCase):
         model = Scripted(error=I.ModelError("stop"))
         for stage, kind in (("S1", "event"), ("S2", "plan"), ("S3", "feedback")):
             with self.assertRaises(I.StageError):
-                ModelStage(stage, REG, model).run(ctx(kind, upstream={"plan": None}))
+                ModelStage(stage, REG, model).run(ctx(kind, upstream={"plan": plan()}))
         self.assertEqual(len(model.views), 3)
         for view in model.views:
             text = json.dumps(view_payload(view), ensure_ascii=False)

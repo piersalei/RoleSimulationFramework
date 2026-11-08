@@ -56,7 +56,7 @@ class ModelExpresser:
         task = {"kinds": list(EXPRESS_KINDS), "audience": {a: present[a].get("name", a) for a in audience}}
         records = visible_records(ctx, self.gate.build(ctx), self.recent)
         return PromptView(self_profile(ctx.stable, self.registry, EXPRESSION_MODULES), records, feeling_text(ctx.state),
-                          upstream, ctx.key[1], present, task)
+                          upstream, ctx.key[1], present, task, dict(ctx.background))
 
     def realize(self, plan, ctx):
         view = self.view(plan, ctx)

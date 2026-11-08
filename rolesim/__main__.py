@@ -56,6 +56,8 @@ def main():
                       help="off keeps the role's state out of the appraisal prompt (control)")
     demo.add_argument("--interface", choices=["env-contract", "agent-api"], default="env-contract",
                       help="agent-api runs the roles behind the agent interface v2 (initialize / act) with the local runner")
+    demo.add_argument("--pipeline", choices=["agent", "stages"], default="agent",
+                      help="stages runs the new staged pipeline (S1 / S2 / S3 + store + expression); needs --interface agent-api")
     demo.add_argument("--out", default=None,
                       help="run directory; default runs/<YYYYMMDD-HHMMSS>_<scene>_<model>")
     readable = sub.add_parser("readable", help="(re)write transcript.md for finished run directories")
@@ -101,7 +103,16 @@ def main():
             backend = MockBackend() if args.backend == "mock" else ChatBackend()
             output = args.out or str(RUNS_DIR / run_name(scene["id"], backend.model))
             print(f"run directory: {output}", file=sys.stderr, flush=True)
-            if args.interface == "agent-api":
+            if args.pipeline == "stages":
+                if args.interface != "agent-api":
+                    raise ValueError("--pipeline stages runs behind --interface agent-api")
+                from .loop import run_staged
+                from .model import ChatModel, MockModel
+                from .registry import Registry
+                registry = Registry.load()
+                model = MockModel(registry) if args.backend == "mock" else ChatModel(backend)
+                result = run_staged(roles, scene, model, output, registry)
+            elif args.interface == "agent-api":
                 from .loop import run_agent_api
                 result = run_agent_api(roles, scene, backend, output, args.mode, not args.no_skills,
                                        args.appraise_state == "on")

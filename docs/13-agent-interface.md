@@ -131,6 +131,10 @@ class IEnvironment(Protocol):    # 环境组实现（环境组：EnvironmentAdap
 - **并发**：所有模型调用共用一把锁，在 `asyncio.to_thread` 里串行执行。
 - **审计**：每次成功的 `act` 在 `adapter.log` 追加一条，含路由键、评价、控制层输入、决策、状态变化、返回结果。
 
+### 3.1 另一个实现：`StagedRoleAgent`（`staged.py`）
+
+与 `RoleAgentAdapter` 共用 `RoleAgentBase`（选角色、Session、`request_id` 重试、串行），内部换成新的分阶段管线（[06-runtime-flow.md](06-runtime-flow.md) 第 13 节）：第一次 `act` 时从角色文件和 bootstrap 入场；每次 `act` 把未吸收的记录交给 `TurnRunner`；返回的内容可以同时有 `thought`（只发给本人）、`speech`、`action`，接收者来自计划的受众（没写即在场所有人）。阶段失败抛 `AgentCallError`，已提交的阶段保留，换 `request_id` 重试时接着做。还没有消融档位。
+
 ## 4. 智能体属性
 
 运行器只看到我们返回的行动内容；稳定属性和动态状态都留在内部。接口 v2 不再回传认知摘要，原来的 `cognition.py` 已删除。
@@ -190,7 +194,7 @@ python3.11 -m rolesim run --roles role1 role2 role3 --scene test3 --interface ag
 
 | 项 | 现状 |
 |---|---|
-| 输出形态 | 只出发言；`thought`、`action` 恒为 null |
+| 输出形态 | 旧管线只出发言（`thought`、`action` 恒为 null）；新管线（`StagedRoleAgent`）可出思考、发言、动作 |
 | 感知时机 | 没有 perceive，别人的言行要等本角色下次行动时才评价；中间不行动的角色状态不变（已确认接受） |
 | `personality` / `mechanism` | 读 `role_ref`、`mode`；`enable_config` 只记录 |
 | 跨互动 | 每场互动从角色库的入场状态开始，不延续上一场的动态状态和记忆 |

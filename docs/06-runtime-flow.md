@@ -300,3 +300,26 @@ loop.run_agent_api
 
 输出目录：`manifest.json`（`interface: agent-api-v2`，含 `interaction_id`）、`records.jsonl`（运行器视角的全部记录）、`calls.jsonl`（每次调用的完整输入与输出）、`roles/<id>/audit.jsonl`、`states.jsonl`、`mechanism_log.jsonl`、`transcript.md`（按记录生成的简版）。这条路径暂不生成 `audit_report`，也不能用 `rolesim package` 打包，因为两者读取的是原路径的目录格式。
 
+## 13. 新的分阶段管线（`--interface agent-api --pipeline stages`）
+
+接口 v2 的外层不变（`LocalRunner`、`EchoEnvironment`、bootstrap），角色换成 `StagedRoleAgent`，内部按 [plan/10](../plan/10-interfaces.md) 的接口走：
+
+```
+StagedRoleAgent.act
+  第一次 act：RoleFileRepository.load（角色文件 → 稳定画像）+ enter（空白状态 + bootstrap 的目标与前史）→ TurnRunner.begin
+  TurnRunner.run（未吸收的记录；别人的思考丢弃并告警）
+    每个记录组（同一 action_id）：
+      S1 = ModelStage("S1").run  ── EvidenceGate → 自知层视图 → IModel → parse_output
+      ConstructStore.commit       ── 算子起草 → 幅度档 → 验证 → 按依赖组原子提交
+      若是上次计划的受众对本角色的回应（每个计划一次）：S3.run → commit
+    S2.run → commit（计划自己的依赖组被拒 → 带着原因重做一次）
+    ModelExpresser.realize       ── 按需可见的表达调用 → {thought（只给自己）, speech, action, order}
+  每次提交写 trace/<interaction_id>/<character_id>/phases.jsonl，每次模型调用写 model_calls.jsonl
+```
+
+每次行动的模型调用：每个记录组一次 S1，有反馈时一次 S3，一次 S2（被拒时两次），一次表达。离线时 `--backend mock` 用 `MockModel`（夹具，内容不是心理学证据），`--backend chat` 用 `ChatModel`（同一套 `ROLE_SIM_*` 配置）。
+
+输出目录：`manifest.json`（`pipeline: stages`，含登记表来源哈希）、`records.jsonl`、`calls.jsonl`、`roles/<id>/final_state.json`（按构念 ID 的最终状态）、`trace/`、`transcript.md`。审计报告、评审包和可读版还只认旧格式（第 7 步迁移）。
+
+与旧管线的差别：状态按构念 ID 存，写入权限、阶段权限和幅度档来自心理学组的登记表；输出可以有思考和外显动作；轨迹由角色这一侧自己写；还没有消融档位，`mechanism.mode` 会被拒绝。
+

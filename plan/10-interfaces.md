@@ -50,10 +50,14 @@ class IRoleAgent(Protocol):
 
 实现要点：`initialize` 调 `IRoleRepository.enter` 得到入场状态；`act` 取出未处理的记录，交给 `ITurnRunner.run`。
 
+现在有两个实现，共用 `adapter.RoleAgentBase`（角色库、按 `interaction_id + character_id` 的 Session、`request_id` 重试、一次一个调用）：`adapter.RoleAgentAdapter`（旧的 `Agent.step`，只出发言，CLI 默认）和 `staged.StagedRoleAgent`（新的分阶段管线，产出思考 / 发言 / 动作；`--pipeline stages`）。旧实现在第 7 步删除。
+
 ### 1.1 `ITurnRunner`：一次 act 里怎样走三个阶段
 
 ```python
 class ITurnRunner(Protocol):
+    def begin(self, key: SessionKey, state: AgentState, stable: StableProfile,
+              background: Optional[Mapping[str, Any]] = None) -> None: ...      # 入场
     def run(self, key: SessionKey, new_records: list[InteractionRecord],
             present: dict[str, Present]) -> tuple[AgentActionContent, AgentState]: ...
 ```
@@ -65,6 +69,10 @@ class ITurnRunner(Protocol):
 | 流程 | 新记录按 `action_id` 分组，每组一个事件阶段：`S1.run` → commit；若该组是对本角色此前行动 / 承诺的反馈，再 `S3.run` → commit。全部处理完后 `S2.run` → commit → `IExpresser.realize` |
 | 保证 | 每个阶段读上一次提交后的快照；同一阶段内不读未提交的候选；S2 的依赖组被拒时不发出行动 |
 | 出错 | 任一阶段失败即整次 act 失败，已提交的阶段保留，未提交的丢弃 |
+| 实现 | `rolesim/runner.py` `TurnRunner`（已实现） |
+| 什么算反馈 | 上次计划的受众（计划没指定受众时为除自己和环境以外的任何人）对本角色说话或行动的第一组记录；每个计划只判断一次 |
+| S2 被拒 | 计划自己的依赖组（目标、承诺、策略）有硬错 → 行动不按原样发出，在新阶段重新做 S2，把拒绝原因放在 `upstream["rejected"]`；第二次仍被拒 → 整次 act 失败 |
+| 重试 | S1 已提交的记录组算已吸收；没做完的反馈判断、已提交但没表达出去的计划都记着，重试时接着做，不会把同一阶段提交两次 |
 
 ### 1.2 `ITrace`：轨迹日志
 
@@ -80,6 +88,8 @@ class ITrace(Protocol):
 | `ModelCallRecord` | stage、input、raw_output、reasoning |
 
 只写不读，没有写状态的权限。按 `interaction_id` 落盘。
+
+实现：`rolesim/trace.py`（已实现）。`JsonlTrace(root)` 写 `<root>/<interaction_id>/<character_id>/phases.jsonl`（每次提交一条 `PhaseLog`）和 `model_calls.jsonl`（每次模型调用的视图、原始输出、推理）；`MemoryTrace` 在内存里收同样的记录。接环境组的真实运行器后，这份记录由我们自己写，不依赖运行器。
 
 ---
 
@@ -151,7 +161,7 @@ class IStage(Protocol[P]):
 
 | 类型 | 关键字段 |
 |---|---|
-| `StageContext` | phase（event_id、phase_no、kind）、state（本阶段唯一读的快照）、stable、records（本阶段的记录组）、history（本阶段之前看到过的记录，提示上下文，也可作证据）、upstream（已提交的上游产物：S2 拿到最新的 S1 产物和上次 ActionPlan，S3 拿到 ActionPlan 和反馈的 S1 产物）、present |
+| `StageContext` | phase（event_id、phase_no、kind）、state（本阶段唯一读的快照）、stable、records（本阶段的记录组）、history（本阶段之前看到过的记录，提示上下文，也可作证据）、background（initialize 时告诉角色的场景与自身情况）、upstream（已提交的上游产物：S2 拿到最新的 S1 产物和上次 ActionPlan，S3 拿到 ActionPlan 和反馈的 S1 产物）、present |
 | `StageOutput[P]` | product: P、proposals（[ChangeProposal]）、judgments（[Judgment]）、evidence（本阶段能用的 EvidenceSet，提交时据此核对证据可见） |
 | `ChangeProposal` | construct_id、key、field、after、reason、grade（本角色对这一维度的事件等级，数值变化必填）、evidence / mechanisms（这条变化依据的证据和决策过程；不填则取交给该算子的判断）、operator（不填即主写入算子；衰减要写明 `decay_or_recovery`）：阶段只能**提议**，不写状态 |
 
@@ -318,11 +328,11 @@ IRoleAgent.act
 
 | 接口 | 状态 | 现在由谁承担 | 还缺什么 |
 |---|---|---|---|
-| **1 IRoleAgent** | ✅ | `adapter.RoleAgentAdapter` | 只出发言，不产出思考和外显行动；内部调的是旧的 `Agent.step`，不是 `ITurnRunner` |
+| **1 IRoleAgent** | ✅ | `staged.StagedRoleAgent`（新）；`adapter.RoleAgentAdapter`（旧，CLI 默认） | 旧实现在第 7 步删除；新管线还没有消融档位（`mechanism.mode`） |
 | 　（IEnvironment） | ✅ 本地替身 | `loop.EchoEnvironment` | 环境组实现，我们只调用 |
-| 1.1 ITurnRunner | ✗ | `Agent.step`（旧流程） | 旧流程是"逐条评价 → 机制卡 → 决策 → 表达"，每次 act 只提交一次；没有按 `action_id` 分组、没有 S1 / S3 分开、没有每阶段一次提交 |
-| 1.2 ITrace | ◐ | `adapter.log` 内存列表，由 `loop.py` 落盘 | 没有 `PhaseLog`（证据集、判断、产物）；**日志由运行器写盘，接环境组的真实运行器后就没人写了**，需要我们自己按 `interaction_id` 落盘 |
-| **2 IRoleRepository** | ◐ | `roles.load_role`、`Agent.begin`、`briefing.py` | `load` 只读手写 JSON（role-1.0）；`enter` 没有按"档案 → bootstrap → 先验"取值，bootstrap 的 `core_goals` / `history_memory` 只拼成一段背景文字，没进目标和记忆 |
+| 1.1 ITurnRunner | ✅ | `runner.TurnRunner` | “反馈”目前按受众规则判断，不由模型判断 |
+| 1.2 ITrace | ✅ | `trace.JsonlTrace` / `MemoryTrace` | 离线工具（审计、评审包、可读版）还读旧格式（第 7 步） |
+| **2 IRoleRepository** | ◐ | 过渡实现 `entry.RoleFileRepository`：手写角色文件里能一一对应到构念的模块（P1 分面、依恋、施瓦兹价值、核心目标、表达基线、社会角色）；入场时 `core_goals` → 当前目标、`history_memory` → 入场记忆 | 正式实现等档案编译（第 6 步）：来源类型、待审核清单、自然语言档案、不能自知字段的条件化语句 |
 | 2.1 IProfileCompiler | ✗ | `persona.validate_persona` 只做校验 | 不能从自然语言档案生成；字段没有来源类型、置信度、待审核清单 |
 | 2.2 IRegistry | ✅ | `registry.Registry` + `data/registry.json` | 待心理学组核对 `review` 清单；`state.OPERATORS` 仍是旧的手写局部版，第 2 步改为查本接口 |
 | **3 IStage** S1 | ✅ | `stages.ModelStage("S1")` | 尚未接入运行路径（旧的 `backend.appraise` 仍供 `Agent.step` 使用，第 5 步替换） |
@@ -358,7 +368,7 @@ F1—F5（见 [09 §7](09-interface-and-field-spec.md)）：〔工程〕结构�
 2. ~~`IStateStore` + `IUpdateOperator` + `IValidator` + `IMagnitude`：状态改成按构念 ID，按登记表做权限和区间。~~ 已完成（2026-11-07），尚未接入运行路径。
 3. ~~`IModel` 通用化，mock 能产出三个阶段的合规产物。~~ 已完成（2026-11-07），尚未接入运行路径。
 4. ~~`IEvidenceGate` + 三个 `IStage` + `IExpresser`。~~ 已完成（2026-11-08），尚未接入运行路径。
-5. `ITurnRunner` 替换 `Agent.step`；`ITrace` 自己落盘。
+5. ~~`ITurnRunner` 替换 `Agent.step`；`ITrace` 自己落盘。~~ 已完成（2026-11-08）：新管线可用（`--pipeline stages`），旧的仍是默认，第 7 步删除。
 6. `IRoleRepository` / `IProfileCompiler`：入场状态和档案编译。
 7. 删除旧的 v0 路径，离线工具改到新格式。
 

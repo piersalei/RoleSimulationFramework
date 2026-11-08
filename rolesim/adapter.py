@@ -67,29 +67,31 @@ class Session:
         self.warnings = []
 
 
-class RoleAgentAdapter:
-    def __init__(self, roles, backend, mode="profile_state_mechanisms", use_skills=True, appraise_state=True,
-                 allowed_actions=None):
+class RoleAgentBase:
+    """What every IRoleAgent here shares: the role library, one Session per interaction_id +
+    character_id, retries by request_id, and one call at a time. Subclasses implement _act."""
+
+    def _setup(self, roles, mode):
         """`roles` are loaded role files (roles.load_role): the role library. A character picks
-        one by `personality.role_ref`, else by its character id, else by persona name.
-        `mode` is the default ablation mode; `allowed_actions` the move space (default: all)."""
-        if mode not in MODES:
-            raise ValueError(f"unknown mode: {mode}")
+        one by `personality.role_ref`, else by its character id, else by persona name."""
         self.roles = {r["id"]: r for r in roles}
         names = [r["persona"]["name"] for r in roles]
         if len(set(names)) != len(names):
             raise ValueError("role names must be unique to be picked by name")
         self.by_name = {r["persona"]["name"]: r["id"] for r in roles}
-        self.backend, self.mode = backend, mode
-        self.use_skills, self.appraise_state = bool(use_skills), bool(appraise_state)
-        self.allowed_actions = list(allowed_actions or sorted(ACTIONS))
-        if not set(self.allowed_actions) <= ACTIONS:
-            raise ValueError("unsupported action")
+        self.mode = mode
         self.sessions = {}                 # (interaction_id, character_id) -> Session
         self.cache = {}                    # request_id -> (input digest, result)
         self.log = []                      # one audit entry per successful act
         # One model call at a time: backends keep per-call state (last_reasoning, call counts).
         self.lock = asyncio.Lock()
+
+    def _check_mode(self, mode):
+        """The mechanism.mode a bootstrap may ask for; returns the mode to use."""
+        return mode
+
+    def _act(self, session, context, request_id):
+        raise NotImplementedError
 
     # -- interface ---------------------------------------------------------------
     async def initialize(self, interaction_id, character_id, bootstrap):
@@ -102,9 +104,7 @@ class RoleAgentAdapter:
                 raise InterfaceError(f"{character_id}: already initialized in {interaction_id} with another bootstrap")
             return None                    # a retried initialize is harmless
         role_id = self._pick(character_id, bootstrap)
-        mode = bootstrap["mechanism"].get(MODE, self.mode)
-        if mode not in MODES:
-            raise InterfaceError(f"bootstrap.mechanism.{MODE}: unknown mode {mode!r}; one of {list(MODES)}")
+        mode = self._check_mode(bootstrap["mechanism"].get(MODE, self.mode))
         taken = [s.character_id for (iid, _), s in self.sessions.items()
                  if iid == interaction_id and s.role_id == role_id]
         if taken:
@@ -147,6 +147,36 @@ class RoleAgentAdapter:
         if session is None:
             raise InterfaceError(f"{character_id} was not initialized in {interaction_id}")
         return session
+
+    # -- for the local loop ------------------------------------------------------
+    def closed_by(self, interaction_id):
+        """Name of a character whose last move was `close`, else None. Local only: the
+        interface has no way to tell the runner (plan/08, section 8.1)."""
+        for (iid, _), session in self.sessions.items():
+            if iid == interaction_id and session.moves and session.moves[-1] == "close":
+                return session.name
+        return None
+
+
+class RoleAgentAdapter(RoleAgentBase):
+    """IRoleAgent over the old single-pass Agent.step (appraise -> cards -> decide -> express)."""
+
+    def __init__(self, roles, backend, mode="profile_state_mechanisms", use_skills=True, appraise_state=True,
+                 allowed_actions=None):
+        """`mode` is the default ablation mode; `allowed_actions` the move space (default: all)."""
+        if mode not in MODES:
+            raise ValueError(f"unknown mode: {mode}")
+        self._setup(roles, mode)
+        self.backend = backend
+        self.use_skills, self.appraise_state = bool(use_skills), bool(appraise_state)
+        self.allowed_actions = list(allowed_actions or sorted(ACTIONS))
+        if not set(self.allowed_actions) <= ACTIONS:
+            raise ValueError("unsupported action")
+
+    def _check_mode(self, mode):
+        if mode not in MODES:
+            raise InterfaceError(f"bootstrap.mechanism.{MODE}: unknown mode {mode!r}; one of {list(MODES)}")
+        return mode
 
     def _role_of(self, session, character_id):
         """Our role id of another character of the same interaction."""
@@ -238,12 +268,3 @@ class RoleAgentAdapter:
                          "move": proposal.intent_note, "delta": response.delta, "state_after": response.state,
                          "result": copy.deepcopy(result)})
         return result
-
-    # -- for the local loop ------------------------------------------------------
-    def closed_by(self, interaction_id):
-        """Name of a character whose last move was `close`, else None. Local only: the
-        interface has no way to tell the runner (plan/08, section 8.1)."""
-        for (iid, _), session in self.sessions.items():
-            if iid == interaction_id and session.moves and session.moves[-1] == "close":
-                return session.name
-        return None

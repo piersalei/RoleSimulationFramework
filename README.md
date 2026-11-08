@@ -35,6 +35,7 @@ python3.11 -m unittest discover -s tests -v                       # 测试
 python3.11 -m rolesim list                                        # 角色 role1–role3；剧情 test1–test3
 python3.11 -m rolesim run --roles role1 role2 --scene test1       # 离线 mock 跑一场 → runs/<时间>_test1_mock/
 python3.11 -m rolesim run --roles role1 role2 role3 --scene test3 # 三个角色 + 环境 agent
+python3.11 -m rolesim run --roles role1 role2 role3 --scene test3 --interface agent-api --pipeline stages   # 新的分阶段管线（plan/10）
 ```
 
 跑完先看运行目录里的 `transcript.md`。`mock` 只能验证流程，它的输出不是心理学证据。接真实模型、全部命令和运行产物说明见 [使用指南](docs/03-usage.md)。

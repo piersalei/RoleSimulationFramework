@@ -97,12 +97,12 @@ class ModelStage:
     def view(self, ctx, evidence):
         return PromptView(self_profile(ctx.stable, self.registry), visible_records(ctx, evidence, self.window),
                           state_text(ctx.state, self.registry, evidence.retrieved_memories), dict(ctx.upstream),
-                          ctx.key[1], dict(ctx.present), self.task)
+                          ctx.key[1], dict(ctx.present), self.task, dict(ctx.background))
 
     def run(self, ctx):
         if ctx.phase.kind != KIND_OF[self.name]:
             raise InterfaceError(f"{self.name} runs in a {KIND_OF[self.name]} phase, not {ctx.phase.kind}")
-        if self.name == "S3" and "plan" not in ctx.upstream:
+        if self.name == "S3" and ctx.upstream.get("plan") is None:
             raise InterfaceError("S3 runs only on feedback to an earlier plan (upstream['plan'])")
         evidence = self.gate.build(ctx)
         view = self.view(ctx, evidence)

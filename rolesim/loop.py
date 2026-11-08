@@ -190,7 +190,7 @@ def _now():
 
 
 def write_transcript(output, episode, history, manifest):
-    lines = [f"# {episode['scene_id']}（{INTERFACE}）", "",
+    lines = [f"# {episode['scene_id']}（{INTERFACE}{'，' + manifest['pipeline'] if manifest.get('pipeline') else ''}）", "",
              f"- 状态：{manifest['status']}；轮数：{manifest.get('turns')}；后端：{manifest['backend']}；模式：{manifest['mode']}",
              "- 证据层级：工程运行，只说明管线可用，不说明心理机制有效。", "", "## 互动记录", ""]
     current = None
@@ -250,5 +250,61 @@ def run_agent_api(roles, scene, backend, output, mode="profile_state_mechanisms"
             session = adapter.sessions.get((runner.interaction_id, member["character_id"]))
             agent = session.agent if session else None
             _jsonl(folder / "mechanism_log.jsonl", agent.mechanism_log if agent else [])
+        write_json(output / "manifest.json", manifest)
+        write_transcript(output, ep, runner.history, manifest)
+
+
+def run_staged(roles, scene, model, output, registry=None):
+    """Run a scene through the agent interface v2 with the staged pipeline (plan/10 §1):
+    StagedRoleAgent behind the local runner and the echo environment. The trace (phases and model
+    calls, per interaction and character) is written by the pipeline itself under trace/."""
+    from .registry import Registry
+    from .staged import StagedRoleAgent
+    from .trace import JsonlTrace
+
+    registry = registry or Registry.load()
+    ep = episode(roles, scene)
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=False)
+    agents = StagedRoleAgent(roles, registry, model, JsonlTrace(output / "trace"))
+    calls = []
+    runner = LocalRunner(ep, agents, EchoEnvironment(), calls.append)
+    transport = getattr(model, "transport", None)
+    manifest = {"schema_version": "agent-api-run-1.0", "interface": INTERFACE, "pipeline": "stages", "status": "running",
+                "started_at": _now(), "backend": model.label, "model": model.model, "mode": "stages",
+                "registry_sources": list(registry.sources), "code_version": code_version(), "scene_id": ep["scene_id"],
+                "scenario_hash": digest(scene["scenario"]),
+                "cast": [{k: m[k] for k in ("character_id", "name", "role_id", "title")} for m in ep["cast"]],
+                "environment": "EchoEnvironment (local stand-in)", "origin": origin(roles, scene),
+                "evidence_boundary": "engineering run; no human-validity or method-effectiveness claim"}
+    write_json(output / "manifest.json", manifest)
+    try:
+        turns = asyncio.run(runner.run())
+        manifest.update(status="completed", turns=turns, closed_by=runner.closed_by)
+        return manifest
+    except Exception as exc:
+        manifest.update(status="failed", error_type=type(exc).__name__, error=str(exc)[:500])
+        raise
+    finally:
+        states = {}
+        for member in ep["cast"]:
+            key = (runner.interaction_id, member["character_id"])
+            if agents.runner.started(key):
+                snap = agents.store.snapshot(key)
+                states[member["character_id"]] = snap
+                folder = output / "roles" / member["character_id"]
+                folder.mkdir(parents=True, exist_ok=True)
+                write_json(folder / "final_state.json", {"state_id": snap.state_id, "prev_state_id": snap.prev_state_id,
+                                                         "stable_snapshot_id": snap.stable_snapshot_id,
+                                                         "versions": dict(snap.versions), "status": dict(snap.status),
+                                                         "dynamic": snap.dynamic, "memory": snap.memory})
+        manifest.update(finished_at=_now(), records=len(runner.history), calls=len(calls),
+                        interaction_id=runner.interaction_id,
+                        model_calls=getattr(model, "calls", None) if transport is None else getattr(transport, "calls", None),
+                        roles={s.character_id: {"name": s.name, "role_id": s.role_id, "warnings": s.warnings,
+                                                "final_state_id": states[s.character_id].state_id if s.character_id in states else None}
+                               for s in agents.sessions.values()})
+        _jsonl(output / "records.jsonl", runner.history)
+        _jsonl(output / "calls.jsonl", calls)
         write_json(output / "manifest.json", manifest)
         write_transcript(output, ep, runner.history, manifest)

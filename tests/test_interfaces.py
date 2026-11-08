@@ -65,7 +65,7 @@ class Vocabulary(unittest.TestCase):
 class Hierarchy(unittest.TestCase):
     """Each top-level interface and its sub-interfaces exist with the planned methods."""
     TREE = {
-        "IRoleAgent": ["initialize", "act"], "ITurnRunner": ["run"], "ITrace": ["phase", "model_call"],
+        "IRoleAgent": ["initialize", "act"], "ITurnRunner": ["begin", "run"], "ITrace": ["phase", "model_call"],
         "IRoleRepository": ["load", "enter"], "IProfileCompiler": ["compile"],
         "IRegistry": ["construct", "mechanism", "operator"],
         "IStage": ["run"], "IEvidenceGate": ["build"], "IMechanism": ["evaluate"], "IModel": ["complete"],

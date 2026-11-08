@@ -440,6 +440,7 @@ class StageContext:
     present: Mapping[str, Present]
     key: SessionKey = ("", "")
     history: tuple[InteractionRecord, ...] = ()   # records seen before this phase, oldest first
+    background: Mapping[str, Any] = field(default_factory=dict)   # what the role was told at initialize
 
     @property
     def stage(self) -> str:
@@ -491,6 +492,7 @@ class PromptView:
     self_id: str = ""
     present: Mapping[str, Any] = field(default_factory=dict)
     task: Mapping[str, Any] = field(default_factory=dict)
+    background: Mapping[str, Any] = field(default_factory=dict)   # scene and self texts from initialize
 
 
 @dataclass(frozen=True)
@@ -656,6 +658,11 @@ class PhaseLog:
 
 
 class ITurnRunner(Protocol):
+    def begin(self, key: SessionKey, state: AgentState, stable: StableProfile,
+              background: Optional[Mapping[str, Any]] = None) -> None:
+        """Open a session from its entry state (IRoleRepository.enter) and stable profile."""
+        ...
+
     def run(self, key: SessionKey, new_records: list[InteractionRecord],
             present: dict[str, Present]) -> tuple[AgentActionContent, AgentState]:
         """Per action_id group: S1 -> commit, then S3 -> commit if it is feedback on our own
