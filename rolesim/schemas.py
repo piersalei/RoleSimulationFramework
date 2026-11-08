@@ -17,10 +17,17 @@
 
 The evidence set, theory-of-mind limits, bands and versions are program-filled, never asked of
 the model. Judgments' hands_to also comes from the registry.
+
+  EXPRESS_SCHEMA / parse_expression(output, actor_id, audience, present)
+                                  the expression call (IExpresser): thought / speech / action and
+                                  their order -> AgentActionContent; our own thought goes to the
+                                  role alone, speech and action to the plan's audience (everyone
+                                  present when it names nobody), checked by agent_api
 """
 import math
 from typing import Mapping
 
+from .agent_api import validate_action_content
 from .interfaces import (STAGE_OF_KIND, ActionCandidate, ActionPlan, Appraisal, ChangeProposal, Commitment,
                          CommitmentRuling, EvidenceRef, EvidenceSet, EvolutionResult, Expression, Hypothesis,
                          InterfaceError, Judgment, RelationCourse, SituationInterpretation, StageError, StageOutput,
@@ -276,3 +283,36 @@ def parse_output(stage, output, registry, evidence):
     except InterfaceError as exc:
         raise StageError(f"{stage}: {exc}") from None
     return StageOutput(product, tuple(proposals), tuple(judgments), evidence)
+
+
+# -- expression (IExpresser) -------------------------------------------------------------------------
+EXPRESS_KINDS = ("thought", "speech", "action")
+EXPRESS_SCHEMA = _object({
+    "thought": {"type": ["string", "null"], "maxLength": 300},
+    "speech": {"type": ["string", "null"], "maxLength": 600},
+    "action": {"type": ["string", "null"], "maxLength": 300},
+    "order": {"type": "array", "maxItems": 3, "items": {"enum": list(EXPRESS_KINDS)}},
+})
+
+
+def parse_expression(output, actor_id, audience, present):
+    errors = validate(EXPRESS_SCHEMA, output)
+    if errors:
+        raise StageError(f"express: output breaks the schema: {'; '.join(errors[:8])}")
+    filled = [k for k in EXPRESS_KINDS if isinstance(output[k], str) and output[k].strip()]
+    if not filled:
+        raise StageError("express: nothing to say or do")
+    order = list(output["order"])
+    if len(order) != len(set(order)) or set(order) != set(filled):
+        raise StageError(f"express: order {order} must list each filled part {filled} once")
+    recipients = list(dict.fromkeys(audience)) or None
+    content = {k: None for k in EXPRESS_KINDS}
+    for kind in filled:
+        content[kind] = {"content": output[kind].strip(),
+                         "recipient_ids": [actor_id] if kind == "thought" else (list(recipients) if recipients else None)}
+    content["order"] = order
+    try:
+        validate_action_content(content, present, actor_id)
+    except InterfaceError as exc:
+        raise StageError(f"express: {exc}") from None
+    return content

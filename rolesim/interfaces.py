@@ -439,6 +439,11 @@ class StageContext:
     upstream: Mapping[str, Any]             # committed upstream products, e.g. {"S1": ..., "plan": ...}
     present: Mapping[str, Present]
     key: SessionKey = ("", "")
+    history: tuple[InteractionRecord, ...] = ()   # records seen before this phase, oldest first
+
+    @property
+    def stage(self) -> str:
+        return STAGE_OF_KIND[self.phase.kind]
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,69 @@
+"""IExpresser (plan/10 §3.4): an ActionPlan becomes what the role outwardly does.
+
+One model call ("express") on a need-to-know view (plan/10 §3.4; 角色状态说明 §七):
+  given     who the role is, its goals and speech style (self-known stable modules only), how it
+            feels in words (emotion label and a low / middle / high level, no numbers), the
+            recent visible records, the plan's chosen action, expression goal, audience, manner
+            and commitment, and who is present
+  withheld  state values, construct and process ids, the other candidates and their
+            constraints, hypotheses, and anything the role cannot be aware of
+The reply becomes AgentActionContent (schemas.parse_expression): our own thought goes to the
+role alone; speech and action go to the plan's audience, or to everyone present when it names
+nobody. A failure raises StageError; nothing is sent.
+"""
+from .evidence import EvidenceGate
+from .interfaces import ModelCallRecord, ModelError, PromptView, StageError
+from .schemas import EXPRESS_KINDS, EXPRESS_SCHEMA, parse_expression
+from .stages import self_profile, visible_records
+
+EXPRESSION_MODULES = ("s.identity.demographics", "s.core_goals.primary", "s.speech_style.baseline")
+RECENT = 12
+
+
+def _level(value):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return ""
+    return "低" if value < 1 / 3 else "中" if value < 2 / 3 else "高"
+
+
+def feeling_text(state):
+    """The current emotion in words: labels and a three-level intensity (an engineering reading)."""
+    emotion = state.dynamic.get("d.affect.emotion") or {}
+    if state.status.get("d.affect.emotion") != "active" or not emotion:
+        return ""
+    labels = "、".join(emotion.get("label") or []) or "说不清"
+    level = _level(emotion.get("intensity"))
+    return f"此刻的感受：{labels}" + (f"（强度{level}）" if level else "")
+
+
+class ModelExpresser:
+    """IExpresser over IModel."""
+
+    def __init__(self, registry, model, trace=None, recent=RECENT):
+        self.registry = registry
+        self.model = model
+        self.trace = trace
+        self.recent = recent
+        self.gate = EvidenceGate(k=0)
+
+    def view(self, plan, ctx):
+        present = dict(ctx.present)
+        audience = [a for a in plan.expression.audience if a in present]
+        upstream = {"plan": {"chosen": plan.chosen,
+                             "expression": {"goal": plan.expression.goal, "audience": audience,
+                                            "manner": plan.expression.manner},
+                             "commitment": {"formed": plan.commitment.formed, "content": plan.commitment.content}}}
+        task = {"kinds": list(EXPRESS_KINDS), "audience": {a: present[a].get("name", a) for a in audience}}
+        records = visible_records(ctx, self.gate.build(ctx), self.recent)
+        return PromptView(self_profile(ctx.stable, self.registry, EXPRESSION_MODULES), records, feeling_text(ctx.state),
+                          upstream, ctx.key[1], present, task)
+
+    def realize(self, plan, ctx):
+        view = self.view(plan, ctx)
+        try:
+            result = self.model.complete("express", view, EXPRESS_SCHEMA)
+        except ModelError as exc:
+            raise StageError(f"express: {exc}") from exc
+        if self.trace is not None:
+            self.trace.model_call(ctx.key, ModelCallRecord("express", view, result.raw, result.reasoning))
+        return parse_expression(result.output, ctx.key[1], view.upstream["plan"]["expression"]["audience"], ctx.present)

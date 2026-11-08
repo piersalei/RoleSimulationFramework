@@ -151,7 +151,7 @@ class IStage(Protocol[P]):
 
 | 类型 | 关键字段 |
 |---|---|
-| `StageContext` | phase（event_id、phase_no、kind）、state（本阶段唯一读的快照）、stable、records（本阶段的记录组）、upstream（已提交的上游产物：S2 拿到最新的 S1 产物和上次 ActionPlan，S3 拿到 ActionPlan 和反馈的 S1 产物）、present |
+| `StageContext` | phase（event_id、phase_no、kind）、state（本阶段唯一读的快照）、stable、records（本阶段的记录组）、history（本阶段之前看到过的记录，提示上下文，也可作证据）、upstream（已提交的上游产物：S2 拿到最新的 S1 产物和上次 ActionPlan，S3 拿到 ActionPlan 和反馈的 S1 产物）、present |
 | `StageOutput[P]` | product: P、proposals（[ChangeProposal]）、judgments（[Judgment]）、evidence（本阶段能用的 EvidenceSet，提交时据此核对证据可见） |
 | `ChangeProposal` | construct_id、key、field、after、reason、grade（本角色对这一维度的事件等级，数值变化必填）、evidence / mechanisms（这条变化依据的证据和决策过程；不填则取交给该算子的判断）、operator（不填即主写入算子；衰减要写明 `decay_or_recovery`）：阶段只能**提议**，不写状态 |
 
@@ -183,6 +183,8 @@ class IEvidenceGate(Protocol):
 
 只放本角色可见的；他人思考、他人隐状态、场景私有数据一律排除并记在 excluded。是否"听说"由 S1 从文字判断后补进 `channel`。
 
+实现：`rolesim/evidence.py` `EvidenceGate`（已实现）。读 `ctx.history` 和 `ctx.records`：本角色是行动者或被明确发送的记录进 included（本人的为 `own_action`，其余 `witnessed`）；排除原因 `other_thought`（他人的思考，即使被误发过来）、`own_thought`（本人的思考是过程记录，不是证据）、`not_recipient`；按刚看到的内容取回最多 k 条记忆（`m.entry`，字面相似度 × 重要性 × 可及性）。他人隐状态和场景私有数据从不到达本方，所以没有可排除的。
+
 ### 3.2 `IMechanism`：一个决策过程
 
 ```python
@@ -196,6 +198,8 @@ class IMechanism(Protocol):
 | `Judgment` | dm_id、option（登记的可选项之一或 null）、output（本过程的中间判断）、evidence、hands_to（交给哪些算子） |
 
 没有写权限。可以由规则实现，也可以由模型实现（在 `IModel` 调用里作为检查项）。`option` 不在登记表里即拒绝。
+
+现状：只有模型实现——各阶段调用的输出里有 judgments，`schemas.parse_output` 查登记表（过程必须本阶段可调用、option 必须登记、hands_to 由登记表填）。按规则实现的过程还没有。
 
 ### 3.3 `IModel`：结构化模型调用（已实现）
 
@@ -226,6 +230,14 @@ class IExpresser(Protocol):
 ```
 
 只拿表达需要的信息：自知画像、表达基线、计划里的表达目标与受众、可见历史；不拿要隐瞒的内容、机制名和状态数值。我们自己的思考固定只发给本人。
+
+实现：`rolesim/expresser.py` `ModelExpresser`（已实现），一次 `IModel.complete("express", …)`。给：身份、核心目标、表达基线（只限能自知的）、感受（情绪标签 + 低 / 中 / 高，不带数值）、最近 12 条可见记录、计划里的主行动、表达目标 / 受众 / 方式、承诺。不给：状态数值、构念和过程 ID、其他候选及其约束、假设。回复按 `schemas.EXPRESS_SCHEMA` 解析成 `AgentActionContent`：思考只发本人，发言和动作发给计划的受众（没写受众即在场所有人），并用环境组的 `validate_action_content` 检查。
+
+### 3.5 三个阶段的实现（已实现）
+
+`rolesim/stages.py` `ModelStage(name)`：阶段与 phase.kind 必须对应（S1 ↔ event、S2 ↔ plan、S3 ↔ feedback），S3 要求 `upstream["plan"]`；`IEvidenceGate` → `PromptView`（只含自知层：登记表里 aware / partial 的 stable 模块、active 的 dynamic 构念及其值、取回的记忆、可见记录、上游产物、在场者、task）→ `IModel` → 写 `ITrace`（在解析之前，失败的输出也留下）→ `parse_output`；S2 的受众必须是在场的其他人。模型失败或输出不合规 → `StageError`，整阶段不产生提议。
+
+还没做：不能自知（或来源没写）的 stable 模块现在不进任何提示；按心智建模库 5.4 转成条件化语句是档案编译的事（第 6 步）。
 
 ---
 
@@ -313,13 +325,13 @@ IRoleAgent.act
 | **2 IRoleRepository** | ◐ | `roles.load_role`、`Agent.begin`、`briefing.py` | `load` 只读手写 JSON（role-1.0）；`enter` 没有按"档案 → bootstrap → 先验"取值，bootstrap 的 `core_goals` / `history_memory` 只拼成一段背景文字，没进目标和记忆 |
 | 2.1 IProfileCompiler | ✗ | `persona.validate_persona` 只做校验 | 不能从自然语言档案生成；字段没有来源类型、置信度、待审核清单 |
 | 2.2 IRegistry | ✅ | `registry.Registry` + `data/registry.json` | 待心理学组核对 `review` 清单；`state.OPERATORS` 仍是旧的手写局部版，第 2 步改为查本接口 |
-| **3 IStage** S1 | ◐ | `backend.appraise`：每条事件出 5 个线索值 | 产物 `SituationInterpretation`（定义情境、评价、归因、1—3 个假设…） |
-| 　S2 | ◐ | `backend.decide`：从允许动作里选一个 + 理由 | 产物 `ActionPlan`（候选、备选、切换条件、承诺、表达目标…） |
-| 　S3 | ✗ | 无 | 整个阶段：预期对实际、承诺裁定、关系走向、学习归因 |
-| 3.1 IEvidenceGate | ◐ | 分散在 `adapter._unseen`（去掉他人思考）、`Agent._ingest`（去掉不在受众里的）、`memory.recall`（取回记忆） | 合成一个 `EvidenceSet`；记录每条证据的渠道（亲见 / 听说 / 推断…）和被排除的原因 |
-| 3.2 IMechanism | ◐ | `mechanisms.py` 5 张卡（verify / appraise / trust / repair / boundary），标为未校准的工程假设 | 统一输出 `Judgment`；其余决策过程。每个过程的输出字段要等 F2 |
+| **3 IStage** S1 | ✅ | `stages.ModelStage("S1")` | 尚未接入运行路径（旧的 `backend.appraise` 仍供 `Agent.step` 使用，第 5 步替换） |
+| 　S2 | ✅ | `stages.ModelStage("S2")` | 同上（旧的 `backend.decide`） |
+| 　S3 | ✅ | `stages.ModelStage("S3")` | 什么算“对本角色此前行动 / 承诺的反馈”由 `ITurnRunner` 判断（第 5 步） |
+| 3.1 IEvidenceGate | ✅ | `evidence.EvidenceGate` | 记忆检索是字面相似度（沿用 `memory.search`），不是语义检索 |
+| 3.2 IMechanism | ◐ | 决策过程在阶段调用里由模型判断（schema 的 judgments），解析时查登记表 | 没有按规则实现的过程；旧的 5 张机制卡仍只供 `Agent.step` 使用；各过程输出字段要等 F2 |
 | 3.3 IModel | ✅ | `model.ChatModel` / `model.MockModel`，输出 schema 与解析在 `schemas.py` | 旧的 `ChatBackend.appraise / decide / express` 仍供 `Agent.step` 使用（第 5 步替换）；结构化解码未接 |
-| 3.4 IExpresser | ◐ | `Agent._express_payload` + `backend.express`，已做按需可见过滤 | 输入换成 `ActionPlan`；产出思考（只给本人）和外显行动 |
+| 3.4 IExpresser | ✅ | `expresser.ModelExpresser`（第 4 次模型调用 "express"） | 尚未接入运行路径（旧的 `backend.express` 仍在用） |
 | **4 IStateStore** | ✅ | `store.ConstructStore` + `slots.py` | 尚未接入运行路径：旧的 `Agent.step` 仍用 `state.commit_phase`（第 5 步替换）；跨阶段累计上限、习惯化、按时间衰减要等场景时间单位（F3） |
 | 4.1 IUpdateOperator | ✅ | `operators.Operator`（11 个，规则来自登记表） | 规则卡里要判断事件的部分（情绪方向、习惯化）由阶段提出、验证器检查，不在算子里计算 |
 | 4.2 IMagnitude | ✅ | `magnitude.Magnitude` | 人格敏感度只接了无条件映射（P1 分面、依恋焦虑、认知灵活性）；P2 / P3、违约后的尽责性、自尊不稳定性要等档案形状（第 6 步） |
@@ -345,7 +357,7 @@ F1—F5（见 [09 §7](09-interface-and-field-spec.md)）：〔工程〕结构�
 1. ~~`IRegistry`：抽取脚本 + 只读查询。其余接口都要查它。~~ 已完成（2026-11-07）。
 2. ~~`IStateStore` + `IUpdateOperator` + `IValidator` + `IMagnitude`：状态改成按构念 ID，按登记表做权限和区间。~~ 已完成（2026-11-07），尚未接入运行路径。
 3. ~~`IModel` 通用化，mock 能产出三个阶段的合规产物。~~ 已完成（2026-11-07），尚未接入运行路径。
-4. `IEvidenceGate` + 三个 `IStage` + `IExpresser`。
+4. ~~`IEvidenceGate` + 三个 `IStage` + `IExpresser`。~~ 已完成（2026-11-08），尚未接入运行路径。
 5. `ITurnRunner` 替换 `Agent.step`；`ITrace` 自己落盘。
 6. `IRoleRepository` / `IProfileCompiler`：入场状态和档案编译。
 7. 删除旧的 v0 路径，离线工具改到新格式。
