@@ -245,6 +245,9 @@ def run_scene(roles, scene, model, output, registry=None, mode=FULL_MODE, use_sk
         manifest.update(finished_at=now(), records=len(runner.history), calls=len(calls),
                         interaction_id=runner.interaction_id, roles=roles_info,
                         model_calls=getattr(model, "calls", None) if transport is None else getattr(transport, "calls", None))
+        if transport is not None:
+            manifest.update(decoding=getattr(transport, "sampling", {}).get("decoding"),
+                            trailing_dropped=len(getattr(transport, "trailing", [])))
         _jsonl(output / "records.jsonl", runner.history)
         _jsonl(output / "calls.jsonl", calls)
         write_json(output / "manifest.json", manifest)

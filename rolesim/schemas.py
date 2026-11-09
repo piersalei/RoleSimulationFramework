@@ -11,9 +11,9 @@
   validate(schema, value)         a small JSON-schema subset (standard library only)
   parse_output(stage, output, registry, evidence)
                                   -> StageOutput, or StageError when anything breaks the schema or
-                                  the registry (an option a process does not have, a proposal
-                                  resting on a process the stage did not judge, an evidence note
-                                  that upgrades a record)
+                                  the registry (an option a process does not have, an evidence
+                                  note that upgrades a record); a proposal resting on a process
+                                  the stage did not judge is left to the store to reject
 
 The evidence set, theory-of-mind limits, bands and versions are program-filled, never asked of
 the model. Judgments' hands_to also comes from the registry.
@@ -34,7 +34,7 @@ from .interfaces import (STAGE_OF_KIND, ActionCandidate, ActionPlan, Appraisal, 
                          CommitmentRuling, EvidenceRef, EvidenceSet, EvolutionResult, Expression, Hypothesis,
                          InterfaceError, Judgment, RelationCourse, SituationInterpretation, StageError, StageOutput,
                          SwitchCondition)
-from .slots import SLOTS
+from .slots import EMOTION_FAMILIES, RANGES, SLOTS
 from .vocab import CUES
 
 STAGES = tuple(STAGE_OF_KIND.values())
@@ -42,6 +42,9 @@ TEXT = {"type": "string", "minLength": 1, "maxLength": 400}
 TEXT_OR_NULL = {"type": ["string", "null"], "maxLength": 400}
 IDS = {"type": "array", "items": {"type": "string", "minLength": 1}}
 TEXTS = {"type": "array", "items": TEXT}
+# A free-form record with scalar values only. Open objects let constrained decoding wander (Qwen3
+# nested a whole proposals list inside product.attribution); one flat level keeps them in place.
+FLAT = {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean", "null"]}}
 # 状态变化规则v1 §3.6, in short; the grade is this role's view of this dimension.
 GRADES = {1: "日常事件：信息交换、例行互动、轻微的积极或消极线索", 2: "一般事件：普通失礼、小失误、一般性的帮助或拒绝",
           3: "显著事件：明确违约、公开羞辱、确证欺骗、明确兑现承诺或重要帮助",
@@ -63,7 +66,7 @@ PRODUCTS = {
         "situation_definition": TEXT,
         "appraisal": {"type": "array", "items": _object({"goal": TEXT, "kind": {"enum": ["gain", "loss", "threat", "challenge"]},
                                                           "detail": {"type": "string", "maxLength": 400}})},
-        "attribution": {"type": "object"},
+        "attribution": FLAT,
         "hypotheses": {"type": "array", "minItems": 1, "maxItems": 3, "items": _object({
             "statement": TEXT, "confidence": {"type": "number", "minimum": 0, "maximum": 1},
             "support": IDS, "counter": IDS, "discriminator": TEXT})},
@@ -113,28 +116,211 @@ def _check_stage(stage):
         raise ValueError(f"stage must be one of {STAGES}, got {stage!r}")
 
 
+# -- proposal addresses from the state layout (slots.SLOTS) ------------------------------------
+def kind_schema(kind):
+    """JSON schema of one slot value kind (slots.check_kind); a trailing "?" allows null."""
+    nullable = kind.endswith("?")
+    kind = kind.rstrip("?")
+    if kind in RANGES:
+        low, high = RANGES[kind]
+        out = {"type": "number", "minimum": low, "maximum": high}
+    elif kind == "int":
+        out = {"type": "integer", "minimum": 0}
+    elif kind == "grade":
+        out = {"type": "integer", "minimum": 1, "maximum": 4}
+    elif kind in ("text", "opt"):
+        out = {"type": "string", "minLength": 1}
+    elif kind == "bool":
+        out = {"type": "boolean"}
+    elif kind == "refs":
+        out = {"type": "array", "items": {"type": "string", "minLength": 1}}
+    elif kind == "list":
+        out = {"type": "array"}
+    elif kind == "map":
+        out = FLAT
+    elif kind == "labels":
+        out = {"type": "array", "items": {"enum": list(EMOTION_FAMILIES)}}
+    elif kind.startswith("enum(") and kind.endswith(")"):
+        out = {"enum": kind[5:-1].split("|")}
+    else:
+        raise ValueError(f"unknown kind {kind!r}")
+    if not nullable:
+        return out
+    if "enum" in out:
+        return {"enum": [*out["enum"], None]}
+    return {**out, "type": [out["type"], "null"]}
+
+
+def _record_schema(fields):
+    """A whole instance: declared fields (nested for dotted specs, a map for "*"), any subset."""
+    tree = {}
+    for spec, kind in fields.items():
+        node = tree
+        parts = spec.split(".")
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        node[parts[-1]] = kind
+
+    def build(node):
+        if isinstance(node, str):
+            return kind_schema(node)
+        if set(node) == {"*"}:
+            return {"type": "object", "additionalProperties": build(node["*"])}
+        return {"type": "object", "additionalProperties": False, "required": [],
+                "properties": {name: build(sub) for name, sub in node.items() if name != "*"}}
+    return build(tree)
+
+
+def _key_schema(slot):
+    # No `pattern` anywhere: xgrammar on vLLM 0.17 stopped enforcing the whole schema once one was
+    # present (seen 2026-11-09). keys_as_lists() turns this into one string per key level for decoding.
+    return {"type": "null"} if not slot.keys else {"type": "string", "minLength": 1, "x-key-parts": len(slot.keys)}
+
+
+def proposal_branches(cid, common):
+    """One proposal shape per writable address of construct `cid`: the whole instance (field
+    null) and each declared field (a wildcard spec such as domains.* as any field name, which the
+    store then resolves); `common` holds the other proposal properties."""
+    slot = SLOTS[cid]
+    fields = {spec: kind for spec, kind in slot.fields.items() if spec.split(".")[0] not in slot.not_modeled}
+    head = {"construct_id": {"const": cid}, "key": _key_schema(slot)}
+    required = ["construct_id", "key", "field", "after", "reason", "grade", "evidence", "mechanisms"]
+    if "" in fields:
+        return [_object({**head, "field": {"type": "null"}, "after": kind_schema(fields[""]), **common}, required)]
+    out = [_object({**head, "field": {"type": "null"}, "after": _record_schema(fields), **common}, required)]
+    for spec, kind in fields.items():
+        field = {"type": "string", "minLength": 1} if "*" in spec else {"const": spec}
+        out.append(_object({**head, "field": field, "after": kind_schema(kind), **common}, required))
+    return out
+
+
+def _options(options):
+    return {"enum": [*options, None]} if options else {"type": "null"}
+
+
 def stage_schema(stage, registry, mechanisms=True):
     """`mechanisms` False (the ablation modes without decision processes): no judgments, and
-    proposals rest on their evidence alone."""
+    proposals rest on their evidence alone. Properties every judgment / proposal shares live in
+    `$defs` (evidence, mechanisms, operator, grade, reason) and are referenced, so the per-process
+    and per-address branches stay small; compact_schema() is the short form for prompts."""
     _check_stage(stage)
     allowed = stage_mechanisms(stage, registry) if mechanisms else []
+    defs = {"evidence": IDS, "reason": TEXT, "grade": {"type": ["integer", "null"], "minimum": 1, "maximum": 4},
+            "mechanisms": {"type": "array", **({} if mechanisms else {"maxItems": 0}), "items": {"enum": allowed}},
+            "operator": {"enum": stage_operators(stage, registry)}}
+    ref = {name: {"$ref": f"#/$defs/{name}"} for name in defs}
+    # One branch per decision process, so `option` can only be one of that process's own
+    # registered options (or null); structured decoding then cannot invent an option.
+    branches = [_object({"dm_id": {"const": dm}, "option": _options(registry.mechanism(dm).options),
+                         "output": FLAT, "evidence": ref["evidence"]}) for dm in allowed]
+    judgment = {"anyOf": branches} if branches else _object({
+        "dm_id": {"enum": allowed}, "option": TEXT_OR_NULL, "output": FLAT, "evidence": ref["evidence"]})
+    common = {name: ref[name] for name in ("reason", "grade", "evidence", "mechanisms", "operator")}
     properties = {
         "product": PRODUCTS[stage],
-        "judgments": {"type": "array", **({} if mechanisms else {"maxItems": 0}), "items": _object({
-            "dm_id": {"enum": allowed}, "option": TEXT_OR_NULL, "output": {"type": "object"}, "evidence": IDS})},
-        "proposals": {"type": "array", "items": _object({
-            "construct_id": {"enum": stage_constructs(stage, registry)}, "key": TEXT_OR_NULL, "field": TEXT_OR_NULL,
-            "after": {}, "reason": TEXT, "grade": {"type": ["integer", "null"], "minimum": 1, "maximum": 4},
-            "evidence": IDS, "mechanisms": {"type": "array", **({} if mechanisms else {"maxItems": 0}),
-                                            "items": {"enum": allowed}},
-            "operator": {"enum": stage_operators(stage, registry)}},
-            required=["construct_id", "key", "field", "after", "reason", "grade", "evidence", "mechanisms"])},
+        "judgments": {"type": "array", **({} if mechanisms else {"maxItems": 0}), "items": judgment},
+        # One branch per construct address (slots.SLOTS): field names, value kinds and the number
+        # of key parts come from the state layout, so decoding cannot invent an address.
+        "proposals": {"type": "array", "items": {"anyOf": [
+            branch for cid in stage_constructs(stage, registry) for branch in proposal_branches(cid, common)]}},
     }
     if stage == "S1":
         properties["evidence_notes"] = {"type": "array", "items": _object({
             "event": {"type": "string", "minLength": 1}, "channel": {"enum": list(CHANNEL_RANK)}, "claim": TEXT_OR_NULL})}
         properties["cues"] = CUES_SCHEMA
-    return _object(properties)
+    return {**_object(properties), "$defs": defs}
+
+
+def keys_as_lists(schema):
+    """A copy of a stage schema for decoding: each proposal key of a construct with N key levels
+    is a list of exactly N strings instead of one "a/b" string (a regex would be needed otherwise).
+    join_keys() turns a reply back."""
+    import copy
+    out = copy.deepcopy(schema)
+    for branch in out["properties"]["proposals"]["items"].get("anyOf", []):
+        key = branch["properties"]["key"]
+        parts = key.pop("x-key-parts", None)
+        if parts:
+            branch["properties"]["key"] = {"type": "array", "minItems": parts, "maxItems": parts,
+                                           "items": {"type": "string", "minLength": 1}}
+    return out
+
+
+def join_keys(output):
+    """A reply decoded with keys_as_lists(): list keys back to "a/b" strings."""
+    for proposal in output.get("proposals", []):
+        if isinstance(proposal.get("key"), list):
+            proposal["key"] = "/".join(proposal["key"])
+    return output
+
+
+def compact_schema(schema):
+    """The short form of a stage schema for the prompt: one generic judgment and one generic
+    proposal (the ids, options and fields allowed are listed in the stage task) with `$defs`
+    inlined. The full schema still drives decoding and checking."""
+    import copy
+    out = copy.deepcopy(schema)
+    defs = out.pop("$defs", {})
+
+    def inline(node):
+        if isinstance(node, dict):
+            if "$ref" in node:
+                return copy.deepcopy(defs[node["$ref"].rsplit("/", 1)[-1]])
+            return {k: inline(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [inline(v) for v in node]
+        return node
+    props = out["properties"]
+    for name, tag in (("judgments", "dm_id"), ("proposals", "construct_id")):
+        items = props[name]["items"]
+        branches = items.get("anyOf")
+        if not branches:
+            continue
+        first = branches[0]["properties"]
+        generic = {k: v for k, v in first.items()}
+        generic[tag] = {"enum": list(dict.fromkeys(b["properties"][tag]["const"] for b in branches))}
+        if name == "judgments":
+            generic["option"] = TEXT_OR_NULL
+        else:
+            key = ({"type": ["array", "null"], "items": {"type": "string"}} if any(
+                b["properties"]["key"].get("type") == "array" for b in branches) else TEXT_OR_NULL)
+            generic.update(key=key, field=TEXT_OR_NULL, after={})
+        props[name]["items"] = _object(generic, branches[0]["required"])
+    return inline(out)
+
+
+def _id_list(ids):
+    return {"type": "array", "items": {"enum": list(ids)}} if ids else {"type": "array", "maxItems": 0}
+
+
+def narrow_evidence(schema, record_ids, audience_ids=None):
+    """A copy of a stage schema whose evidence fields (judgments / proposals `evidence`, S1
+    evidence_notes `event`) can only take `record_ids`, the records this call shows, and whose S2
+    expression audience can only take `audience_ids` (the other characters present) when given.
+    Used for structured decoding and for checking the reply; the evidence gate still checks
+    visibility and the stage still checks the audience."""
+    import copy
+    out = copy.deepcopy(schema)
+    expression = out.get("properties", {}).get("product", {}).get("properties", {}).get("expression")
+    if expression and audience_ids is not None:
+        expression["properties"]["audience"] = _id_list(list(dict.fromkeys(audience_ids)))
+    ids = list(dict.fromkeys(record_ids))
+    props = out.get("properties", {})
+    if "evidence" in out.get("$defs", {}):
+        out["$defs"]["evidence"] = _id_list(ids)
+    for name in ("judgments", "proposals"):
+        items = props.get(name, {}).get("items", {})
+        for branch in items.get("anyOf", [items]):
+            item = branch.get("properties")
+            if item and "evidence" in item and "$ref" not in item["evidence"]:
+                item["evidence"] = _id_list(ids)
+    notes = props.get("evidence_notes")
+    if notes:
+        if ids:
+            notes["items"]["properties"]["event"] = {"enum": ids}
+        else:
+            notes["maxItems"] = 0
+    return out
 
 
 def stage_task(stage, registry, mechanisms=True):
@@ -184,9 +370,30 @@ def _is(type_name, value):
     raise ValueError(f"unsupported schema type {type_name!r}")
 
 
-def validate(schema, value, path="$"):
-    """Errors of `value` against a JSON-schema subset (type, enum, const, properties, required,
-    additionalProperties, items, minItems / maxItems, minimum / maximum, minLength / maxLength)."""
+def validate(schema, value, path="$", root=None):
+    """Errors of `value` against a JSON-schema subset (type, enum, const, anyOf, properties, required,
+    additionalProperties, items, minItems / maxItems, minimum / maximum, minLength / maxLength,
+    and $ref to "#/$defs/<name>" of the root schema)."""
+    root = schema if root is None else root
+    if "$ref" in schema:
+        name = schema["$ref"].rsplit("/", 1)[-1]
+        return validate(root.get("$defs", {})[name], value, path, root)
+    if "anyOf" in schema:
+        branches = schema["anyOf"]
+        tried = [validate(branch, value, path, root) for branch in branches]
+        if not all(tried):
+            return []
+        # Tagged branches (an object property with a const, like dm_id): report the branch whose
+        # tag matches, or that the tag is not an allowed value.
+        if isinstance(value, Mapping):
+            tags = {k for b in branches for k, s in b.get("properties", {}).items() if "const" in s}
+            for tag in sorted(tags):
+                matching = [errors for b, errors in zip(branches, tried)
+                            if b.get("properties", {}).get(tag, {}).get("const") == value.get(tag)]
+                if matching:
+                    return min(matching, key=len)
+                return [f"{path}.{tag}: {value.get(tag)!r} is not one of the allowed values"]
+        return min(tried, key=len)
     if "enum" in schema and value not in schema["enum"]:
         return [f"{path}: {value!r} is not one of the allowed values"]
     if "const" in schema and value != schema["const"]:
@@ -214,7 +421,7 @@ def validate(schema, value, path="$"):
             errors.append(f"{path}: more than {schema['maxItems']} items")
         if "items" in schema:
             for i, item in enumerate(value):
-                errors += validate(schema["items"], item, f"{path}[{i}]")
+                errors += validate(schema["items"], item, f"{path}[{i}]", root)
     if isinstance(value, Mapping):
         for name in schema.get("required", []):
             if name not in value:
@@ -223,11 +430,11 @@ def validate(schema, value, path="$"):
         extra = schema.get("additionalProperties", True)
         for name, item in value.items():
             if name in properties:
-                errors += validate(properties[name], item, f"{path}.{name}")
+                errors += validate(properties[name], item, f"{path}.{name}", root)
             elif extra is False:
                 errors.append(f"{path}: unexpected field {name}")
             elif isinstance(extra, Mapping):
-                errors += validate(extra, item, f"{path}.{name}")
+                errors += validate(extra, item, f"{path}.{name}", root)
     return errors
 
 
@@ -292,12 +499,10 @@ def parse_output(stage, output, registry, evidence, mechanisms=True):
             raise StageError(f"{stage}: {j['dm_id']} has no option {j['option']!r}")
         judgments.append(Judgment(j["dm_id"], j["option"], dict(j["output"]), cite(j["evidence"]),
                                   tuple(op for op in mechanism.hands_to if op in operators)))
-    judged = {j.dm_id for j in judgments}
+    # A proposal citing a process this stage did not judge is not a broken output: the store
+    # rejects that change (unjudged_mechanism) with its dependency group, and the stage goes on.
     proposals = []
     for p in output["proposals"]:
-        missing = [m for m in p["mechanisms"] if m not in judged]
-        if missing:
-            raise StageError(f"{stage}: proposal for {p['construct_id']} rests on processes not judged here: {missing}")
         proposals.append(ChangeProposal(p["construct_id"], p["key"], p["field"], p["after"], p["reason"], p["grade"],
                                         cite(p["evidence"]), tuple(p["mechanisms"]), p.get("operator")))
     try:

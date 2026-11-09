@@ -12,7 +12,7 @@ from rolesim import slots
 from rolesim.model import STAGE_PROMPTS, ChatModel, MockModel, view_payload
 from rolesim.providers import ChatBackend
 from rolesim.registry import Registry
-from rolesim.schemas import (PRODUCTS, parse_output, stage_constructs, stage_mechanisms, stage_schema, stage_task,
+from rolesim.schemas import (PRODUCTS, compact_schema, join_keys, keys_as_lists, narrow_evidence, parse_output, stage_constructs, stage_mechanisms, stage_schema, stage_task,
                              validate)
 from rolesim.store import ConstructStore
 
@@ -52,9 +52,14 @@ class StageSchemas(unittest.TestCase):
     def test_processes_and_constructs_follow_the_registry(self):
         for stage in KINDS:
             schema = stage_schema(stage, REG)
-            judgments = schema["properties"]["judgments"]["items"]["properties"]
-            self.assertEqual(judgments["dm_id"]["enum"], [d for d in REG.ids("mechanism") if stage in REG.mechanism(d).stages])
-            constructs = schema["properties"]["proposals"]["items"]["properties"]["construct_id"]["enum"]
+            branches = schema["properties"]["judgments"]["items"]["anyOf"]
+            self.assertEqual([b["properties"]["dm_id"]["const"] for b in branches],
+                             [d for d in REG.ids("mechanism") if stage in REG.mechanism(d).stages])
+            for b in branches:                                                  # each process: only its own options
+                options = REG.mechanism(b["properties"]["dm_id"]["const"]).options
+                self.assertEqual(b["properties"]["option"], {"enum": [*options, None]} if options else {"type": "null"})
+            branches = schema["properties"]["proposals"]["items"]["anyOf"]
+            constructs = list(dict.fromkeys(b["properties"]["construct_id"]["const"] for b in branches))
             self.assertEqual(constructs, stage_constructs(stage, REG))
             self.assertEqual(("evidence_notes" in schema["properties"]), stage == "S1")
         s1, s2, s3 = (stage_constructs(s, REG) for s in ("S1", "S2", "S3"))
@@ -65,7 +70,10 @@ class StageSchemas(unittest.TestCase):
         self.assertIn("d.affect.emotion", s3)                                   # only through decay in S3
         emotion = next(c for c in stage_task("S3", REG)["constructs"] if c["construct_id"] == "d.affect.emotion")
         self.assertEqual(emotion["operators"], ["decay_or_recovery"])
-        self.assertIn("decay_or_recovery", stage_schema("S3", REG)["properties"]["proposals"]["items"]["properties"]["operator"]["enum"])
+        s3 = stage_schema("S3", REG)
+        self.assertIn("decay_or_recovery", s3["$defs"]["operator"]["enum"])
+        for branch in s3["properties"]["proposals"]["items"]["anyOf"]:
+            self.assertEqual(branch["properties"]["operator"], {"$ref": "#/$defs/operator"})
 
     def test_task_carries_options_and_fields(self):
         task = stage_task("S1", REG)
@@ -123,12 +131,12 @@ class Parse(unittest.TestCase):
     def test_registry_and_product_rules(self):
         out = mock_output("S1")
         out["judgments"][0]["option"] = "愤怒"
-        with self.assertRaisesRegex(I.StageError, "has no option"):
+        with self.assertRaisesRegex(I.StageError, "has no option|option: '.*' is not one of the allowed values"):
             parse_output("S1", out, REG, EV)
         out = mock_output("S1")
         out["proposals"][0]["mechanisms"] = ["dm.cog.attention_filtering"]
-        with self.assertRaisesRegex(I.StageError, "not judged here"):
-            parse_output("S1", out, REG, EV)
+        parsed = parse_output("S1", out, REG, EV)                              # left to the store to reject
+        self.assertEqual(parsed.proposals[0].mechanisms, ("dm.cog.attention_filtering",))
         out = mock_output("S2")
         out["product"]["chosen"] = "回避话题"                                    # a dropped candidate
         with self.assertRaisesRegex(I.StageError, "kept candidate"):
@@ -186,30 +194,132 @@ class MockThroughTheStore(unittest.TestCase):
             self.assertEqual((out.proposals, out.judgments), ((), ()), stage)
 
 
+def decoded(reply):
+    """A reply as the decoder returns it: proposal keys as one string per key level."""
+    out = copy.deepcopy(reply)
+    for p in out.get("proposals", []):
+        if isinstance(p.get("key"), str):
+            p["key"] = p["key"].split("/")
+    return out
+
+
 class FakeTransport:
     model = "fake"
 
     def __init__(self, reply=None, error=None):
         self.reply, self.error, self.sent, self.last_reasoning = reply, error, [], "想了一下"
 
-    def chat(self, system, payload):
+    def chat(self, system, payload, schema=None):
         self.sent.append((system, payload))
+        self.schemas = getattr(self, "schemas", []) + [schema]
         if self.error:
             raise self.error
         return self.reply, json.dumps(self.reply, ensure_ascii=False)
 
 
 class Chat(unittest.TestCase):
+    def test_narrow_evidence_limits_ids_and_leaves_the_rest(self):
+        schema = stage_schema("S1", REG)
+        narrow = narrow_evidence(schema, ["a#1", "b#2", "a#1"])
+        props = narrow["properties"]
+        self.assertEqual(narrow["$defs"]["evidence"]["items"]["enum"], ["a#1", "b#2"])
+        for name in ("judgments", "proposals"):
+            for branch in props[name]["items"]["anyOf"]:
+                self.assertEqual(branch["properties"]["evidence"], {"$ref": "#/$defs/evidence"})
+        self.assertEqual(props["evidence_notes"]["items"]["properties"]["event"], {"enum": ["a#1", "b#2"]})
+        self.assertEqual(props["product"], schema["properties"]["product"])
+        self.assertEqual(schema, stage_schema("S1", REG))                    # the original is untouched
+        out = mock_output("S1")
+        out["evidence_notes"] = [{"event": "上周例会约定", "channel": "hearsay", "claim": "x"}]
+        self.assertTrue(any("evidence_notes" in e for e in validate(narrow, out)))
+        empty = narrow_evidence(schema, [])["properties"]
+        self.assertEqual((narrow_evidence(schema, [])["$defs"]["evidence"]["maxItems"],
+                          empty["evidence_notes"]["maxItems"]), (0, 0))
+
+    def test_proposal_addresses_follow_the_state_layout(self):
+        schema = stage_schema("S2", REG)
+        base = {"reason": "依据", "grade": None, "evidence": [], "mechanisms": []}
+        ok = [{"construct_id": "d.goal.goal_commitment", "key": "g1", "field": None, "after": .6, **base, "grade": 2},
+              {"construct_id": "d.goal.goals_now", "key": "g-setup", "field": "content", "after": "先交付前两批", **base},
+              {"construct_id": "d.goal.goals_now", "key": "g-setup", "field": None,
+               "after": {"content": "先交付前两批", "priority": .7}, **base}]
+        bad = [{"construct_id": "d.goal.goal_commitment", "key": "g1", "field": "commitment", "after": .6, **base},
+               {"construct_id": "d.goal.goals_now", "key": "g-setup", "field": "content",
+                "after": {"content": "前两批"}, **base},
+               {"construct_id": "d.goal.goals_now", "key": "g-setup", "field": None, "after": {"note": "x"}, **base},
+               {"construct_id": "d.goal.goals_now", "key": None, "field": "content", "after": "x", **base}]
+        items = schema["properties"]["proposals"]["items"]
+        for p in ok:
+            self.assertEqual(validate(items, p, root=schema), [], p)
+        for p in bad:
+            self.assertTrue(validate(items, p, root=schema), p)
+        s1 = stage_schema("S1", REG)
+        domain = {"construct_id": "d.cognition.self_evaluation", "key": None, "field": "domains.work", "after": .5, **base}
+        if "d.cognition.self_evaluation" in stage_constructs("S1", REG):
+            items = s1["properties"]["proposals"]["items"]
+            self.assertEqual(validate(items, domain, root=s1), [])
+            self.assertTrue(validate(items, {**domain, "after": 3}, root=s1))           # z kind: -2..2
+        self.assertNotIn('"pattern"', json.dumps(stage_schema("S3", REG)))            # xgrammar drops enforcement
+        compact = compact_schema(schema)                                         # the prompt form stays short
+        self.assertNotIn("$defs", compact)
+        self.assertEqual(compact["properties"]["proposals"]["items"]["properties"]["construct_id"]["enum"],
+                         stage_constructs("S2", REG))
+        self.assertLess(len(json.dumps(compact, ensure_ascii=False)), 10000)
+
+    def test_keys_are_decoded_as_one_string_per_level(self):
+        schema = keys_as_lists(stage_schema("S2", REG))
+        branches = {b["properties"]["construct_id"]["const"]: b for b in schema["properties"]["proposals"]["items"]["anyOf"]}
+        self.assertEqual(branches["d.policy.current_strategy"]["properties"]["key"],
+                         {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "minLength": 1}})
+        self.assertEqual(branches["d.goal.goal_commitment"]["properties"]["key"]["maxItems"], 1)
+        base = {"reason": "依据", "grade": None, "evidence": [], "mechanisms": [], "field": None}
+        bad = {"construct_id": "d.policy.current_strategy", "key": ["strategy"], "after": "回避", **base}
+        self.assertTrue(validate(schema["properties"]["proposals"]["items"], bad, root=schema))
+        good = {**bad, "key": ["dm.conflict.conflict_mode", "c2"]}
+        self.assertEqual(validate(schema["properties"]["proposals"]["items"], good, root=schema), [])
+        self.assertEqual(join_keys({"proposals": [good]})["proposals"][0]["key"], "dm.conflict.conflict_mode/c2")
+        self.assertNotIn("x-key-parts", json.dumps(schema))
+
+    def test_audience_is_limited_to_the_other_present_ids(self):
+        narrow = narrow_evidence(stage_schema("S2", REG), ["a#1"], ["c2", "c3"])
+        self.assertEqual(narrow["properties"]["product"]["properties"]["expression"]["properties"]["audience"],
+                         {"type": "array", "items": {"enum": ["c2", "c3"]}})
+        reply = mock_output("S2")
+        reply["product"]["expression"]["audience"] = ["周越"]
+        self.assertTrue(any("audience" in e for e in validate(narrow, reply)))
+        self.assertEqual(narrow_evidence(stage_schema("S2", REG), ["a#1"])["properties"]["product"],
+                         stage_schema("S2", REG)["properties"]["product"])          # no ids given: unchanged
+
+    def test_an_option_of_another_process_breaks_the_schema(self):
+        reply = mock_output("S1")
+        self.assertTrue(reply["judgments"])
+        reply["judgments"][0]["option"] = "线索解释-不存在"
+        self.assertTrue(validate(stage_schema("S1", REG), reply))
+        reply["judgments"][0]["option"] = None
+        self.assertEqual(validate(stage_schema("S1", REG), reply), [])
+
+    def test_free_text_evidence_fails_before_parsing(self):
+        reply = mock_output("S1")
+        reply["evidence_notes"] = [{"event": "第三批数据未完成", "channel": "inferred", "claim": None}]
+        with self.assertRaisesRegex(I.ModelError, "evidence_notes"):
+            ChatModel(FakeTransport(reply)).complete("S1", view("S1"), stage_schema("S1", REG))
+
     def test_one_call_per_stage_with_view_task_and_schema(self):
         reply = mock_output("S2")
-        transport = FakeTransport(reply)
+        self.assertTrue(any(p["key"] for p in reply["proposals"]))
+        transport = FakeTransport(decoded(reply))
         result = ChatModel(transport).complete("S2", view("S2", upstream={"S1": parse_output("S1", mock_output("S1"), REG, EV).product}),
                                                stage_schema("S2", REG))
         self.assertEqual((result.output, result.reasoning), (reply, "想了一下"))
         system, payload = transport.sent[0]
         self.assertTrue(system.endswith(STAGE_PROMPTS["S2"]))
         self.assertEqual(payload["stage"], "S2")
-        self.assertEqual(payload["output_schema"], stage_schema("S2", REG))
+        ids = [f"{r['action_id']}#{r['order_index']}" for r in payload["view"]["records"]]
+        self.assertTrue(ids)
+        others = [c for c in payload["view"]["present"] if c != payload["view"]["self_id"]]
+        full = keys_as_lists(narrow_evidence(stage_schema("S2", REG), ids, others))
+        self.assertEqual(transport.schemas[0], full)                        # the full schema goes to the decoder
+        self.assertEqual(payload["output_schema"], compact_schema(full))    # the prompt carries the short form
         self.assertEqual(payload["view"]["task"]["stage"], "S2")
         self.assertIsInstance(payload["view"]["upstream"]["S1"]["hypotheses"], list)       # products sent as data
         json.dumps(payload, ensure_ascii=False)
@@ -231,7 +341,7 @@ class Chat(unittest.TestCase):
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
                 received.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-                message = {"content": json.dumps(reply, ensure_ascii=False), "reasoning_content": "先对照预期"}
+                message = {"content": json.dumps(decoded(reply), ensure_ascii=False), "reasoning_content": "先对照预期"}
                 raw = json.dumps({"model": "fake-2026", "choices": [{"message": message}]}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -251,10 +361,11 @@ class Chat(unittest.TestCase):
                 model = ChatModel(ChatBackend())
                 result = model.complete("S3", view("S3"), stage_schema("S3", REG))
             self.assertEqual((result.output, result.reasoning, model.model), (reply, "先对照预期", "fake"))
-            self.assertEqual(json.loads(result.raw), reply)
+            self.assertEqual(json.loads(result.raw), decoded(reply))           # raw: as the model sent it
             body = received[0]
-            self.assertEqual(body["response_format"], {"type": "json_object"})
             sent = json.loads(body["messages"][1]["content"])
+            self.assertEqual(body["response_format"]["type"], "json_schema")
+            self.assertEqual(compact_schema(body["response_format"]["json_schema"]["schema"]), sent["output_schema"])
             self.assertEqual((sent["stage"], sent["view"]["self_id"]), ("S3", "c1"))
             self.assertIn(STAGE_PROMPTS["S3"], body["messages"][0]["content"])
         finally:

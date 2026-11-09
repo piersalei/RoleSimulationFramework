@@ -74,6 +74,8 @@ class ModelExpresser:
         try:
             result = self.model.complete("express", view, EXPRESS_SCHEMA)
         except ModelError as exc:
+            if self.trace is not None and exc.raw is not None:      # keep what came back, even unparsable
+                self.trace.model_call(ctx.key, ModelCallRecord("express", view, exc.raw, exc.reasoning))
             raise StageError(f"express: {exc}") from exc
         if self.trace is not None:
             self.trace.model_call(ctx.key, ModelCallRecord("express", view, result.raw, result.reasoning))

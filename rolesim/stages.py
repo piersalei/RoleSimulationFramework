@@ -160,6 +160,8 @@ class ModelStage:
         try:
             result = self.model.complete(self.name, view, self.schemas[ctx.mode])
         except ModelError as exc:
+            if self.trace is not None and exc.raw is not None:      # keep what came back, even unparsable
+                self.trace.model_call(ctx.key, ModelCallRecord(self.name, view, exc.raw, exc.reasoning))
             raise StageError(f"{self.name}: {exc}") from exc
         if self.trace is not None:
             self.trace.model_call(ctx.key, ModelCallRecord(self.name, view, result.raw, result.reasoning))

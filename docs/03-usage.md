@@ -42,7 +42,7 @@ python3.11 -m rolesim run --roles role1 role2 role3 --scene test3   # 三个角�
 
 ## 3. 接服务器模型
 
-当前支持提供 `/chat/completions`、JSON object 输出的兼容接口。每次行动的请求：每个记录组一次事件建模（S1），对上次计划有回应时一次长期演化（S3），一次行动计划（S2，被拒时两次），一次表达；两人 8 次发言约 37 次请求（按 mock 运行计数），三人时每次行动要处理的记录组更多。档案里有自然语言原文时，入场时另有一次档案调用。思考模式保持开启：服务端返回的推理内容只写进 `trace/<互动>/<角色>/model_calls.jsonl` 的 `reasoning`，不进入任何提示。每次调用的输出先按 schema 和登记表检查，不合格整个阶段失败。不支持此协议的提供方需要另写适配器。
+当前支持提供 `/chat/completions` 的兼容接口，默认用**结构化解码**：每次阶段调用把输出 schema 作为 `response_format: json_schema` 发给服务端（vLLM、OpenAI 支持），服务端不支持时设 `ROLE_SIM_STRUCTURED=0` 退回 JSON object。解码用的 schema 比提示里给模型看的更严：证据只能取本次调用看得到的记录 ID，S2 受众只能取在场其他人的 ID，每个决策过程只能取它自己的选项，每个提议只能落在状态布局里存在的构念 / 字段上并取该字段的值类型，键按层级写成定长列表（程序再拼回 `a/b`）。提示里只放精简版（约 5k 字符）。每次行动的请求：每个记录组一次事件建模（S1），对上次计划有回应时一次长期演化（S3），一次行动计划（S2，被拒时两次），一次表达；两人 8 次发言约 37 次请求（按 mock 运行计数），三人时每次行动要处理的记录组更多。档案里有自然语言原文时，入场时另有一次档案调用。思考模式保持开启：服务端返回的推理内容只写进 `trace/<互动>/<角色>/model_calls.jsonl` 的 `reasoning`，不进入任何提示。每次调用的输出先按 schema 和登记表检查，不合格整个阶段失败；失败时模型的原始回复也写进轨迹。提议引用了本阶段没判断过的决策过程不算输出不合格，而是由状态存储拒绝这条变化（`unjudged_mechanism`，连同依赖组）。不支持此协议的提供方需要另写适配器。
 
 ```bash
 export ROLE_SIM_BASE_URL='http://127.0.0.1:8000/v1'
@@ -58,6 +58,17 @@ python3.11 -m rolesim run --backend chat --roles role1 role2 --scene test1 > /tm
 | `ROLE_SIM_API_KEY` | 需要鉴权时才设 | 空 |
 | `ROLE_SIM_MAX_TOKENS` | 单次最大输出（含推理） | 8192 |
 | `ROLE_SIM_TIMEOUT` | 单次请求超时（秒） | 600 |
+| `ROLE_SIM_STRUCTURED` | `1` 结构化解码（json_schema），`0` 只要求 JSON object | 1 |
+
+本地 vLLM 的启动方式（2026-11-09 用 vLLM 0.17.1 + Qwen3-8B 验证）：
+
+```bash
+vllm serve <Qwen3-8B 路径> --served-model-name Qwen3-8B --host 127.0.0.1 --port 8000 \
+  --max-model-len 32768 --reasoning-parser qwen3 \
+  --structured-outputs-config '{"backend": "xgrammar", "disable_any_whitespace": true, "disable_fallback": true}'
+```
+
+`disable_any_whitespace` 防止模型在 JSON 里无限输出空白直到撞上长度上限；`disable_fallback` 让不支持的 schema 报错而不是静默不约束。已知限制：schema 里出现 `pattern` 时 xgrammar 会整体不再约束（所以阶段 schema 不用正则）；Qwen3 有时在 JSON 结束后接着输出 `<tool_response>` 和第二份副本，结构化解码下程序只取第一个 JSON 值，丢掉的部分计入 manifest 的 `trailing_dropped`。conda 环境里 vLLM 若报 `CXXABI_1.3.15 not found`，启动前设 `LD_LIBRARY_PATH=<环境>/lib`。
 
 `.env.example` 只提供变量说明，程序不会自动读取 `.env`。请求失败或输出不合法即停止并记录失败，**不会静默切回 mock**。
 

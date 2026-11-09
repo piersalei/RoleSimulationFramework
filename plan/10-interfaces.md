@@ -382,3 +382,100 @@ F1—F5（见 [09 §7](09-interface-and-field-spec.md)）：〔工程〕结构�
 7. ~~删除旧的 v0 路径，离线工具改到新格式。~~ 已完成（2026-11-08）：开场设定、人格 skill、消融模式移到新管线；测试从 338 个变为 218 个（删掉的是旧管线的测试）。
 
 每一步结束时 `IRoleAgent` 都不变，现有测试保持通过。
+
+---
+
+## 7. 按设计约束 C8 修正（2026-11-09，草案，待确认）
+
+### 7.1 为什么要改
+
+C8（[08 §1](08-framework-oop-design.md)）：幅度由程序给合法区间，模型只在区间内选值并给理由；越界拒绝不截断。依据是状态变化规则v1 §5.0"模型的选择范围"：**程序规定合法范围、事件等级和硬上限；模型只能在规则卡允许的区间内选择具体变化并给出理由**。同一份规则 §二 规定决策过程只产中间判断、没有写权限；事件建模skill §3.9 写明候选状态变化"由相应更新算子生成"。
+
+现在的实现（第 6 节记为 ✅ 的那几项）偏离了这一点：
+
+| 偏离 | 在哪里 | 后果 |
+|---|---|---|
+| 阶段调用直接产出状态提议：改哪个构念、哪个键和字段、目标值、事件等级 | `IStage.run` 返回 `proposals`；`schemas.stage_schema` 的 `proposals` | 模型在管状态；Qwen3-8B 实测大量写错地址、改写固定字段、幅度越档 |
+| 算子只整理模型的提议，不按规则卡生成变化 | `IUpdateOperator.propose(ctx, proposals, judgments)`；`operators.py` | 11 张规则卡的触发、方向、调节没有在 harness 里实现 |
+| 区间在模型选值**之后**才算，只用来检查 | `operators.py` 调 `IMagnitude.range`，`validator._magnitude` 判越档 | 模型选值时不知道按本人人格与证据算出的区间，提示里只有一张通用参考表 |
+| `IMechanism` 没有实现，全部在阶段调用里由模型判断 | `stages.py` 文档串 | 可以接受（3.2 允许模型实现），但判断的输出字段没有类型，算子无法读取 |
+
+### 7.2 修正后的分工
+
+| 谁 | 做什么 | 不做什么 |
+|---|---|---|
+| 模型（阶段调用） | 产物（情境解释 / 行动计划 / 演化结果）；决策过程的判断：选项、本角色的事件等级、方向、对象、依据的记录、带内容的候选（信念命题、他心假设、目标与承诺内容） | 不选构念 ID、键、字段；不写数值 |
+| 算子（harness） | 按规则卡的触发与不触发条件，从判断和产物生成**变化槽位**：地址、变化前的值、方向、事件等级、依赖组、证据、依据的决策过程；记录型构念（信念、他心推断、目标、承诺、记忆条目）由算子按登记的字段组装 | 不臆造判断；规则卡没写清的地方不写（记日志），不用默认值代替 |
+| `IMagnitude`（harness） | 在选值**之前**给每个数值槽位算合法区间：事件等级 → 基准档，人格最多移一档，证据质量封顶 | — |
+| 模型（选值调用） | 对每个数值槽位，在给定区间内选一个值并写一句理由；一次阶段只调一次，批量处理 | 不能改地址、方向和区间 |
+| `IStateStore`（harness） | 校验（区间外硬拒、不截断）、按依赖组原子提交 | — |
+
+类别型构念（伤害事件修复程度、目标阶段、承诺阶段）用状态转移，由算子按判断决定，不经选值调用。没有数值槽位时不发选值调用。
+
+### 7.3 接口变化
+
+```python
+@dataclass(frozen=True)
+class StageOutput(Generic[P]):
+    product: P
+    judgments: tuple[Judgment, ...] = ()       # 去掉 proposals
+    evidence: EvidenceSet = ...
+    cues: Mapping[str, float] = ...
+
+@dataclass(frozen=True)
+class ChangeSlot:                              # 新增：算子生成，等待取值
+    construct_id: str; key: Optional[str]; field: Optional[str]
+    before: Any
+    direction: int                             # +1 / -1；记录型写入为 0
+    grade: Optional[int]                       # 来自评价判断（规则 §3.6），可按规则升降一级并写明
+    band: Optional[Band]                       # IMagnitude 在取值前算出；None 表示不需要取值
+    content: Any                               # 记录型写入时由算子组装的整条实例
+    evidence: tuple[EvidenceRef, ...]; update_operator: str; decision_mechanisms: tuple[str, ...]
+    stage: StageName; group: str; basis: str   # basis：依据规则卡哪一条
+
+class IUpdateOperator(Protocol):
+    name: str
+    def propose(self, ctx: StageContext, output: StageOutput) -> tuple[list[ChangeSlot], list[Skipped]]: ...
+        # 只读判断与产物；按本算子规则卡的触发条件决定写不写、写哪里、方向；Skipped 记录没写的原因
+
+class IValueChooser(Protocol):                 # 新增，属于 4 IStateStore 之下
+    def choose(self, ctx: StageContext, slots: list[ChangeSlot]) -> list[StateChange]: ...
+        # 数值槽位：模型在 band 内选值并给理由；其余槽位直接转成 StateChange
+
+class IStateStore(Protocol):
+    def commit(self, ctx: StageContext, changes: list[StateChange]) -> CommitResult: ...
+```
+
+`IStage`、`IMechanism`、`IMagnitude`、`IValidator` 的签名不变；`IStage.run` 不再返回提议。
+
+### 7.4 判断要带的字段（工程最小集，等 F2）
+
+算子要读判断，判断的 `output` 就不能是自由对象。先给规则 §4.1 有机制卡的过程定最小字段，其余过程只出选项与理由：
+
+| 决策过程 | 最小字段 | 读它的算子 |
+|---|---|---|
+| `dm.affect.primary_secondary_appraisal` | 初级评价（选项）、本角色事件等级 1—4、情绪标签（登记的情绪家族）、指向谁 | emotion_update、self_state_update、goal_update |
+| `dm.cog.belief_updating` | 信念候选：命题、事实或解释、关于谁、变化方向（增强 / 减弱 / 新形成 / 悬置）、事件等级 | belief_revision |
+| `dm.cog.attribution_responsibility` | 原因位置、稳定性、可控性、意图、责任分配、关于谁 | belief_revision、self_state_update、relation_update |
+| `dm.social.trust_reputation_update` / `dm.coop.trust_building` | 关于谁、证据维度（能力 / 善意 / 诚信 / 可靠）、方向、事件等级 | relation_update |
+| `dm.affect.defense` | 防御手法、方向 | emotion_update、self_state_update、belief_revision |
+| `dm.conflict.relationship_repair` | 关于谁、修复证据评估、关系结果 | relation_update、memory_update |
+
+他心假设沿用 S1 产物的 `hypotheses`（other_model_update 读）；目标、承诺、策略沿用 S2 产物（goal_update、commitment_update、strategy_learning 读）；承诺裁定、关系走向沿用 S3 产物。
+
+### 7.5 第一版实现范围
+
+先实现规则卡写得够清楚、阶段 skill 点名的算子：S1 的 emotion_update、belief_revision、other_model_update；S2 的 goal_update、commitment_update、strategy_learning；S3 的 relation_update、commitment_update、memory_update。self_state_update、group_state_update、decay_or_recovery（要时间事件）先只记"未实现，不写"。
+
+### 7.6 随之调整
+
+- `ITurnRunner`：行动计划 skill §4.3 的"计划依赖组被拒 → 带原因重做一次 → 再被拒失败"保留，但被拒只可能来自选值越档或 harness 自身的问题，不再来自模型写错地址；选值调用失败时这些槽位不写、记日志，行动照常。
+- 结构化解码（2026-11-09 未提交的改动）：保留 json_schema 开关、证据 ID 与受众收窄、按决策过程限定选项、失败回复入轨迹、只取第一个 JSON 值、自由对象收紧；删除只为"模型写状态"服务的部分：按地址生成的提议分支、键改成列表、`unjudged_mechanism`、提示里的构念字段表。
+- 审计：`operator_write_compatible` 改查"每条写入都来自某个算子的槽位，且取值在槽位区间内"；新增"每条写入都能追溯到一个判断"。
+- 消融模式：`profile_state_mechanisms` 以外的模式没有判断，算子就只能按产物写（或不写），在 7.5 实现时逐个说明。
+
+### 7.7 需要心理学组确认
+
+1. 7.4 的最小字段是否合适（属于 F2）。
+2. 规则卡没有写清方向的情形（例如混合情绪的效价方向），是由模型在判断里给出，还是不写。
+3. 选值调用的提示里给模型看多少：只给区间和理由要求，还是附上规则卡里的调节说明。

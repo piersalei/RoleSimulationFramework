@@ -6,10 +6,21 @@ import urllib.parse
 import urllib.request
 
 
+def _reject(value):
+    raise ValueError(f"non-standard JSON value: {value}")
+
+
 def strict_json(raw):
-    def reject(value):
-        raise ValueError(f"non-standard JSON value: {value}")
-    return json.loads(raw, parse_constant=reject)
+    return json.loads(raw, parse_constant=_reject)
+
+
+def first_json(raw):
+    """(the first JSON value in `raw`, the text after it). Under structured decoding the grammar
+    covers that first value; Qwen3 on vLLM has been seen to go on after it (an added token such
+    as <tool_response> and a second copy), which is outside the grammar and is dropped."""
+    body = raw.lstrip()
+    value, end = json.JSONDecoder(parse_constant=_reject).raw_decode(body)
+    return value, body[end:].strip()
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -57,12 +68,21 @@ class ChatBackend:
             raise ValueError("Set ROLE_SIM_MODEL explicitly")
         self.calls = 0
         self.served_models = []   # model names the server reported, as opposed to the configured one
+        self.trailing = []        # lengths of text dropped after the first JSON value (structured decoding)
         self.last_reasoning = None
         # Qwen3's recommended sampling for thinking mode; reasoning tokens count against max_tokens.
+        # Structured decoding: the output schema goes to the server as response_format
+        # json_schema (vLLM, OpenAI). ROLE_SIM_STRUCTURED=0 falls back to plain json_object for
+        # servers without it; the reply is checked against the schema either way.
+        flag = os.environ.get("ROLE_SIM_STRUCTURED", "1").strip().lower()
+        if flag not in {"0", "1", "false", "true", "off", "on", ""}:
+            raise ValueError("ROLE_SIM_STRUCTURED must be 1 or 0")
+        self.structured = flag not in {"0", "false", "off"}
         self.sampling = {"temperature": .6, "top_p": .95,
                          "max_tokens": _env_number("ROLE_SIM_MAX_TOKENS", 8192, int),
                          "timeout_s": _env_number("ROLE_SIM_TIMEOUT", 600, float),
-                         "thinking": "server default; reasoning kept in run records only"}
+                         "thinking": "server default; reasoning kept in run records only",
+                         "decoding": "json_schema" if self.structured else "json_object"}
         handlers = [NoRedirect()]
         if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
             # Local model servers must not be routed through HTTP(S)_PROXY.
@@ -72,11 +92,17 @@ class ChatBackend:
     def _call(self, system, payload):
         return self.chat(system, payload)[0]
 
-    def chat(self, system, payload):
-        """One chat-completions call: (parsed JSON content, raw content text)."""
-        self.last_reasoning = None
+    def response_format(self, schema):
+        if schema is None or not self.structured:
+            return {"type": "json_object"}
+        return {"type": "json_schema", "json_schema": {"name": "output", "schema": schema, "strict": True}}
+
+    def chat(self, system, payload, schema=None):
+        """One chat-completions call: (parsed JSON content, raw content text). With `schema`
+        (and structured decoding on), the server is asked to decode to that JSON schema."""
+        self.last_reasoning = self.last_raw = self.last_trailing = None
         body = {"model": self.model, "temperature": self.sampling["temperature"], "top_p": self.sampling["top_p"],
-                "max_tokens": self.sampling["max_tokens"], "response_format": {"type": "json_object"},
+                "max_tokens": self.sampling["max_tokens"], "response_format": self.response_format(schema),
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]}
         headers = {"Content-Type": "application/json"}
@@ -97,8 +123,18 @@ class ChatBackend:
             message = data["choices"][0]["message"]
             reasoning = message.get("reasoning_content") or message.get("reasoning")
             self.last_reasoning = reasoning if isinstance(reasoning, str) and reasoning.strip() else None
+            self.last_raw = message.get("content") if isinstance(message.get("content"), str) else None
             raw_content = _json_text(message["content"])
-            return strict_json(raw_content), raw_content
+            if not (self.structured and schema is not None):
+                return strict_json(raw_content), raw_content
+            # Structured decoding: the grammar covers the first JSON value; text after it is dropped
+            # and counted (the full reply stays in last_raw).
+            value, trailing = first_json(raw_content)
+            if trailing:
+                self.trailing.append(len(trailing))
+                self.last_trailing = trailing[:200]
+                raw_content = raw_content.strip()[:-len(trailing)].rstrip()
+            return value, raw_content
         except urllib.error.HTTPError as exc:
             raise RuntimeError(f"Model API HTTP {exc.code}; response body omitted to protect credentials") from None
         except (urllib.error.URLError, TimeoutError):

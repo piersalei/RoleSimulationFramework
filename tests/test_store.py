@@ -323,8 +323,17 @@ class Rules(StoreCase):
     def test_unknown_mechanism_and_soft_handoff(self):
         r = self.commit(FEEDBACK, P("d.relation.trust", "c2", "value", .4, grade=3, mechanisms=("dm.cog.none",)))
         self.assertEqual(self.codes(r), ["unregistered_mechanism"])
-        r = self.commit(FEEDBACK, P("d.relation.trust", "c2", "value", .4, grade=3, mechanisms=("dm.choice.risk_ambiguity",)))
+        risk = I.Judgment("dm.choice.risk_ambiguity", None, {}, (W,), ())
+        r = self.commit(FEEDBACK, P("d.relation.trust", "c2", "value", .4, grade=3, mechanisms=(risk.dm_id,)), judgments=[risk])
         self.assertEqual((self.codes(r), r.accepted[0].flag), ([], "unregistered_handoff"))
+
+    def test_a_change_citing_an_unjudged_process_is_rejected_with_its_group(self):
+        r = self.commit(PLAN, P("d.policy.current_strategy", "dm.conflict.conflict_mode/c2", None, "回避",
+                                mechanisms=("dm.conflict.conflict_mode",)),
+                        P("d.goal.goals_now", "g1", None, {"goal_id": "g1", "content": "说清楚", "priority": .6, "stage": "进行中",
+                                                            "core_goal": None, "source": "场景", "reason": "x"}))
+        self.assertIn("unjudged_mechanism", self.codes(r))
+        self.assertEqual(r.accepted, ())
 
 
 class HistoryChecks(StoreCase):

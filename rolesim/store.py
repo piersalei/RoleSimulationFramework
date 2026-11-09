@@ -7,8 +7,9 @@ commit(ctx, output), following 状态变化规则v1 §三 / §六 / §八:
   3. Each proposal goes to its operator (the construct's primary writer unless it names one),
      which drafts a StateChange. Unchanged values are dropped. A decay draft on an address
      another operator also writes in this commit is set aside (§5.11 "本算子不再处理").
-  4. IValidator checks every draft; the store adds the soft checks that need history or
-     several changes: flip_without_new_evidence, uniform_relation_change.
+  4. IValidator checks every draft; the store adds the checks that need the whole stage output,
+     history or several changes: unjudged_mechanism (hard: the change cites a decision process
+     this stage did not judge), flip_without_new_evidence, uniform_relation_change (soft).
   5. Any hard error rejects its whole dependency group; other groups commit. Soft anomalies
      are written and flagged.
   6. Accepted changes are applied to a copy; written constructs that were unknown become active.
@@ -105,7 +106,12 @@ class ConstructStore:
                                                                   f"{_label(c)} is written by another operator in this phase")))
 
         verdicts = [self.validator.check(c, current, output.evidence) for c in drafts]
+        judged = {j.dm_id for j in output.judgments}
         for i, c in enumerate(drafts):
+            unjudged = [m for m in c.decision_mechanisms if m not in judged]
+            if unjudged:
+                verdicts[i].append(Violation("hard", "unjudged_mechanism",
+                                             f"{_label(c)} cites processes not judged in this stage: {', '.join(unjudged)}"))
             flip = self._flip(key, c)
             if flip:
                 verdicts[i].append(flip)

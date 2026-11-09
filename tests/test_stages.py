@@ -161,6 +161,16 @@ class Stages(unittest.TestCase):
         with self.assertRaises(I.StageError):
             ModelStage("S1", REG, Scripted(error=I.ModelError("timeout"))).run(ctx())
 
+    def test_unparsable_replies_are_traced_too(self):
+        trace = Recorder()
+        with self.assertRaises(I.StageError):
+            ModelStage("S1", REG, Scripted(error=I.ModelError("bad json", raw="{} {}", reasoning="r")), trace=trace).run(ctx())
+        (key, call), = trace.calls
+        self.assertEqual((call.stage, call.raw_output, call.reasoning), ("S1", "{} {}", "r"))
+        with self.assertRaises(I.StageError):
+            ModelStage("S1", REG, Scripted(error=I.ModelError("timeout")), trace=trace).run(ctx())
+        self.assertEqual(len(trace.calls), 1)                                  # nothing came back: nothing to keep
+
     def test_calls_are_traced_even_when_the_output_is_rejected(self):
         trace = Recorder()
         with self.assertRaises(I.StageError):
@@ -256,7 +266,7 @@ class Expresser(unittest.TestCase):
         class Transport:
             model, last_reasoning, sent = "fake", None, []
 
-            def chat(self, system, payload):
+            def chat(self, system, payload, schema=None):
                 self.sent.append(system)
                 return {"thought": None, "speech": "好。", "action": None, "order": ["speech"]}, "{}"
 

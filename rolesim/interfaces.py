@@ -58,7 +58,12 @@ class StageError(RuntimeError):
 
 
 class ModelError(RuntimeError):
-    """A model call failed or its output breaks the requested schema. Never answered by a mock."""
+    """A model call failed or its output breaks the requested schema. Never answered by a mock.
+    `raw` / `reasoning` keep what the model returned, when anything came back, for the trace."""
+
+    def __init__(self, message, raw=None, reasoning=None):
+        super().__init__(message)
+        self.raw, self.reasoning = raw, reasoning
 
 
 # -- vocabularies ------------------------------------------------------------
