@@ -245,6 +245,11 @@ class Scene(unittest.TestCase):
                 self.assertTrue((out / name).exists(), name)
             records = [json.loads(l) for l in (out / "records.jsonl").read_text().splitlines()]
             self.assertTrue(all(set(r["recipients"]) == {r["actor"]["actor_id"]} for r in records if r["kind"] == "thought"))
+            # A face-to-face meeting: every line is heard by everyone present, whoever it is addressed to.
+            cast = {m["character_id"] for m in manifest["cast"]}
+            speech = [r for r in records if r["kind"] == "speech"]
+            self.assertTrue(speech)
+            self.assertTrue(all(set(r["recipients"]) == cast for r in speech))
             secrets = [s for s in _strings(json.loads((ROOT / "scenes" / "test3.json").read_text())["world_private"]) if len(s) >= 4]
             self.assertTrue(secrets)
             for path in out.rglob("*"):

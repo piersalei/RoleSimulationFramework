@@ -82,7 +82,7 @@ def _phase_lines(phase, names):
         body = [f"{head}：{product['situation_definition']}；判断 {product['judgment_state']}；假设：{hyps}"]
     elif stage == "S2":
         e = product["expression"]
-        body = [f"{head}：主行动「{product['chosen']}」；表达目标「{e['goal']}」，受众 {e['audience'] or '在场所有人'}，方式「{e['manner']}」"
+        body = [f"{head}：主行动「{product['chosen']}」；表达目标「{e['goal']}」，受众 {e['audience'] or '在场所有人'}{'（私下，只有受众收到）' if e.get('private') else ''}，方式「{e['manner']}」"
                 + (f"；承诺：{product['commitment']['content']}" if product["commitment"]["formed"] else "")]
     else:
         courses = "；".join(f"{c['partner']} {c['course']}" for c in product["relation_course"])
@@ -125,7 +125,10 @@ def render(run_dir):
             current = r["turn_index"]
             lines += ["", f"### 第 {current} 轮", ""]
         ids = set(r["recipients"])
-        to = "仅本人" if ids == {r["actor"]["actor_id"]} else "、".join(e["name"] for e in r["recipients"].values())
+        others = [e["name"] for cid, e in r["recipients"].items() if cid != r["actor"]["actor_id"]]
+        cast = {m["character_id"] for m in manifest["cast"]}
+        to = ("仅本人" if ids == {r["actor"]["actor_id"]}
+              else "在场所有人" if ids >= cast else "、".join(others))
         lines.append(f"- **{r['actor']['name']}**{KIND_TEXT[r['kind']]}（给：{to}）：{r['content']}")
     names = _names()
     lines += ["", "## 各角色的内部过程", ""]

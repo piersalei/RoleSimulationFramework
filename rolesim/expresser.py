@@ -8,8 +8,9 @@ One model call ("express") on a need-to-know view (plan/10 §3.4; 角色状态�
   withheld  state values, construct and process ids, the other candidates and their
             constraints, hypotheses, and anything the role cannot be aware of
 The reply becomes AgentActionContent (schemas.parse_expression): our own thought goes to the
-role alone; speech and action go to the plan's audience, or to everyone present when it names
-nobody. A failure raises StageError; nothing is sent.
+role alone; speech and action reach everyone present, the audience being only whom the role
+addresses, unless the plan made the expression private, when only its audience receives them.
+A failure raises StageError; nothing is sent.
 """
 from . import skills as sk
 from .evidence import EvidenceGate
@@ -52,7 +53,8 @@ class ModelExpresser:
         audience = [a for a in plan.expression.audience if a in present]
         upstream = {"plan": {"chosen": plan.chosen,
                              "expression": {"goal": plan.expression.goal, "audience": audience,
-                                            "manner": plan.expression.manner},
+                                            "manner": plan.expression.manner,
+                                            "private": bool(plan.expression.private)},
                              "commitment": {"formed": plan.commitment.formed, "content": plan.commitment.content}}}
         task = {"kinds": list(EXPRESS_KINDS), "audience": {a: present[a].get("name", a) for a in audience}}
         if ctx.skills:
@@ -75,4 +77,5 @@ class ModelExpresser:
             raise StageError(f"express: {exc}") from exc
         if self.trace is not None:
             self.trace.model_call(ctx.key, ModelCallRecord("express", view, result.raw, result.reasoning))
-        return parse_expression(result.output, ctx.key[1], view.upstream["plan"]["expression"]["audience"], ctx.present)
+        expression = view.upstream["plan"]["expression"]
+        return parse_expression(result.output, ctx.key[1], expression["audience"], ctx.present, expression["private"])

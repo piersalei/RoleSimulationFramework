@@ -402,8 +402,9 @@ class Commitment:
 @dataclass(frozen=True)
 class Expression:
     goal: str
-    audience: tuple[str, ...]               # character ids
+    audience: tuple[str, ...]               # character ids the role addresses (empty: no one in particular)
     manner: str
+    private: bool = False                   # True: only the audience hears it; False: everyone present does
 
 
 @dataclass(frozen=True)

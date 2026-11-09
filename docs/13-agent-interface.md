@@ -131,7 +131,7 @@ class IEnvironment(Protocol):    # 环境组实现（环境组：EnvironmentAdap
 
 - **第一次 `act` 时入场**（此时才知道在场者）：`IRoleRepository.load`（`profiles/<id>.json`，没有则转换角色文件，由 `IProfileCompiler` 编译）→ `enter`（档案入场状态 → 开场设定的目标与前情 → bootstrap 的总体目标与此前经历 → 角色状态说明 §8.2 的默认值）→ 取绑定的人格 skill 与开场设定 → `ITurnRunner.begin`。
 - **每次 `act`**：只把没吸收过的记录交给 `ITurnRunner.run(key, 新记录, 在场者)`；别人的思考即使出现在观察记录里也不吸收，只记告警。一次行动内部的阶段顺序见 [06-runtime-flow.md](06-runtime-flow.md) 第 2 节。
-- **返回**：`{thought, speech, action, order}`。思考只发给本人；发言和动作发给 S2 计划里的受众（没写即当前全部在场者）。不返回任何内部状态。
+- **返回**：`{thought, speech, action, order}`。思考只发给本人；发言和动作默认发给当前全部在场者（`recipient_ids = null`）。S2 计划里的受众只表示"对谁说"，不限制谁听得到；只有计划把表达标为 `private`（耳语、私下递话）时，发言和动作才只发给受众，这时受众不能为空。不返回任何内部状态。
 - **消融模式**：`bootstrap.mechanism.mode` 给出时，该角色在该互动里用这个模式，否则用构造时的默认模式；不认识的模式抛 `InterfaceError`。模式只决定提示和输出 schema，状态在三种模式下都照常提议、校验、写入和记录：
 
 | 模式（`interfaces.MODES`） | 提示里的动态状态与感受 | 决策过程判断 |
@@ -189,7 +189,7 @@ python3.11 -m rolesim run --roles role1 role2 role3 --scene test3
 
 | 项 | 现状 |
 |---|---|
-| 输出形态 | 思考（只给本人）、发言、动作，接收者来自 S2 计划的受众 |
+| 输出形态 | 思考（只给本人）、发言、动作；发言和动作默认在场者都收到，S2 计划标 `private` 时只给受众 |
 | 感知时机 | 没有 perceive，别人的言行要等本角色下次行动时才评价；中间不行动的角色状态不变（已确认接受） |
 | `personality` / `mechanism` | 读 `role_ref`、`mode`；`enable_config` 只记录 |
 | 跨互动 | 每场互动从角色库的入场状态开始，不延续上一场的动态状态和记忆 |

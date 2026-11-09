@@ -175,6 +175,17 @@ class Stages(unittest.TestCase):
         with self.assertRaisesRegex(I.StageError, "audience"):
             ModelStage("S2", REG, Scripted(output)).run(c)
 
+    def test_private_needs_an_audience_and_is_required(self):
+        c = ctx("plan")
+        output = mock("S2", c)
+        output["product"]["expression"].update(audience=[], private=True)
+        with self.assertRaisesRegex(I.StageError, "private"):
+            ModelStage("S2", REG, Scripted(output)).run(c)
+        output = mock("S2", c)
+        del output["product"]["expression"]["private"]
+        with self.assertRaises(I.StageError):
+            ModelStage("S2", REG, Scripted(output)).run(c)
+
     def test_nothing_hidden_reaches_any_stage_prompt(self):
         model = Scripted(error=I.ModelError("stop"))
         for stage, kind in (("S1", "event"), ("S2", "plan"), ("S3", "feedback")):
@@ -189,11 +200,11 @@ class Stages(unittest.TestCase):
 
 
 # -- IExpresser -----------------------------------------------------------------------------------------
-def plan(audience=("c2",)):
+def plan(audience=("c2",), private=False):
     return I.ActionPlan((I.ActionCandidate("说明情况并提出方案", True), I.ActionCandidate("推给老王", False, "CONSTRAINT-会被拆穿")),
                         "说明情况并提出方案", ("请求时间核对",), (I.SwitchCondition("对方连续追问", "请求时间核对"),),
                         ("HYPOTHESIS-他在试探我",), ("对方愿意等",), I.Commitment(True, "周一前给出新日期"),
-                        I.Expression("说明延期原因", tuple(audience), "平静"))
+                        I.Expression("说明延期原因", tuple(audience), "平静", private))
 
 
 class Expresser(unittest.TestCase):
@@ -204,10 +215,18 @@ class Expresser(unittest.TestCase):
         content = ModelExpresser(REG, MockModel(REG)).realize(plan(), ctx("plan", entry_state(**self.STATE)))
         validate_action_content(content, PRESENT, "c1")
         self.assertEqual(content["thought"]["recipient_ids"], ["c1"])
-        self.assertEqual(content["speech"]["recipient_ids"], ["c2"])
+        # Addressed to c2, but said in front of everyone present: everyone hears it.
+        self.assertIsNone(content["speech"]["recipient_ids"])
         self.assertEqual(content["order"], ["thought", "speech"])
         to_all = ModelExpresser(REG, MockModel(REG)).realize(plan(audience=()), ctx("plan"))
         self.assertIsNone(to_all["speech"]["recipient_ids"])
+
+    def test_private_expression_reaches_only_its_audience(self):
+        content = ModelExpresser(REG, MockModel(REG)).realize(plan(private=True), ctx("plan"))
+        self.assertEqual(content["speech"]["recipient_ids"], ["c2"])
+        self.assertEqual(content["thought"]["recipient_ids"], ["c1"])
+        with self.assertRaisesRegex(I.StageError, "private"):
+            ModelExpresser(REG, MockModel(REG)).realize(plan(audience=(), private=True), ctx("plan"))
 
     def test_need_to_know_view(self):
         model = Scripted({"thought": None, "speech": "我先说明一下。", "action": None, "order": ["speech"]})

@@ -21,8 +21,10 @@ the model. Judgments' hands_to also comes from the registry.
   EXPRESS_SCHEMA / parse_expression(output, actor_id, audience, present)
                                   the expression call (IExpresser): thought / speech / action and
                                   their order -> AgentActionContent; our own thought goes to the
-                                  role alone, speech and action to the plan's audience (everyone
-                                  present when it names nobody), checked by agent_api
+                                  role alone; speech and action reach everyone present (the
+                                  audience is only who is addressed) unless the plan marks the
+                                  expression private, when only its audience receives them;
+                                  checked by agent_api
 """
 import math
 from typing import Mapping
@@ -78,7 +80,7 @@ PRODUCTS = {
         "depends_on": TEXTS,
         "expected_outcomes": TEXTS,
         "commitment": _object({"formed": {"type": "boolean"}, "content": TEXT_OR_NULL}),
-        "expression": _object({"goal": TEXT, "audience": IDS, "manner": TEXT}),
+        "expression": _object({"goal": TEXT, "audience": IDS, "manner": TEXT, "private": {"type": "boolean"}}),
     }),
     "S3": _object({
         "expected_vs_actual": TEXT,
@@ -244,7 +246,8 @@ def _product(stage, d):
             tuple(d["fallbacks"]), tuple(SwitchCondition(s["signal"], s["then"]) for s in d["switch_conditions"]),
             tuple(d["depends_on"]), tuple(d["expected_outcomes"]),
             Commitment(d["commitment"]["formed"], d["commitment"]["content"]),
-            Expression(d["expression"]["goal"], tuple(d["expression"]["audience"]), d["expression"]["manner"]))
+            Expression(d["expression"]["goal"], tuple(d["expression"]["audience"]), d["expression"]["manner"],
+                       d["expression"]["private"]))
     return EvolutionResult(
         d["expected_vs_actual"], tuple(CommitmentRuling(r["commitment"], r["ruling"]) for r in d["commitment_rulings"]),
         tuple(RelationCourse(r["partner"], r["course"], tuple(r["repair_conditions"])) for r in d["relation_course"]),
@@ -314,7 +317,10 @@ EXPRESS_SCHEMA = _object({
 })
 
 
-def parse_expression(output, actor_id, audience, present):
+def parse_expression(output, actor_id, audience, present, private=False):
+    """`audience` is whom the plan addresses. Being addressed is not the same as hearing: in a
+    shared scene everyone present hears speech and sees actions (recipient_ids None, interface v2
+    "本部分的可见范围"), unless the plan made the expression `private` to its audience."""
     errors = validate(EXPRESS_SCHEMA, output)
     if errors:
         raise StageError(f"express: output breaks the schema: {'; '.join(errors[:8])}")
@@ -324,7 +330,9 @@ def parse_expression(output, actor_id, audience, present):
     order = list(output["order"])
     if len(order) != len(set(order)) or set(order) != set(filled):
         raise StageError(f"express: order {order} must list each filled part {filled} once")
-    recipients = list(dict.fromkeys(audience)) or None
+    recipients = list(dict.fromkeys(audience)) if private else None
+    if private and not recipients:
+        raise StageError("express: a private expression needs an audience")
     content = {k: None for k in EXPRESS_KINDS}
     for kind in filled:
         content[kind] = {"content": output[kind].strip(),

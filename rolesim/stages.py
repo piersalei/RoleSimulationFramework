@@ -10,7 +10,9 @@ ModelStage(name) runs one stage on one StageContext:
      present, and the stage task from the registry;
   4. IModel.complete; the call is written to ITrace (when given) before parsing, so failed
      outputs are kept too;
-  5. schemas.parse_output -> StageOutput; S2's audience must be present.
+  5. schemas.parse_output -> StageOutput; S2's audience must be present, and a private
+     expression must name one (audience is whom the role addresses; everyone present hears
+     unless the expression is private).
 A model failure or an output that breaks the schema or the registry fails the whole stage
 (StageError) and proposes nothing.
 
@@ -167,6 +169,8 @@ class ModelStage:
             strangers = [a for a in output.product.expression.audience if a not in ctx.present or a == me]
             if strangers:
                 raise StageError(f"S2: audience must be other present characters, got {strangers}")
+            if output.product.expression.private and not output.product.expression.audience:
+                raise StageError("S2: a private expression must name its audience")
         return output
 
 
