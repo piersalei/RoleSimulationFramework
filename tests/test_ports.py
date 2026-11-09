@@ -144,7 +144,7 @@ class Routing(unittest.TestCase):
         self.assertFalse(agent.runner.started(("i2", "role1")))              # a session starts at its first act
         act(agent, [], "r2", interaction="i2")
         one, two = agent.store.snapshot(("i1", "role1")), agent.store.snapshot(("i2", "role1"))
-        belief = "b-t002-role2#0"                                            # what i1 took in from 周越
+        belief = "b-t002-role2-1"                                            # what i1 took in from 周越
         self.assertIn(belief, one.dynamic["d.cognition.belief"])
         self.assertNotIn(belief, two.dynamic["d.cognition.belief"])
 

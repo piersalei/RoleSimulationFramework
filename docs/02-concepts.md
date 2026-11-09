@@ -42,11 +42,12 @@
 | 登记表（registry） | 从心理学组 v1 文件生成的 `data/registry.json`：87 个构念、75 个决策过程、11 个算子规则，每项带原文出处；代码只经它读心理学定义 | [08-modules.md](08-modules.md) §3 |
 | 构念 | `s.*` 稳定、`d.*` 动态、`m.*` 记忆；每个有取值形式、主写入算子、阶段权限、自知性、依赖组 | `data/registry.json` |
 | 决策过程（`dm.*`） | 心理学组列出的过程（如初级 / 次级评价、信念更新、冲突模式）；现在只在阶段调用里由模型判断（`profile_state_mechanisms` 模式），没有按规则实现的过程 | [07-architecture.md](07-architecture.md) §5 |
-| 阶段 S1 / S2 / S3 | 事件建模 / 行动计划 / 长期演化，各是一次结构化模型调用；只提议变化，不写状态 | [06-runtime-flow.md](06-runtime-flow.md) §2 |
+| 阶段 S1 / S2 / S3 | 事件建模 / 行动计划 / 长期演化，各是一次结构化模型调用；只出产物和决策过程的判断，不写状态（C8） | [06-runtime-flow.md](06-runtime-flow.md) §2 |
 | 表达 | 按计划生成思考 / 发言 / 动作的那次调用，只拿到需要的信息 | [06-runtime-flow.md](06-runtime-flow.md) §3 |
 | 证据门 | 每个阶段开始时决定什么能当证据：本人的行动、明确发给自己的记录；排除别人的思考、本人的思考、没发给自己的记录，并记原因；另取回至多 4 条相关记忆 | [06-runtime-flow.md](06-runtime-flow.md) §2 |
 | 线索（cue） | S1 给出的五种情境特征强度：`uncertainty` 不确定、`pressure` 压力、`commitment` 承诺、`repair` 修复、`conflict` 冲突，0–1；只用来激活人格 skill | `rolesim/vocab.py` |
-| 变化提议（`ChangeProposal`） | 阶段对一个构念实例的变化提议：构念、实例键、字段、目标值、事件等级、证据、依据的决策过程 | [06-runtime-flow.md](06-runtime-flow.md) §4 |
+| 变化槽位（`ChangeSlot`） | 算子按规则卡从判断生成的一处待写变化：地址、变化前的值、方向、事件等级、合法区间（选值前算好）、证据、依据的过程与规则；记录与类别由算子组装好 | [06-runtime-flow.md](06-runtime-flow.md) §4 |
+| 选值（values 调用） | 模型在每个数值槽位的区间内选一个值并给理由；越界拒绝，不截断 | `rolesim/state/chooser.py` |
 | 更新算子 | 11 个写入通道：`emotion_update`、`belief_revision`、`other_model_update`、`self_state_update`、`relation_update`、`group_state_update`、`goal_update`、`commitment_update`、`strategy_learning`、`memory_update`、`decay_or_recovery`；白名单、阶段与依赖组都来自登记表 | `rolesim/state/operators.py` |
 | 幅度档（band） | 一次变化允许的范围：按事件等级分档，效价 ×2、自我评价 ×4，只有听说 / 推断的证据时封顶，人格敏感度最多移一档；越界拒绝，不截断 | [06-runtime-flow.md](06-runtime-flow.md) §4 |
 | 依赖组 | 相互依赖的变化放一组，组内有硬错整组不写 | 同上 |

@@ -327,7 +327,7 @@ IRoleAgent.act
    └─ ITrace.phase / ITrace.model_call（每个阶段）
 ```
 
-## 6. 实现进度（2026-11-08）
+## 6. 实现进度（2026-11-08；C8 修正后的状态见第 7 节，2026-11-09）
 
 契约（Protocol + 数据类型）已全部在 `rolesim/interfaces.py`。下表只看**实现**：✅ 已实现　◐ 部分实现　✗ 没有。运行路径只有一条：`IRoleAgent` → `ITurnRunner` → 各阶段与状态存储（第 7 步删除了旧的 `Agent.step`）。
 
@@ -344,11 +344,12 @@ IRoleAgent.act
 | 　S2 | ✅ | `stages.ModelStage("S2")`，看到 skill 目录与被激活的 skill | — |
 | 　S3 | ✅ | `stages.ModelStage("S3")` | 什么算反馈由 `ITurnRunner` 判断 |
 | 3.1 IEvidenceGate | ✅ | `evidence.EvidenceGate` | 记忆检索是字面相似度（`memory.search`），不是语义检索 |
-| 3.2 IMechanism | ◐ | 决策过程在阶段调用里由模型判断（schema 的 judgments，只在 `profile_state_mechanisms` 模式），解析时查登记表 | 没有按规则实现的过程；各过程输出字段要等 F2 |
-| 3.3 IModel | ✅ | `model.ChatModel` / `model.MockModel`，输出 schema 与解析在 `stage/schemas.py`，传输在 `stage/providers.py` | 结构化解码未接；还没有跑过真实模型 |
+| 3.2 IMechanism | ◐ | 决策过程在阶段调用里由模型判断（schema 的 judgments，只在 `profile_state_mechanisms` 模式），每个过程一个分支、只能取自己的选项；有机制卡的 6 个过程带类型化输出（`JUDGMENT_OUTPUTS`），算子读这些字段 | 没有按规则实现的过程；其余过程的输出字段要等 F2 |
+| 3.3 IModel | ✅ | `model.ChatModel` / `model.MockModel`，输出 schema 与解析在 `stage/schemas.py`，传输在 `stage/providers.py`；结构化解码（json_schema，按调用收窄） | 见 04 的真实模型记录 |
 | 3.4 IExpresser | ✅ | `expresser.ModelExpresser`（模型调用 "express"），带被激活 skill 的表达要点 | — |
 | **4 IStateStore** | ✅ | `store.ConstructStore` + `state/slots.py` | 跨阶段累计上限、习惯化、按时间衰减要等场景时间单位（F3） |
-| 4.1 IUpdateOperator | ✅ | `operators.Operator`（11 个，规则来自登记表） | 规则卡里要判断事件的部分（情绪方向、习惯化）由阶段提出、验证器检查，不在算子里计算 |
+| 4.1 IUpdateOperator | ◐ | `operators.Operator` + `operators.RULES`：7 个算子按规则卡从判断生成槽位（emotion / belief / other_model / relation / commitment / strategy / memory），幅度档在选值前算好 | self_state、group_state、goal、decay（要时间事件）、关系修复（要伤害事件）还没实现，有判断交给它们时记「未写」 |
+| 4.4 IValueChooser | ✅ | `chooser.ModelValueChooser`：一次 values 调用，每个数值槽位在区间内取值并给理由 | — |
 | 4.2 IMagnitude | ✅ | `magnitude.Magnitude` | 人格敏感度只接了无条件映射（P1 分面、依恋焦虑、认知灵活性）；P2 / P3、违约后的尽责性、自尊不稳定性未接 |
 | 4.3 IValidator | ✅ | `validator.Validator` | “含对方真实隐状态”本方无法检查；规则卡里的单条软规则（如“无调节过程而强度大幅下降”）未收 |
 
@@ -385,7 +386,7 @@ F1—F5（见 [09 §7](09-interface-and-field-spec.md)）：〔工程〕结构�
 
 ---
 
-## 7. 按设计约束 C8 修正（2026-11-09，草案，待确认）
+## 7. 按设计约束 C8 修正（2026-11-09；已实现，见 7.8）
 
 ### 7.1 为什么要改
 
@@ -479,3 +480,14 @@ class IStateStore(Protocol):
 1. 7.4 的最小字段是否合适（属于 F2）。
 2. 规则卡没有写清方向的情形（例如混合情绪的效价方向），是由模型在判断里给出，还是不写。
 3. 选值调用的提示里给模型看多少：只给区间和理由要求，还是附上规则卡里的调节说明。
+
+### 7.8 实现情况（2026-11-09）
+
+按 7.2—7.6 实现：`IStage` 不再返回提议；`IStateStore.draft` 跑本阶段允许的算子、合并同一地址的槽位；`IValueChooser`（`state/chooser.py`）在区间内取值；`IStateStore.commit(ctx, changes, evidence, skipped, unvalued)` 校验与提交。和草案的差别：
+
+- `goal_update` 没有进第一版（7.5 原列入）：S2 产物里没有目标内容可读，规则卡也没写清从哪个判断推出，先记「未写」。
+- 原值未知的数值字段（例如入场时的信任）不给区间，给取值范围，由模型取首次值；有符号的字段（效价）首次值落在判断指向的一侧。
+- 字段到头时只给区间里还放得下的部分（值本身不截断）；连最低档都放不下时不写（`no_room`）。
+- 新信念、他心推断、归因记录这类记录型写入，其中的确信度取自判断（属于内容，不是变化幅度）。
+- 2026-11-09 的结构化解码里只服务于"模型写状态"的部分已删除：按地址的提议分支、键改成列表、`unjudged_mechanism`、提示里的构念字段表与幅度参考表。完整 schema 从 67—117k 字符降到 11—15k，提示里的精简版约 2—3k。
+

@@ -2,11 +2,12 @@
 
 run(key, new_records, present):
   1. New records are grouped by action_id, in order. Each group is one event phase:
-     S1.run -> IStateStore.commit.
+     S1.run -> IStateStore.draft (the operators' slots, bands set) -> IValueChooser.choose (a value
+     inside each band) -> IStateStore.commit. Every phase below runs the same four steps (C8).
   2. Feedback: the first group in which someone our last plan addressed (anyone else, if it
      addressed nobody in particular) speaks or acts towards us opens a feedback phase:
-     S3.run -> commit, once per plan (状态变化规则 §3.4: 他人对本角色作出反应).
-  3. Then a plan phase: S2.run -> commit. If the plan's own dependency group (goal, commitment,
+     S3.run -> draft -> choose -> commit, once per plan (状态变化规则 §3.4: 他人对本角色作出反应).
+  3. Then a plan phase: S2.run -> draft -> choose -> commit. If the plan's own dependency group (goal, commitment,
      strategy) is rejected, the action is not sent as planned and S2 runs again in a new phase
      with the rejections in upstream["rejected"] (行动计划 skill §4.3); a second rejection fails.
   4. IExpresser.realize on the committed snapshot -> AgentActionContent.
@@ -47,8 +48,8 @@ class _Session:
 class TurnRunner:
     """ITurnRunner over IStage x3, IStateStore, IExpresser and an optional ITrace."""
 
-    def __init__(self, store, stages, expresser, trace=None, replans=1):
-        self.store, self.stages, self.expresser, self.trace = store, stages, expresser, trace
+    def __init__(self, store, stages, expresser, chooser, trace=None, replans=1):
+        self.store, self.stages, self.expresser, self.chooser, self.trace = store, stages, expresser, chooser, trace
         self.replans = replans
         self._sessions = {}
 
@@ -105,7 +106,9 @@ class TurnRunner:
                            tuple(s.history if history is None else history), s.background, s.mode, s.skills,
                            s.briefing)
         output = self.stages[stage].run(ctx)
-        result = self.store.commit(ctx, output)
+        slots, skipped = self.store.draft(ctx, output)
+        changes, unvalued = self.chooser.choose(ctx, output, slots)
+        result = self.store.commit(ctx, changes, output.evidence, skipped, unvalued)
         if self.trace is not None:
             self.trace.phase(key, PhaseLog(event_id, s.phase_no, state.state_id, result.output_state_id, output.evidence,
                                            output.judgments, {stage: output.product}, result.accepted, result,

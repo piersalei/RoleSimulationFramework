@@ -12,8 +12,9 @@ from rolesim.state import slots
 from rolesim.stage.model import STAGE_PROMPTS, ChatModel, MockModel, view_payload
 from rolesim.stage.providers import ChatBackend
 from rolesim.role.registry import Registry
-from rolesim.stage.schemas import (PRODUCTS, compact_schema, join_keys, keys_as_lists, narrow_evidence, parse_output, stage_constructs, stage_mechanisms, stage_schema, stage_task,
-                             validate)
+from rolesim.stage.schemas import (JUDGMENT_OUTPUTS, PRODUCTS, compact_schema, narrow_evidence, parse_output,
+                                   stage_mechanisms, stage_schema, stage_task, validate)
+from rolesim.state.chooser import ModelValueChooser
 from rolesim.state.store import ConstructStore
 
 REG = Registry.load()
@@ -58,33 +59,20 @@ class StageSchemas(unittest.TestCase):
             for b in branches:                                                  # each process: only its own options
                 options = REG.mechanism(b["properties"]["dm_id"]["const"]).options
                 self.assertEqual(b["properties"]["option"], {"enum": [*options, None]} if options else {"type": "null"})
-            branches = schema["properties"]["proposals"]["items"]["anyOf"]
-            constructs = list(dict.fromkeys(b["properties"]["construct_id"]["const"] for b in branches))
-            self.assertEqual(constructs, stage_constructs(stage, REG))
+                if b["properties"]["dm_id"]["const"] in JUDGMENT_OUTPUTS:             # mechanism cards: typed outputs
+                    self.assertEqual(b["properties"]["output"], JUDGMENT_OUTPUTS[b["properties"]["dm_id"]["const"]])
             self.assertEqual(("evidence_notes" in schema["properties"]), stage == "S1")
-        s1, s2, s3 = (stage_constructs(s, REG) for s in ("S1", "S2", "S3"))
-        self.assertIn("d.cognition.belief", s1)
-        self.assertNotIn("d.relation.trust", s1)
-        self.assertNotIn("d.cognition.belief", s2)
-        self.assertIn("d.relation.trust", s3)
-        self.assertIn("d.affect.emotion", s3)                                   # only through decay in S3
-        emotion = next(c for c in stage_task("S3", REG)["constructs"] if c["construct_id"] == "d.affect.emotion")
-        self.assertEqual(emotion["operators"], ["decay_or_recovery"])
-        s3 = stage_schema("S3", REG)
-        self.assertIn("decay_or_recovery", s3["$defs"]["operator"]["enum"])
-        for branch in s3["properties"]["proposals"]["items"]["anyOf"]:
-            self.assertEqual(branch["properties"]["operator"], {"$ref": "#/$defs/operator"})
+            self.assertNotIn("proposals", schema["properties"])                 # C8: the model never writes state
+            self.assertNotIn('"pattern"', json.dumps(schema))                   # xgrammar drops enforcement
 
     def test_task_carries_options_and_fields(self):
         task = stage_task("S1", REG)
         appraisal = next(m for m in task["mechanisms"] if m["dm_id"] == "dm.affect.primary_secondary_appraisal")
         self.assertEqual(appraisal["options"], list(REG.mechanism("dm.affect.primary_secondary_appraisal").options))
         self.assertEqual(appraisal["hands_to"], ["emotion_update", "self_state_update"])      # goal_update is not S1
-        stress = next(c for c in task["constructs"] if c["construct_id"] == "d.affect.stress")
-        self.assertEqual((stress["fields"], stress["banded"], stress["operators"], stress["tempo"]),
-                         ({"level": "u"}, {"level": 1.0}, ["emotion_update"], "fast"))
-        self.assertEqual(task["bands"]["slow"]["3"], [.15, .30])               # guidance; the store checks
-        self.assertEqual(task["bands"]["fast"]["4"], [.45, .70])
+        self.assertEqual(appraisal["output_fields"], ["grade", "emotions", "valence", "about"])
+        self.assertNotIn("constructs", task)                                   # no construct is the model's to name
+        self.assertNotIn("bands", task)
         self.assertEqual(sorted(task["grades"]), ["1", "2", "3", "4"])
         self.assertEqual(len(task["mechanisms"]), len(stage_mechanisms("S1", REG)))
         with self.assertRaises(ValueError):
@@ -107,7 +95,7 @@ class Parse(unittest.TestCase):
                 self.assertIn(j.option, REG.mechanism(j.dm_id).options)
                 self.assertTrue(set(j.hands_to) <= {op for op in REG.ids("operator") if stage in REG.operator(op).stages})
                 self.assertEqual(j.evidence, (I.EvidenceRef("a7#0", "witnessed"),))
-            self.assertTrue(out.proposals)
+            self.assertFalse(hasattr(out, "proposals"))
         self.assertEqual(upstream["S2"].depends_on, (upstream["S1"].hypotheses[0].statement,))
 
     def test_schema_breaks_fail_the_stage(self):
@@ -124,8 +112,8 @@ class Parse(unittest.TestCase):
         with self.assertRaisesRegex(I.StageError, "not one of the allowed values"):
             parse_output("S1", out, REG, EV)
         out = mock_output("S1")
-        out["proposals"][0]["construct_id"] = "d.relation.trust"               # not writable in S1
-        with self.assertRaises(I.StageError):
+        out["proposals"] = []                                                   # the model may not write state
+        with self.assertRaisesRegex(I.StageError, "unexpected field proposals"):
             parse_output("S1", out, REG, EV)
 
     def test_registry_and_product_rules(self):
@@ -133,10 +121,6 @@ class Parse(unittest.TestCase):
         out["judgments"][0]["option"] = "愤怒"
         with self.assertRaisesRegex(I.StageError, "has no option|option: '.*' is not one of the allowed values"):
             parse_output("S1", out, REG, EV)
-        out = mock_output("S1")
-        out["proposals"][0]["mechanisms"] = ["dm.cog.attention_filtering"]
-        parsed = parse_output("S1", out, REG, EV)                              # left to the store to reject
-        self.assertEqual(parsed.proposals[0].mechanisms, ("dm.cog.attention_filtering",))
         out = mock_output("S2")
         out["product"]["chosen"] = "回避话题"                                    # a dropped candidate
         with self.assertRaisesRegex(I.StageError, "kept candidate"):
@@ -147,26 +131,30 @@ class Parse(unittest.TestCase):
         out["evidence_notes"] = [{"event": "a7#0", "channel": "hearsay", "claim": "林澄周五交不了"}]
         parsed = parse_output("S1", out, REG, EV)
         self.assertEqual(parsed.evidence.included, (I.EvidenceRef("a7#0", "hearsay", "林澄周五交不了"),))
-        self.assertEqual(parsed.proposals[0].evidence[0].channel, "hearsay")
-        for note, message in (({"event": "a7#0", "channel": "hearsay", "claim": None}, "claim"),
-                              ({"event": "zz#1", "channel": "inferred", "claim": None}, "has not seen")):
-            out["evidence_notes"] = [note]
-            with self.assertRaisesRegex(I.StageError, message):
-                parse_output("S1", out, REG, EV)
-        heard = I.EvidenceSet((I.EvidenceRef("a7#0", "hearsay", "x"),))
+        self.assertEqual(parsed.judgments[0].evidence[0].channel, "hearsay")    # judgments cite the refined evidence
+        out["evidence_notes"] = [{"event": "a7#0", "channel": "hearsay", "claim": None}]       # claim unknown: still weaker
+        self.assertEqual(parse_output("S1", out, REG, EV).evidence.included, (I.EvidenceRef("a7#0", "hearsay"),))
+        out["evidence_notes"] = [{"event": "zz#1", "channel": "inferred", "claim": None}]
+        with self.assertRaisesRegex(I.StageError, "has not seen"):
+            parse_output("S1", out, REG, EV)
+        heard = I.EvidenceSet((I.EvidenceRef("a7#0", "hearsay", "x"),))                    # never stronger: ignored
         out["evidence_notes"] = [{"event": "a7#0", "channel": "witnessed", "claim": None}]
-        with self.assertRaisesRegex(I.StageError, "cannot turn hearsay"):
-            parse_output("S1", out, REG, heard)
+        self.assertEqual(parse_output("S1", out, REG, heard).evidence.included, heard.included)
+        own = I.EvidenceSet((I.EvidenceRef("a7#0", "own_action"),))                        # one's own action: ignored
+        self.assertEqual(parse_output("S1", out, REG, own).evidence.included, own.included)
 
     def test_unknown_ids_stay_weak_and_visible_to_the_store(self):
         out = mock_output("S1")
-        out["proposals"][0]["evidence"] = ["zz#9"]
+        out["judgments"][1]["evidence"] = ["zz#9"]                             # the belief judgment
         parsed = parse_output("S1", out, REG, EV)
-        self.assertEqual(parsed.proposals[0].evidence, (I.EvidenceRef("zz#9", "inferred"),))
+        self.assertEqual(parsed.judgments[1].evidence, (I.EvidenceRef("zz#9", "inferred"),))
         store, key = ConstructStore(REG), ("i1", "c1")
         store.open(key, slots.blank_state(REG, "c1", "snap1"))
         ctx = I.StageContext(I.Phase("a7", 1, "event"), store.snapshot(key), I.StableProfile("snap1", "c1", {}), (), {}, {}, key)
-        self.assertEqual([r.error.code for r in store.commit(ctx, parsed).rejected], ["evidence_not_visible"])
+        slots_, skipped = store.draft(ctx, parsed)
+        changes, unvalued = ModelValueChooser(REG, MockModel(REG)).choose(ctx, parsed, slots_)
+        result = store.commit(ctx, changes, parsed.evidence, skipped, unvalued)
+        self.assertIn("evidence_not_visible", [r.error.code for r in result.rejected])
 
 
 class MockThroughTheStore(unittest.TestCase):
@@ -179,28 +167,21 @@ class MockThroughTheStore(unittest.TestCase):
             upstream[stage] = out.product
             ctx = I.StageContext(I.Phase("a7", n, KINDS[stage]), store.snapshot(key), I.StableProfile("snap1", "c1", {}),
                                  (RECORD,), upstream, {}, key)
-            result = store.commit(ctx, out)
+            slots_, skipped = store.draft(ctx, out)
+            changes, unvalued = ModelValueChooser(REG, MockModel(REG)).choose(ctx, out, slots_)
+            result = store.commit(ctx, changes, out.evidence, skipped, unvalued)
             self.assertEqual(result.rejected, (), stage)
             self.assertEqual(result.soft_flags, (), stage)
             self.assertTrue(result.accepted, stage)
         snap = store.snapshot(key)
-        self.assertIn("b-a7#0", snap.dynamic["d.cognition.belief"])
+        self.assertIn("b-a7-1", snap.dynamic["d.cognition.belief"])
         self.assertEqual(snap.dynamic["d.policy.current_strategy"]["dm.conflict.conflict_mode"]["c2"], "合作")
-        self.assertIn("m-a7#0", snap.memory["m.entry"])
+        self.assertIn("m-a7", snap.memory["m.entry"])
 
-    def test_nothing_seen_means_no_proposals(self):
+    def test_nothing_seen_means_no_judgments(self):
         for stage in KINDS:
             out = parse_output(stage, mock_output(stage, records=()), REG, I.EvidenceSet(()))
-            self.assertEqual((out.proposals, out.judgments), ((), ()), stage)
-
-
-def decoded(reply):
-    """A reply as the decoder returns it: proposal keys as one string per key level."""
-    out = copy.deepcopy(reply)
-    for p in out.get("proposals", []):
-        if isinstance(p.get("key"), str):
-            p["key"] = p["key"].split("/")
-    return out
+            self.assertEqual(out.judgments, (), stage)
 
 
 class FakeTransport:
@@ -223,9 +204,8 @@ class Chat(unittest.TestCase):
         narrow = narrow_evidence(schema, ["a#1", "b#2", "a#1"])
         props = narrow["properties"]
         self.assertEqual(narrow["$defs"]["evidence"]["items"]["enum"], ["a#1", "b#2"])
-        for name in ("judgments", "proposals"):
-            for branch in props[name]["items"]["anyOf"]:
-                self.assertEqual(branch["properties"]["evidence"], {"$ref": "#/$defs/evidence"})
+        for branch in props["judgments"]["items"]["anyOf"]:
+            self.assertEqual(branch["properties"]["evidence"], {"$ref": "#/$defs/evidence"})
         self.assertEqual(props["evidence_notes"]["items"]["properties"]["event"], {"enum": ["a#1", "b#2"]})
         self.assertEqual(props["product"], schema["properties"]["product"])
         self.assertEqual(schema, stage_schema("S1", REG))                    # the original is untouched
@@ -236,50 +216,6 @@ class Chat(unittest.TestCase):
         self.assertEqual((narrow_evidence(schema, [])["$defs"]["evidence"]["maxItems"],
                           empty["evidence_notes"]["maxItems"]), (0, 0))
 
-    def test_proposal_addresses_follow_the_state_layout(self):
-        schema = stage_schema("S2", REG)
-        base = {"reason": "依据", "grade": None, "evidence": [], "mechanisms": []}
-        ok = [{"construct_id": "d.goal.goal_commitment", "key": "g1", "field": None, "after": .6, **base, "grade": 2},
-              {"construct_id": "d.goal.goals_now", "key": "g-setup", "field": "content", "after": "先交付前两批", **base},
-              {"construct_id": "d.goal.goals_now", "key": "g-setup", "field": None,
-               "after": {"content": "先交付前两批", "priority": .7}, **base}]
-        bad = [{"construct_id": "d.goal.goal_commitment", "key": "g1", "field": "commitment", "after": .6, **base},
-               {"construct_id": "d.goal.goals_now", "key": "g-setup", "field": "content",
-                "after": {"content": "前两批"}, **base},
-               {"construct_id": "d.goal.goals_now", "key": "g-setup", "field": None, "after": {"note": "x"}, **base},
-               {"construct_id": "d.goal.goals_now", "key": None, "field": "content", "after": "x", **base}]
-        items = schema["properties"]["proposals"]["items"]
-        for p in ok:
-            self.assertEqual(validate(items, p, root=schema), [], p)
-        for p in bad:
-            self.assertTrue(validate(items, p, root=schema), p)
-        s1 = stage_schema("S1", REG)
-        domain = {"construct_id": "d.cognition.self_evaluation", "key": None, "field": "domains.work", "after": .5, **base}
-        if "d.cognition.self_evaluation" in stage_constructs("S1", REG):
-            items = s1["properties"]["proposals"]["items"]
-            self.assertEqual(validate(items, domain, root=s1), [])
-            self.assertTrue(validate(items, {**domain, "after": 3}, root=s1))           # z kind: -2..2
-        self.assertNotIn('"pattern"', json.dumps(stage_schema("S3", REG)))            # xgrammar drops enforcement
-        compact = compact_schema(schema)                                         # the prompt form stays short
-        self.assertNotIn("$defs", compact)
-        self.assertEqual(compact["properties"]["proposals"]["items"]["properties"]["construct_id"]["enum"],
-                         stage_constructs("S2", REG))
-        self.assertLess(len(json.dumps(compact, ensure_ascii=False)), 10000)
-
-    def test_keys_are_decoded_as_one_string_per_level(self):
-        schema = keys_as_lists(stage_schema("S2", REG))
-        branches = {b["properties"]["construct_id"]["const"]: b for b in schema["properties"]["proposals"]["items"]["anyOf"]}
-        self.assertEqual(branches["d.policy.current_strategy"]["properties"]["key"],
-                         {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "minLength": 1}})
-        self.assertEqual(branches["d.goal.goal_commitment"]["properties"]["key"]["maxItems"], 1)
-        base = {"reason": "依据", "grade": None, "evidence": [], "mechanisms": [], "field": None}
-        bad = {"construct_id": "d.policy.current_strategy", "key": ["strategy"], "after": "回避", **base}
-        self.assertTrue(validate(schema["properties"]["proposals"]["items"], bad, root=schema))
-        good = {**bad, "key": ["dm.conflict.conflict_mode", "c2"]}
-        self.assertEqual(validate(schema["properties"]["proposals"]["items"], good, root=schema), [])
-        self.assertEqual(join_keys({"proposals": [good]})["proposals"][0]["key"], "dm.conflict.conflict_mode/c2")
-        self.assertNotIn("x-key-parts", json.dumps(schema))
-
     def test_audience_is_limited_to_the_other_present_ids(self):
         narrow = narrow_evidence(stage_schema("S2", REG), ["a#1"], ["c2", "c3"])
         self.assertEqual(narrow["properties"]["product"]["properties"]["expression"]["properties"]["audience"],
@@ -289,6 +225,15 @@ class Chat(unittest.TestCase):
         self.assertTrue(any("audience" in e for e in validate(narrow, reply)))
         self.assertEqual(narrow_evidence(stage_schema("S2", REG), ["a#1"])["properties"]["product"],
                          stage_schema("S2", REG)["properties"]["product"])          # no ids given: unchanged
+        s1 = narrow_evidence(stage_schema("S1", REG), ["a#1"], ["c2"])           # every "about" too
+        appraisal = next(b for b in s1["properties"]["judgments"]["items"]["anyOf"]
+                         if b["properties"]["dm_id"]["const"] == "dm.affect.primary_secondary_appraisal")
+        self.assertEqual(appraisal["properties"]["output"]["properties"]["about"], {"enum": ["c2", None]})
+        hypothesis = s1["properties"]["product"]["properties"]["hypotheses"]["items"]["properties"]["about"]
+        self.assertEqual(hypothesis, {"enum": ["c2", None]})
+        compact = compact_schema(stage_schema("S2", REG))
+        self.assertNotIn("$defs", compact)
+        self.assertLess(len(json.dumps(compact, ensure_ascii=False)), 6000)
 
     def test_an_option_of_another_process_breaks_the_schema(self):
         reply = mock_output("S1")
@@ -306,8 +251,7 @@ class Chat(unittest.TestCase):
 
     def test_one_call_per_stage_with_view_task_and_schema(self):
         reply = mock_output("S2")
-        self.assertTrue(any(p["key"] for p in reply["proposals"]))
-        transport = FakeTransport(decoded(reply))
+        transport = FakeTransport(reply)
         result = ChatModel(transport).complete("S2", view("S2", upstream={"S1": parse_output("S1", mock_output("S1"), REG, EV).product}),
                                                stage_schema("S2", REG))
         self.assertEqual((result.output, result.reasoning), (reply, "想了一下"))
@@ -317,7 +261,7 @@ class Chat(unittest.TestCase):
         ids = [f"{r['action_id']}#{r['order_index']}" for r in payload["view"]["records"]]
         self.assertTrue(ids)
         others = [c for c in payload["view"]["present"] if c != payload["view"]["self_id"]]
-        full = keys_as_lists(narrow_evidence(stage_schema("S2", REG), ids, others))
+        full = narrow_evidence(stage_schema("S2", REG), ids, others)
         self.assertEqual(transport.schemas[0], full)                        # the full schema goes to the decoder
         self.assertEqual(payload["output_schema"], compact_schema(full))    # the prompt carries the short form
         self.assertEqual(payload["view"]["task"]["stage"], "S2")
@@ -341,7 +285,7 @@ class Chat(unittest.TestCase):
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
                 received.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-                message = {"content": json.dumps(decoded(reply), ensure_ascii=False), "reasoning_content": "先对照预期"}
+                message = {"content": json.dumps(reply, ensure_ascii=False), "reasoning_content": "先对照预期"}
                 raw = json.dumps({"model": "fake-2026", "choices": [{"message": message}]}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -361,7 +305,7 @@ class Chat(unittest.TestCase):
                 model = ChatModel(ChatBackend())
                 result = model.complete("S3", view("S3"), stage_schema("S3", REG))
             self.assertEqual((result.output, result.reasoning, model.model), (reply, "先对照预期", "fake"))
-            self.assertEqual(json.loads(result.raw), decoded(reply))           # raw: as the model sent it
+            self.assertEqual(json.loads(result.raw), reply)
             body = received[0]
             sent = json.loads(body["messages"][1]["content"])
             self.assertEqual(body["response_format"]["type"], "json_schema")

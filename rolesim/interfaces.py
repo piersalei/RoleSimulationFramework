@@ -8,10 +8,13 @@ Four top-level interfaces, each with a few sub-interfaces:
     3 IStage[P]         S1 event modeling / S2 action plan / S3 long-term evolution
                         3.1 IEvidenceGate  3.2 IMechanism  3.3 IModel  3.4 IExpresser
     4 IStateStore       the only place state is written         4.1 IUpdateOperator  4.2 IMagnitude
-                                                                4.3 IValidator
+                                                                4.3 IValidator  4.4 IValueChooser
 
-Dependencies point down only: IRoleAgent -> ITurnRunner -> IStage / IStateStore. A stage only
-*proposes* changes (ChangeProposal); IStateStore.commit turns accepted ones into a new AgentState.
+Dependencies point down only: IRoleAgent -> ITurnRunner -> IStage / IStateStore. Design constraint
+C8 (plan/08 §1, 状态变化规则v1 §5.0): a stage only *judges* (product + judgments, no state); the
+update operators turn judgments into ChangeSlots by their rule cards, with the legal band computed
+before any value is chosen; IValueChooser picks a value inside each band (the model, with a
+reason); IStateStore.commit validates and writes. The model never names a construct or an address.
 
 This module holds contracts only: no behaviour beyond small checks on the data types. Values that
 must not change once produced (products, profiles, states, changes) are frozen dataclasses with
@@ -38,13 +41,13 @@ __all__ = [
     "ReviewItem", "EnableConfig", "AgentState", "Construct", "DecisionMechanism", "OperatorRule",
     # 3
     "IStage", "IEvidenceGate", "IMechanism", "IModel", "IExpresser", "Phase", "StageContext",
-    "StageOutput", "ChangeProposal", "EvidenceRef", "Excluded", "EvidenceSet", "Judgment",
+    "StageOutput", "EvidenceRef", "Excluded", "EvidenceSet", "Judgment",
     "PromptView", "ModelResult", "Appraisal", "Hypothesis", "SituationInterpretation",
     "ActionCandidate", "SwitchCondition", "Commitment", "Expression", "ActionPlan",
     "CommitmentRuling", "RelationCourse", "EvolutionResult",
     # 4
-    "IStateStore", "IUpdateOperator", "IMagnitude", "IValidator", "Band", "StateChange",
-    "RejectedChange", "CommitResult", "Violation",
+    "IStateStore", "IUpdateOperator", "IMagnitude", "IValidator", "IValueChooser", "Band", "ChangeSlot",
+    "Skipped", "StateChange", "RejectedChange", "CommitResult", "Violation",
 ]
 
 
@@ -54,7 +57,7 @@ class AgentCallError(RuntimeError):
 
 
 class StageError(RuntimeError):
-    """A stage failed (e.g. model output breaks the schema); it produces no proposals."""
+    """A stage failed (e.g. model output breaks the schema); it produces no judgments."""
 
 
 class ModelError(RuntimeError):
@@ -329,27 +332,6 @@ class Judgment:
     hands_to: tuple[str, ...]
 
 
-@dataclass(frozen=True)
-class ChangeProposal:
-    """What a stage may produce instead of writing state.
-
-    Address: `key` picks the instance ("/"-joined when a construct has two key levels, e.g.
-    "c2/h1" for one harm event towards c2); `field` is a "."-path inside it; None writes the
-    whole instance. `grade` is this role's event grade for this dimension (needed for numeric
-    changes); `evidence` / `mechanisms` say what the change rests on (default: the judgments
-    handed to the operator); `operator` defaults to the construct's primary writer.
-    """
-    construct_id: str
-    key: Optional[str]
-    field: Optional[str]
-    after: Any
-    reason: str
-    grade: Optional[int] = None
-    evidence: tuple[EvidenceRef, ...] = ()
-    mechanisms: tuple[str, ...] = ()
-    operator: Optional[str] = None
-
-
 # -- S1 SituationInterpretation ---------------------------------------------
 @dataclass(frozen=True)
 class Appraisal:
@@ -365,6 +347,8 @@ class Hypothesis:
     support: tuple[str, ...]                # record ids
     counter: tuple[str, ...]
     discriminator: str                      # what would tell it apart
+    about: Optional[str] = None             # the character id the hypothesis is about (other_model_update)
+    kind: Optional[str] = None              # goal / belief / intention / emotion / ability / constraint
 
 
 @dataclass(frozen=True)
@@ -477,8 +461,8 @@ class StageContext:
 
 @dataclass(frozen=True)
 class StageOutput(Generic[P]):
+    """What a stage returns: its product and the decision processes' judgments. No state (C8)."""
     product: P
-    proposals: tuple[ChangeProposal, ...] = ()
     judgments: tuple[Judgment, ...] = ()
     evidence: EvidenceSet = field(default_factory=lambda: EvidenceSet(()))   # what the stage could see
     cues: Mapping[str, float] = field(default_factory=dict)   # S1 only: skill-activation cues, never state
@@ -489,7 +473,7 @@ class IStage(Protocol[P_co]):
     name: StageName
 
     def run(self, ctx: StageContext) -> StageOutput[P_co]:
-        """Read ctx.state only; return a product and proposals. Raise StageError on bad output."""
+        """Read ctx.state only; return a product and judgments. Raise StageError on bad output."""
         ...
 
 
@@ -568,6 +552,48 @@ class Band:
 
 
 @dataclass(frozen=True)
+class ChangeSlot:
+    """One change an update operator will make, waiting for its value (C8).
+
+    The operator decides the address, the direction and the event grade from its rule card and the
+    judgments; IMagnitude sets `band` before a value is chosen. Three kinds:
+      numeric   `band` set, `before` a number: IValueChooser picks |change| inside the band
+      initial   `band` None, `before` None, `value_range` set: the first value of an unknown numeric
+                field (unknown is not 0, 登记 §3.2), picked inside the field's range
+      fixed     `content` set: a record or a category the operator assembled (a new belief, a
+                commitment stage); written as is
+    """
+    slot_id: str
+    construct_id: str
+    key: Optional[str]
+    field: Optional[str]
+    before: Any
+    direction: int                          # +1 / -1 for numeric slots; 0 otherwise
+    grade: Optional[int]                    # this role's event grade for the dimension (规则 §3.6)
+    band: Optional[Band]
+    evidence: tuple[EvidenceRef, ...]
+    update_operator: str
+    decision_mechanisms: tuple[str, ...]
+    stage: StageName
+    group: str
+    basis: str                              # which rule the slot follows, for the log and the chooser
+    content: Any = None
+    value_range: Optional[tuple[float, float]] = None
+
+    @property
+    def needs_value(self) -> bool:
+        return self.content is None and (self.band is not None or self.value_range is not None)
+
+
+@dataclass(frozen=True)
+class Skipped:
+    """A change an operator's rule card would make but this version does not (or cannot) write."""
+    update_operator: str
+    reason: str
+    detail: str = ""
+
+
+@dataclass(frozen=True)
 class StateChange:
     construct_id: str
     key: Optional[str]
@@ -602,7 +628,7 @@ class Violation:
 
 @dataclass(frozen=True)
 class RejectedChange:
-    change: Union[StateChange, ChangeProposal]   # the proposal when no change could be drafted
+    change: Union[StateChange, ChangeSlot]   # the slot when no value could be chosen
     group: str
     error: Violation
 
@@ -613,6 +639,7 @@ class CommitResult:
     accepted: tuple[StateChange, ...]
     rejected: tuple[RejectedChange, ...] = ()
     soft_flags: tuple[Violation, ...] = ()
+    skipped: tuple[Skipped, ...] = ()
 
 
 class IStateStore(Protocol):
@@ -622,12 +649,19 @@ class IStateStore(Protocol):
 
     def snapshot(self, key: SessionKey) -> AgentState: ...
 
-    def commit(self, ctx: StageContext, output: StageOutput) -> CommitResult:
-        """Proposal -> operator -> band -> validator -> atomic commit per dependency group.
+    def draft(self, ctx: StageContext, output: StageOutput) -> tuple[list[ChangeSlot], list[Skipped]]:
+        """Every update operator allowed in this stage reads the judgments and the product and
+        returns its slots (bands already computed); nothing is written."""
+        ...
 
-        `ctx.state` must be the current snapshot. A hard error rejects its whole group; other
-        groups commit. Retrying the same (character, event, phase, kind) is a no-op. Stable is
-        never written.
+    def commit(self, ctx: StageContext, changes: Sequence[StateChange], evidence: EvidenceSet,
+               skipped: Sequence[Skipped] = (), unvalued: Sequence[RejectedChange] = ()) -> CommitResult:
+        """Validator -> atomic commit per dependency group.
+
+        `ctx.state` must be the current snapshot. A hard error (out of band included: rejected,
+        never clipped) rejects its whole group; other groups commit. Retrying the same (character,
+        event, phase, kind) is a no-op. Stable is never written. `skipped` / `unvalued` are carried
+        into the result for the log.
         """
         ...
 
@@ -635,10 +669,18 @@ class IStateStore(Protocol):
 class IUpdateOperator(Protocol):
     name: str                               # one of OPERATOR_NAMES
 
-    def propose(self, ctx: StageContext, proposals: list[ChangeProposal],
-                judgments: list[Judgment]) -> tuple[list[StateChange], list[RejectedChange]]:
-        """Whitelisted proposals only; fills before / evidence / mechanisms / band / group.
-        Proposals it cannot draft (no evidence, conflicting values, ...) come back rejected."""
+    def propose(self, ctx: StageContext, output: StageOutput) -> tuple[list[ChangeSlot], list[Skipped]]:
+        """Reads the judgments handed to this operator and the product; by its rule card decides
+        whether to write, where, in which direction and at which event grade, and asks IMagnitude
+        for the band. Never takes a value from the model."""
+        ...
+
+
+class IValueChooser(Protocol):
+    def choose(self, ctx: StageContext, output: StageOutput,
+               slots: Sequence[ChangeSlot]) -> tuple[list[StateChange], list[RejectedChange]]:
+        """Slots that need a value get one inside their band (or range) with a reason; fixed slots
+        pass through. A slot that gets no valid value comes back as a RejectedChange, not written."""
         ...
 
 

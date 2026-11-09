@@ -13,6 +13,7 @@ from rolesim.stage.model import EXPRESS_PROMPT, ChatModel, MockModel, view_paylo
 from rolesim.role.registry import Registry
 from rolesim.stage.schemas import EXPRESS_SCHEMA
 from rolesim.stage.stages import ModelStage, model_stages, self_profile, state_text, visible_records
+from rolesim.state.chooser import ModelValueChooser
 from rolesim.state.store import ConstructStore
 
 REG = Registry.load()
@@ -136,6 +137,7 @@ class Views(unittest.TestCase):
 class Stages(unittest.TestCase):
     def test_three_stages_commit_through_the_store(self):
         stages, store = model_stages(REG, MockModel(REG)), ConstructStore(REG)
+        chooser = ModelValueChooser(REG, MockModel(REG))
         store.open(KEY, entry_state())
         upstream, kinds = {}, {"S1": "event", "S2": "plan", "S3": "feedback"}
         for n, stage in enumerate(("S1", "S2", "S3"), 1):
@@ -144,7 +146,9 @@ class Stages(unittest.TestCase):
             c = ctx(kinds[stage], store.snapshot(KEY), upstream=dict(upstream), phase_no=n)
             out = stages[stage].run(c)
             upstream[stage] = out.product
-            result = store.commit(c, out)
+            slots, skipped = store.draft(c, out)
+            changes, unvalued = chooser.choose(c, out, slots)
+            result = store.commit(c, changes, out.evidence, skipped, unvalued)
             self.assertEqual((result.rejected, bool(result.accepted)), ((), True), stage)
         self.assertIsInstance(upstream["S3"], I.EvolutionResult)
 

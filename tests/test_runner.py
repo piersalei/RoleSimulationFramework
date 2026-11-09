@@ -19,6 +19,7 @@ from rolesim.role.registry import Registry
 from rolesim.role.roles import load_role, load_scene
 from rolesim.agent.runner import TurnRunner
 from rolesim.stage.stages import model_stages
+from rolesim.state.chooser import ModelValueChooser
 from rolesim.agent.staged import StagedRoleAgent
 from rolesim.state.store import ConstructStore
 from rolesim.agent.trace import JsonlTrace, MemoryTrace
@@ -68,7 +69,8 @@ def runner(model=None, trace=None):
     model = model or MockModel(REG)
     trace = trace if trace is not None else MemoryTrace()
     store = ConstructStore(REG)
-    run = TurnRunner(store, model_stages(REG, model, trace=trace), ModelExpresser(REG, model, trace), trace)
+    run = TurnRunner(store, model_stages(REG, model, trace=trace), ModelExpresser(REG, model, trace),
+                     ModelValueChooser(REG, model, trace), trace)
     repo = ProfileRepository(REG, roles=ROLES)
     profile = repo.load("role1")
     run.begin(KEY, repo.enter(profile, BOOT), profile, repo.background("role1", BOOT))
@@ -89,7 +91,7 @@ class Trace(unittest.TestCase):
             phases = [json.loads(l) for l in (folder / "phases.jsonl").read_text().splitlines()]
             calls = [json.loads(l) for l in (folder / "model_calls.jsonl").read_text().splitlines()]
             self.assertEqual([next(iter(p["products"])) for p in phases], ["S1", "S2"])
-            self.assertEqual([c["stage"] for c in calls], ["S1", "S2", "express"])
+            self.assertEqual([c["stage"] for c in calls], ["S1", "values", "S2", "express"])     # values: inside the bands (C8)
             self.assertEqual(phases[0]["commit"]["output_state_id"], phases[1]["input_state_id"])
             self.assertIn("这周五必须交", calls[0]["input"]["records"][-1]["content"])
         with self.assertRaises(I.InterfaceError):
@@ -118,7 +120,7 @@ class Flow(unittest.TestCase):
         content, state = run.run(KEY, [ENV, ZHOU, WANG], PRESENT)
         validate_action_content(content, PRESENT, "role1")
         self.assertEqual(stages_of(trace), ["S1", "S1", "S1", "S2"])
-        self.assertEqual([c["stage"] for c in trace.calls], ["S1", "S1", "S1", "S2", "express"])
+        self.assertEqual([c["stage"] for c in trace.calls], ["S1", "values", "S1", "values", "S1", "values", "S2", "express"])
         self.assertEqual([p["event_id"] for p in trace.phases], ["t001-env1", "t002-role2", "t003-role3", "plan"])
         chain = [(p["input_state_id"], p["output_state_id"]) for p in trace.phases]
         self.assertTrue(all(a[1] == b[0] for a, b in zip(chain, chain[1:])))
@@ -146,20 +148,36 @@ class Flow(unittest.TestCase):
         self.assertEqual(stages_of(trace), ["S1", "S2", "S2"])
 
     def test_rejected_plan_is_replanned_with_the_reasons(self):
-        def bad_strategy(output):
-            output["proposals"][0]["key"] = "dm.none.thing/role2"
-            return output
+        """行动计划 skill §4.3. The model no longer writes state (C8), so a rejection of the plan's own
+        group can only come from the store's checks; a validator that refuses the first (or every)
+        commitment write stands in for one."""
+        def refusing(times):
+            def wrap(store):
+                check, seen = store.validator.check, []
 
-        model = Flaky(REG, {("S2", 1): bad_strategy})
-        run, _, trace = runner(model)
+                def refuse(change, snapshot, evidence):
+                    out = check(change, snapshot, evidence)
+                    if change.construct_id == "d.policy.action_commitment" and len(seen) < times:
+                        seen.append(change)
+                        out = out + [I.Violation("hard", "test_refusal", "refused for the test")]
+                    return out
+                store.validator.check = refuse
+            return wrap
+
+        model = MockModel(REG)
+        model.views = []
+        complete = model.complete
+        model.complete = lambda stage, view, schema: (model.views.append((stage, view)), complete(stage, view, schema))[1]
+        run, store, trace = runner(model)
+        refusing(1)(store)
         content, _ = run.run(KEY, [ZHOU], PRESENT)
         self.assertEqual(stages_of(trace), ["S1", "S2", "S2"])
         second = [v for s, v in model.views if s == "S2"][1]
-        self.assertIn("unregistered_mechanism", {r["code"] for r in second.upstream["rejected"]})
+        self.assertIn("test_refusal", {r["code"] for r in second.upstream["rejected"]})
         self.assertIsNotNone(content["speech"])
 
-        model = Flaky(REG, {("S2", 1): bad_strategy, ("S2", 2): bad_strategy})
-        run, _, _ = runner(model)
+        run, store, _ = runner()
+        refusing(5)(store)
         with self.assertRaisesRegex(I.StageError, "rejected 2 times"):
             run.run(KEY, [ZHOU], PRESENT)
 

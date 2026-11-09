@@ -89,14 +89,21 @@ def _phase_lines(phase, names):
         body = [f"{head}：{product['expected_vs_actual']}" + (f"；关系：{courses}" if courses else "")]
     for c in phase["commit"]["accepted"]:
         where = (f"[{c['key']}]" if c["key"] else "") + (f".{c['field']}" if c["field"] else "")
-        band = f"，{c['band']['name']}档" if c.get("band") else ""
+        band = f"，{c['band']['name']}档 [{c['band']['low']}, {c['band']['high']}]" if c.get("band") else ""
         flag = f"，标记 {c['flag']}" if c.get("flag") else ""
+        why = f"；理由：{_short(c['reason'], 60)}" if c.get("band") and c.get("reason") else ""
         body.append(f"  - 写入 {names.get(c['construct_id'], c['construct_id'])}{where}：{_short(c['before'])} → "
-                    f"{_short(c['after'])}（{c['update_operator']}{band}{flag}）")
+                    f"{_short(c['after'])}（{c['update_operator']}{band}{flag}{why}）")
     for r in phase["commit"]["rejected"]:
         change = r["change"]
         body.append(f"  - 拒绝 {names.get(change['construct_id'], change['construct_id'])}"
                     f"{'[' + change['key'] + ']' if change.get('key') else ''}：{r['error']['code']} {_short(r['error']['detail'], 80)}")
+    skipped = {}
+    for x in phase["commit"].get("skipped") or []:
+        skipped.setdefault((x["update_operator"], x["reason"]), 0)
+        skipped[(x["update_operator"], x["reason"])] += 1
+    if skipped:
+        body.append("  - 未写：" + "；".join(f"{op} {reason}" + (f" ×{n}" if n > 1 else "") for (op, reason), n in skipped.items()))
     return body
 
 

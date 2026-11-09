@@ -22,6 +22,7 @@ from ..stage.expresser import ModelExpresser
 from ..interfaces import FULL_MODE, MODES, AgentCallError, ModelError, StageError
 from .runner import TurnRunner
 from ..stage.stages import model_stages
+from ..state.chooser import ModelValueChooser
 from ..state.store import ConstructStore
 from .trace import MemoryTrace
 
@@ -41,7 +42,8 @@ class StagedRoleAgent(RoleAgentBase):
         self.repository = repository or ProfileRepository(registry, ProfileCompiler(registry, model), roles)
         self.store = store or ConstructStore(registry)
         self.runner = TurnRunner(self.store, model_stages(registry, model, trace=self.trace),
-                                 ModelExpresser(registry, model, self.trace), self.trace)
+                                 ModelExpresser(registry, model, self.trace),
+                                 ModelValueChooser(registry, model, self.trace), self.trace)
 
     def _check_mode(self, mode):
         if mode not in MODES:

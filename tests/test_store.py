@@ -1,4 +1,9 @@
-"""State writes (plan/10 §4): layout, IMagnitude, IValidator, IUpdateOperator, IStateStore."""
+"""State writes (plan/10 §4): layout, IMagnitude, IValidator, IStateStore.commit.
+
+The update operators and the value chooser have their own tests (test_operators.py). Here a change
+is built the way an operator + chooser would build it (P -> StateChange: before from the snapshot,
+band from IMagnitude at the given grade, group and stage from the registry), so every validator
+rule is exercised on the changes the store actually receives."""
 import dataclasses
 import re
 import unittest
@@ -6,6 +11,7 @@ import unittest
 from rolesim import interfaces as I
 from rolesim.state import slots
 from rolesim.state.magnitude import BASIS, FAST, SLOW, Magnitude
+from rolesim.state.slots import AddressError
 from rolesim.role.registry import FILES, SOURCE_DIR, Registry
 from rolesim.state.store import ConstructStore
 
@@ -40,7 +46,34 @@ def entry(values=BASE, config=None):
 
 
 def P(cid, key, field, after, grade=None, evidence=(W,), mechanisms=(), operator=None, reason="依据可见事件"):
-    return I.ChangeProposal(cid, key, field, after, reason, grade, tuple(evidence), tuple(mechanisms), operator)
+    """A change spec; StoreCase.commit turns it into the StateChange an operator + chooser would make."""
+    return dict(cid=cid, key=key, field=field, after=after, grade=grade, evidence=tuple(evidence),
+                mechanisms=tuple(mechanisms), operator=operator, reason=reason)
+
+
+MAG = Magnitude(REG)
+
+
+def change(spec, ctx):
+    try:
+        construct = REG.construct(spec["cid"])
+    except KeyError:
+        construct = None
+    operator = spec["operator"] or (construct.writer if construct else None) or "belief_revision"
+    try:
+        before = slots.get(ctx.state, spec["cid"], spec["key"], spec["field"])
+    except AddressError:
+        before = None
+    band = None
+    numeric = all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (before, spec["after"]))
+    if construct and numeric and spec["grade"] and operator != "decay_or_recovery" and spec["after"] != before:
+        direction = 1 if spec["after"] > before else -1
+        band = MAG.range(construct, spec["field"], spec["grade"], direction, spec["evidence"], ctx.stable,
+                         slots.get(ctx.state, spec["cid"], spec["key"], None))
+    rule = REG.operator(operator) if operator in REG.ids("operator") else None
+    return I.StateChange(spec["cid"], spec["key"], spec["field"], before, spec["after"], spec["evidence"], operator,
+                         spec["mechanisms"], I.STAGE_OF_KIND[ctx.phase.kind], band, rule.group if rule else "",
+                         spec["reason"], grade=spec["grade"])
 
 
 def profile(**modules):
@@ -61,8 +94,9 @@ class StoreCase(unittest.TestCase):
         self.phase += 1
         return I.StageContext(I.Phase("a1", self.phase, kind), self.store.snapshot(KEY), stable, (), {}, {}, KEY)
 
-    def commit(self, kind, *proposals, judgments=(), evidence=EV, stable=NOBODY):
-        return self.store.commit(self.ctx(kind, stable), I.StageOutput(None, proposals, tuple(judgments), evidence))
+    def commit(self, kind, *specs, evidence=EV, stable=NOBODY):
+        ctx = self.ctx(kind, stable)
+        return self.store.commit(ctx, [change(s, ctx) for s in specs], evidence)
 
     def codes(self, result):
         return [r.error.code for r in result.rejected]
@@ -188,20 +222,19 @@ class Commit(StoreCase):
         self.assertEqual([c.construct_id for c in r.accepted], ["d.policy.current_strategy"])
         self.assertEqual(self.value("d.affect.stress", None, "level"), .2)
 
-    def test_judgments_supply_evidence_and_mechanisms(self):
-        j = I.Judgment("dm.affect.primary_secondary_appraisal", "威胁", {}, (W2,), ("emotion_update",))
-        r = self.commit(EVENT, P("d.affect.stress", None, "level", .35, grade=2, evidence=()), judgments=[j])
-        self.assertEqual((r.accepted[0].evidence, r.accepted[0].decision_mechanisms), ((W2,), (j.dm_id,)))
-        r = self.commit(EVENT, P("d.affect.stress", None, "level", .5, grade=2, evidence=()))
-        self.assertEqual(self.codes(r), ["no_evidence"])
+    def test_a_change_needs_evidence(self):
+        with self.assertRaises(I.InterfaceError):
+            self.commit(EVENT, P("d.affect.stress", None, "level", .35, grade=2, evidence=()))
 
-    def test_duplicates_merge_and_conflicts_reject(self):
-        r = self.commit(EVENT, P("d.affect.stress", None, "level", .35, grade=2),
-                        P("d.affect.stress", None, "level", .35, grade=2, evidence=(W2,)))
-        self.assertEqual(r.accepted[0].evidence, (W, W2))
-        r = self.commit(EVENT, P("d.affect.stress", None, "level", .5, grade=2), P("d.affect.stress", None, "level", .45, grade=2))
-        self.assertEqual(self.codes(r), ["conflict_unresolved", "conflict_unresolved"])
-        self.assertEqual(self.value("d.affect.stress", None, "level"), .35)
+    def test_unvalued_slots_fail_their_group_and_are_kept_in_the_log(self):
+        ctx = self.ctx(EVENT)
+        slot = I.ChangeSlot("emotion_update:1.0", "d.affect.stress", None, "level", .2, 1, 2, I.Band("small", .1, .25),
+                            (W,), "emotion_update", (), "S1", "affect_self_relation_group", "规则 §5.1")
+        unvalued = [I.RejectedChange(slot, slot.group, I.Violation("hard", "no_value", "values call failed"))]
+        skipped = [I.Skipped("self_state_update", "not_implemented")]
+        r = self.store.commit(ctx, [change(P("d.affect.emotion", None, "intensity", .5, grade=2), ctx)], EV, skipped, unvalued)
+        self.assertEqual(sorted(self.codes(r)), ["group_rejected", "no_value"])
+        self.assertEqual((r.accepted, r.skipped), ((), tuple(skipped)))
 
     def test_unknown_becomes_active_and_no_change_keeps_the_state(self):
         r = self.commit(EVENT, P("d.cognition.shame", None, "load", .2))
@@ -213,18 +246,18 @@ class Commit(StoreCase):
 
     def test_retry_is_a_no_op_and_a_changed_retry_is_refused(self):
         ctx = self.ctx(FEEDBACK)
-        out = I.StageOutput(None, (P("d.relation.trust", "c2", "value", .4, grade=3),), (), EV)
-        first = self.store.commit(ctx, out)
-        self.assertIs(self.store.commit(ctx, out), first)
+        out = [change(P("d.relation.trust", "c2", "value", .4, grade=3), ctx)]
+        first = self.store.commit(ctx, out, EV)
+        self.assertIs(self.store.commit(ctx, out, EV), first)
         with self.assertRaises(I.InterfaceError):
-            self.store.commit(ctx, I.StageOutput(None, (P("d.relation.trust", "c2", "value", .35, grade=3),), (), EV))
+            self.store.commit(ctx, [change(P("d.relation.trust", "c2", "value", .35, grade=3), ctx)], EV)
         self.assertEqual(len(self.store.history(KEY)), 1)
 
     def test_stale_context_and_sessions(self):
         old = self.ctx(FEEDBACK)
         self.commit(FEEDBACK, P("d.relation.trust", "c2", "value", .4, grade=3))
         with self.assertRaises(I.InterfaceError):
-            self.store.commit(old, I.StageOutput(None, (P("d.relation.trust", "c2", "value", .3, grade=3),), (), EV))
+            self.store.commit(old, [change(P("d.relation.trust", "c2", "value", .3, grade=3), old)], EV)
         with self.assertRaises(I.InterfaceError):
             self.store.open(KEY, entry())
         with self.assertRaises(I.InterfaceError):
@@ -239,10 +272,13 @@ class Commit(StoreCase):
         self.assertEqual(self.value("d.relation.trust", "c2", "value"), .6)
 
     def test_routing_refusals(self):
-        r = self.commit(FEEDBACK, P("s.values.schwartz_priorities", None, None, {}), P("d.affect.mood", None, None, 1),
-                        P("d.relation.trust", "c2", "value", .4, grade=3, operator="emotion_update"),
-                        P("d.relation.trust", "c2", "value", .4, grade=3, operator="free_write"))
-        self.assertEqual(self.codes(r), ["writes_stable", "unregistered_construct", "unregistered_operator", "not_in_whitelist"])
+        r = self.commit(FEEDBACK, P("d.affect.mood", None, None, 1, operator="emotion_update"),
+                        P("d.relation.trust", "c2", "value", .4, grade=3, operator="emotion_update"))
+        self.assertEqual(self.codes(r)[:2], ["unregistered_construct", "not_in_whitelist"])
+        for spec in (P("s.values.schwartz_priorities", None, None, {}, operator="belief_revision"),
+                     P("d.relation.trust", "c2", "value", .4, grade=3, operator="free_write")):
+            with self.assertRaises(I.InterfaceError):           # stable and unregistered operators never get a change
+                self.commit(FEEDBACK, spec)
 
 
 # -- IValidator: each rule ---------------------------------------------------------------------------
@@ -282,7 +318,7 @@ class Rules(StoreCase):
         store = ConstructStore(REG)
         store.open(("i9", "c1"), entry(BASE, I.EnableConfig(fields={"d.cognition.shame": False})))
         ctx = I.StageContext(I.Phase("a1", 1, EVENT), store.snapshot(("i9", "c1")), NOBODY, (), {}, {}, ("i9", "c1"))
-        r = store.commit(ctx, I.StageOutput(None, (P("d.cognition.shame", None, "load", .2),), (), EV))
+        r = store.commit(ctx, [change(P("d.cognition.shame", None, "load", .2), ctx)], EV)
         self.assertEqual(self.codes(r), ["unwritable_status"])
 
     def test_decay(self):
@@ -323,17 +359,8 @@ class Rules(StoreCase):
     def test_unknown_mechanism_and_soft_handoff(self):
         r = self.commit(FEEDBACK, P("d.relation.trust", "c2", "value", .4, grade=3, mechanisms=("dm.cog.none",)))
         self.assertEqual(self.codes(r), ["unregistered_mechanism"])
-        risk = I.Judgment("dm.choice.risk_ambiguity", None, {}, (W,), ())
-        r = self.commit(FEEDBACK, P("d.relation.trust", "c2", "value", .4, grade=3, mechanisms=(risk.dm_id,)), judgments=[risk])
+        r = self.commit(FEEDBACK, P("d.relation.trust", "c2", "value", .4, grade=3, mechanisms=("dm.choice.risk_ambiguity",)))
         self.assertEqual((self.codes(r), r.accepted[0].flag), ([], "unregistered_handoff"))
-
-    def test_a_change_citing_an_unjudged_process_is_rejected_with_its_group(self):
-        r = self.commit(PLAN, P("d.policy.current_strategy", "dm.conflict.conflict_mode/c2", None, "回避",
-                                mechanisms=("dm.conflict.conflict_mode",)),
-                        P("d.goal.goals_now", "g1", None, {"goal_id": "g1", "content": "说清楚", "priority": .6, "stage": "进行中",
-                                                            "core_goal": None, "source": "场景", "reason": "x"}))
-        self.assertIn("unjudged_mechanism", self.codes(r))
-        self.assertEqual(r.accepted, ())
 
 
 class HistoryChecks(StoreCase):

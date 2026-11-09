@@ -1,15 +1,19 @@
 """IStateStore (plan/10 §4): the only place a new AgentState comes from.
 
-commit(ctx, output), following 状态变化规则v1 §三 / §六 / §八:
+draft(ctx, output): every update operator allowed in this stage reads the judgments and the
+product and returns ChangeSlots with their bands (C8: the band exists before a value is chosen).
+IValueChooser (chooser.py) then gives each slot its value.
+
+commit(ctx, changes, evidence), following 状态变化规则v1 §三 / §六 / §八:
   1. `ctx.state` must be the session's current snapshot (one shared snapshot per phase).
   2. A retry of the same (session, event, phase, kind) returns the first result; a different
      payload under the same key is refused.
-  3. Each proposal goes to its operator (the construct's primary writer unless it names one),
-     which drafts a StateChange. Unchanged values are dropped. A decay draft on an address
-     another operator also writes in this commit is set aside (§5.11 "本算子不再处理").
-  4. IValidator checks every draft; the store adds the checks that need the whole stage output,
-     history or several changes: unjudged_mechanism (hard: the change cites a decision process
-     this stage did not judge), flip_without_new_evidence, uniform_relation_change (soft).
+  3. Unchanged values are dropped. A decay change on an address another operator also writes in
+     this commit is set aside (§5.11 "本算子不再处理").
+  4. IValidator checks every change (a value outside its band is a hard error: rejected, never
+     clipped); the store adds the soft checks that need history or several changes:
+     flip_without_new_evidence, uniform_relation_change. Slots that got no value (`unvalued`)
+     count as hard errors of their group.
   5. Any hard error rejects its whole dependency group; other groups commit. Soft anomalies
      are written and flagged.
   6. Accepted changes are applied to a copy; written constructs that were unknown become active.
@@ -22,7 +26,7 @@ import hashlib
 import math
 from dataclasses import replace
 
-from ..interfaces import AgentState, ChangeProposal, CommitResult, InterfaceError, RejectedChange, Violation
+from ..interfaces import STAGE_OF_KIND, AgentState, CommitResult, InterfaceError, RejectedChange, Skipped, Violation
 from .magnitude import Magnitude
 from .operators import operators
 from .slots import SLOTS, check_layout, layer_of, put
@@ -82,13 +86,49 @@ class ConstructStore:
         self._session(key)
         return tuple(result for _, result in self._results[key].values())
 
+    # -- draft ------------------------------------------------------------------------------
+    def draft(self, ctx, output):
+        """Every operator allowed in this stage proposes its slots; nothing is written."""
+        self._session(ctx.key)
+        stage = STAGE_OF_KIND[ctx.phase.kind]
+        slots, skipped = [], []
+        for name in self.registry.ids("operator"):
+            if stage in self.registry.operator(name).stages:
+                made, skip = self.operators[name].propose(ctx, output)
+                slots += made
+                skipped += skip
+        return self._merge(slots, skipped)
+
+    @staticmethod
+    def _merge(slots, skipped):
+        """Several slots on one address (规则 §六): same direction -> one slot, the highest grade
+        and all the evidence; opposite directions or different contents -> no write this phase."""
+        by_address = {}
+        for slot in slots:
+            by_address.setdefault(_address(slot), []).append(slot)
+        out = []
+        for address, group in by_address.items():
+            if len(group) == 1:
+                out.append(group[0])
+                continue
+            numeric = all(s.content is None for s in group)
+            if numeric and len({s.direction for s in group}) == 1:
+                top = max(group, key=lambda s: (s.grade or 0))
+                evidence = tuple(dict.fromkeys(e for s in group for e in s.evidence))
+                mechanisms = tuple(dict.fromkeys(m for s in group for m in s.decision_mechanisms))
+                out.append(replace(top, evidence=evidence, decision_mechanisms=mechanisms))
+            elif not numeric and len({repr(s.content) for s in group}) == 1:
+                out.append(group[0])
+            else:
+                skipped.append(Skipped(group[0].update_operator, "conflict_unresolved", _label(group[0])))
+        return out, skipped
+
     # -- commit ------------------------------------------------------------------------------
-    def commit(self, ctx, output):
+    def commit(self, ctx, changes, evidence, skipped=(), unvalued=()):
         key = ctx.key
         current = self._session(key)
         commit_key = (ctx.phase.event_id, ctx.phase.phase_no, ctx.phase.kind)
-        digest = hashlib.sha256(repr((ctx.state.state_id, output.proposals, output.judgments,
-                                      output.evidence)).encode()).hexdigest()
+        digest = hashlib.sha256(repr((ctx.state.state_id, tuple(changes), tuple(unvalued))).encode()).hexdigest()
         if commit_key in self._results[key]:
             seen, result = self._results[key][commit_key]
             if seen != digest:
@@ -97,7 +137,7 @@ class ConstructStore:
         if ctx.state.state_id != current.state_id:
             raise InterfaceError(f"{key}: context read {ctx.state.state_id}, current snapshot is {current.state_id}")
 
-        drafts, rejected = self._draft(ctx, output)
+        drafts, rejected = list(changes), list(unvalued)
         drafts = [c for c in drafts if c.after != c.before]
         written = {_address(c) for c in drafts if c.update_operator != "decay_or_recovery"}
         for c in [c for c in drafts if c.update_operator == "decay_or_recovery" and _address(c) in written]:
@@ -105,13 +145,8 @@ class ConstructStore:
             rejected.append(RejectedChange(c, c.group, Violation("soft", "decay_superseded",
                                                                   f"{_label(c)} is written by another operator in this phase")))
 
-        verdicts = [self.validator.check(c, current, output.evidence) for c in drafts]
-        judged = {j.dm_id for j in output.judgments}
+        verdicts = [self.validator.check(c, current, evidence) for c in drafts]
         for i, c in enumerate(drafts):
-            unjudged = [m for m in c.decision_mechanisms if m not in judged]
-            if unjudged:
-                verdicts[i].append(Violation("hard", "unjudged_mechanism",
-                                             f"{_label(c)} cites processes not judged in this stage: {', '.join(unjudged)}"))
             flip = self._flip(key, c)
             if flip:
                 verdicts[i].append(flip)
@@ -133,37 +168,11 @@ class ConstructStore:
                 soft += [Violation("soft", x.code, f"{_label(c)}: {x.detail}") for x in flags]
 
         state = self._apply(current, accepted, ctx) if accepted else current
-        result = CommitResult(state.state_id, tuple(accepted), tuple(rejected), tuple(soft))
+        result = CommitResult(state.state_id, tuple(accepted), tuple(rejected), tuple(soft), tuple(skipped))
         self._current[key] = state
         self._accepted[key] += accepted
         self._results[key][commit_key] = (digest, result)
         return result
-
-    def _draft(self, ctx, output):
-        routed, rejected = {}, []
-        for p in output.proposals:
-            if not isinstance(p, ChangeProposal):
-                raise InterfaceError(f"proposals must be ChangeProposal, got {type(p).__name__}")
-            try:
-                construct = self.registry.construct(p.construct_id)
-            except KeyError:
-                rejected.append(RejectedChange(p, "", Violation("hard", "unregistered_construct", p.construct_id)))
-                continue
-            if construct.layer == "stable":
-                rejected.append(RejectedChange(p, "", Violation("hard", "writes_stable", p.construct_id)))
-                continue
-            name = p.operator or construct.writer
-            if name not in self.operators:
-                rejected.append(RejectedChange(p, "", Violation("hard", "unregistered_operator", str(name))))
-                continue
-            routed.setdefault(name, []).append(p)
-        drafts = []
-        for name in self.registry.ids("operator"):
-            if name in routed:
-                made, refused = self.operators[name].propose(ctx, routed[name], list(output.judgments))
-                drafts += made
-                rejected += refused
-        return drafts, rejected
 
     def _flip(self, key, change):
         if not (_number(change.before) and _number(change.after)):

@@ -69,8 +69,8 @@ class Hierarchy(unittest.TestCase):
         "IRegistry": ["construct", "mechanism", "operator"],
         "IStage": ["run"], "IEvidenceGate": ["build"], "IMechanism": ["evaluate"], "IModel": ["complete"],
         "IExpresser": ["realize"],
-        "IStateStore": ["open", "snapshot", "commit"], "IUpdateOperator": ["propose"], "IMagnitude": ["range"],
-        "IValidator": ["check"],
+        "IStateStore": ["open", "snapshot", "draft", "commit"], "IUpdateOperator": ["propose"], "IMagnitude": ["range"],
+        "IValidator": ["check"], "IValueChooser": ["choose"],
     }
 
     def test_methods(self):
@@ -160,7 +160,8 @@ class S1:
 
     def run(self, ctx):
         Gate().build(ctx)
-        return I.StageOutput(interpretation(), (I.ChangeProposal("d.affect.emotion", None, None, .2, "批评"),))
+        judgment = I.Judgment("dm.appraisal", "威胁", {"grade": 2}, EV, ("emotion_update",))
+        return I.StageOutput(interpretation(), (judgment,))     # judges only: no state (C8)
 
 
 class S2:
@@ -182,13 +183,28 @@ class Store:
     def snapshot(self, key):
         return self.states[key]
 
-    def commit(self, ctx, output):
-        changes = tuple(change(before=ctx.state.dynamic[p.construct_id], after=p.after) for p in output.proposals)
+    def draft(self, ctx, output):
+        """Toy operator: an appraisal judgment handed to emotion_update -> one numeric slot with its band."""
+        slots = [I.ChangeSlot(f"s{i}", "d.affect.emotion", None, None, ctx.state.dynamic["d.affect.emotion"], 1,
+                              j.output["grade"], I.Band("small", .05, .25), j.evidence, "emotion_update", (j.dm_id,),
+                              "S1", "affect", "toy rule")
+                 for i, j in enumerate(output.judgments) if "emotion_update" in j.hands_to]
+        return slots, []
+
+    def commit(self, ctx, changes, evidence, skipped=(), unvalued=()):
+        changes = tuple(changes)
         self.n += 1
         dynamic = {**ctx.state.dynamic, **{c.construct_id: c.after for c in changes}}
         new = state(f"st{self.n}", ctx.state.state_id, dynamic)
         self.states[ctx.key] = new
         return I.CommitResult(new.state_id, changes)
+
+
+class Chooser:
+    def choose(self, ctx, output, slots):
+        """Toy chooser: the top of each band."""
+        return [change(before=s.before, after=s.before + s.direction * s.band.high, decision_mechanisms=s.decision_mechanisms)
+                for s in slots], []
 
 
 class Expresser:
@@ -206,11 +222,13 @@ class Runner:
         st = self.store.snapshot(key)
         c = I.StageContext(I.Phase("a1", 1, "event"), st, profile(), (), {}, present, key)
         out = S1().run(c)
-        self.store.commit(c, out)
+        slots, skipped = self.store.draft(c, out)
+        changes, unvalued = Chooser().choose(c, out, slots)
+        self.store.commit(c, changes, Gate().build(c), skipped, unvalued)
         upstream["S1"] = out.product
         c = I.StageContext(I.Phase("plan:q1", 2, "plan"), self.store.snapshot(key), profile(), (), upstream, present, key)
         out2 = S2().run(c)
-        self.store.commit(c, out2)
+        self.store.commit(c, [], Gate().build(c))
         return Expresser().realize(out2.product, c), self.store.snapshot(key)
 
 
@@ -222,7 +240,7 @@ class CallChain(unittest.TestCase):
         store = Store()
         content, final = Runner(store).run(("i1", "c1"), [], {"c1": {"name": "林澄"}, "c2": {"name": "周越"}})
         self.assertEqual(content["speech"]["recipient_ids"], ["c2"])
-        self.assertEqual(final.dynamic["d.affect.emotion"], .2)
+        self.assertEqual(final.dynamic["d.affect.emotion"], .25)          # the toy chooser took the band's top
         self.assertEqual(final.prev_state_id, "st1")     # S2 read S1's committed snapshot
         self.assertEqual(final.stable_snapshot_id, "snap1")
 
