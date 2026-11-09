@@ -143,6 +143,12 @@ HTTP 测试使用本机临时回环服务器，返回固定结果。它验证传
 
 没覆盖：没有一场真实模型运行完整跑完；三人场景 test3 未在新解码下重跑；一次 act 里多次被拒是否应改为"不写状态但照常发言"需要作者 / 心理学组决定。
 
+## 2026-11-09：rolesim 按接口分子目录
+
+33 个模块从 `rolesim/` 平铺移到 6 个子目录：`agent/`、`role/`、`stage/`、`state/` 对应 plan/10 的 4 个顶层接口，另有 `run/`（本地运行器与剧情）、`offline/`（审计、评审包、可读版）；顶层只留 `__main__.py`、`interfaces.py`、`vocab.py`、`catalog.py`。用 `git mv` 移动，保留历史。只改 import 与 `Path(__file__)` 的层数，不改行为。同时删掉旧管线留下、已无引用的 `briefing.recap_entries / controller_view / expression_view`、`persona.NO_VALUE`、`scene.describe_world` 与只服务于它的 `WORLD_TEXT`。
+
+检查：移动前从 `python -m rolesim` 顺着 import 查过，33 个模块都在运行路径上，没有整文件的废代码。`python3 -m unittest discover -s tests`（Python 3.10.12）：**230 项通过**（与移动前相同）；mock 跑 test1、test3 都完成并通过自动审计；`python -m rolesim list / validate` 正常；`scripts/bootstrap_examples.py` 的 import 能解析（没有运行，它会重写示例文件）。docs/ 与 plan/08、09、10 的文件路径已改成新位置；plan/01—04、07 是当时的记录，保留原路径。
+
 ## 维护方式
 
 每次做出新的验证（测试数变化、新的模型运行、人工评审）就在这里加一节，写明日期、命令、结果、没覆盖的部分。测试数请以实际运行输出为准，上表来自计划文档的记录，不是本次重新统计。

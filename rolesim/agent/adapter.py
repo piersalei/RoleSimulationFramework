@@ -18,7 +18,7 @@ import asyncio
 import copy
 
 from .agent_api import ENABLE_CONFIG, MODE, ROLE_REF, InterfaceError, check_id, validate_bootstrap, validate_turn_input
-from .catalog import digest
+from ..catalog import digest
 
 class Session:
     """One character in one interaction: its bootstrap, our role, what it has taken in."""

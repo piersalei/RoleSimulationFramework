@@ -5,15 +5,15 @@ import re
 import unittest
 
 from rolesim import interfaces as I
-from rolesim import slots
-from rolesim.agent_api import validate_action_content
-from rolesim.evidence import EvidenceGate
-from rolesim.expresser import ModelExpresser, feeling_text
-from rolesim.model import EXPRESS_PROMPT, ChatModel, MockModel, view_payload
-from rolesim.registry import Registry
-from rolesim.schemas import EXPRESS_SCHEMA
-from rolesim.stages import ModelStage, model_stages, self_profile, state_text, visible_records
-from rolesim.store import ConstructStore
+from rolesim.state import slots
+from rolesim.agent.agent_api import validate_action_content
+from rolesim.stage.evidence import EvidenceGate
+from rolesim.stage.expresser import ModelExpresser, feeling_text
+from rolesim.stage.model import EXPRESS_PROMPT, ChatModel, MockModel, view_payload
+from rolesim.role.registry import Registry
+from rolesim.stage.schemas import EXPRESS_SCHEMA
+from rolesim.stage.stages import ModelStage, model_stages, self_profile, state_text, visible_records
+from rolesim.state.store import ConstructStore
 
 REG = Registry.load()
 KEY = ("i1", "c1")

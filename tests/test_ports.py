@@ -4,11 +4,11 @@ import json
 import unittest
 
 from rolesim import interfaces as I
-from rolesim.model import MockModel, view_payload
-from rolesim.registry import Registry
-from rolesim.repository import SETUP_GOAL, ProfileRepository
-from rolesim.roles import load_role
-from rolesim.staged import StagedRoleAgent
+from rolesim.stage.model import MockModel, view_payload
+from rolesim.role.registry import Registry
+from rolesim.role.repository import SETUP_GOAL, ProfileRepository
+from rolesim.role.roles import load_role
+from rolesim.agent.staged import StagedRoleAgent
 
 REG = Registry.load()
 ROLES = [load_role(r) for r in ("role1", "role2", "role3")]

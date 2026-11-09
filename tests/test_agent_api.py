@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from rolesim.agent_api import (ENV_ID, ENV_NAME, InterfaceError, check_id, record_id, split,
+from rolesim.agent.agent_api import (ENV_ID, ENV_NAME, InterfaceError, check_id, record_id, split,
                                validate_action_result, validate_bootstrap, validate_environment_content,
                                validate_environment_view, validate_turn_input, visible)
 

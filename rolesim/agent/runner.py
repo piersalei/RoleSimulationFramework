@@ -21,7 +21,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
 from .agent_api import ENV_ID, record_id
-from .interfaces import FULL_MODE, InterfaceError, PhaseLog, Phase, StageContext, StageError
+from ..interfaces import FULL_MODE, InterfaceError, PhaseLog, Phase, StageContext, StageError
 
 PLAN_GROUP = "goal_commitment_strategy"
 

@@ -20,7 +20,7 @@ hidden state, which this side never holds; the visible-evidence rule is its stru
 import math
 from typing import Mapping
 
-from .interfaces import UNWRITABLE, Violation
+from ..interfaces import UNWRITABLE, Violation
 from .slots import OPTION_SLOTS, AddressError, band_scale, check_instance, check_kind, get, kind_of, resolve
 
 EPS = 1e-9

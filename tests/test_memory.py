@@ -1,6 +1,6 @@
 import unittest
 
-from rolesim import memory
+from rolesim.stage import memory
 
 
 def item(i, content, **cues):

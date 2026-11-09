@@ -11,8 +11,6 @@ import math
 
 # -- module status (persona schema 2.0) ------------------------------------------------
 STATUSES = {"active", "unknown", "disabled", "not_modeled", "inactive", "not_applicable"}
-# Statuses that keep no value in the state tree (a slot, if present, must be null).
-NO_VALUE = STATUSES - {"active"}
 ORIGINS = {"default", "profile", "observed"}
 
 

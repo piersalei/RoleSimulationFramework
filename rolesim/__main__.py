@@ -3,15 +3,15 @@ import json
 import sys
 from pathlib import Path
 
-from .audit import write_report
+from .offline.audit import write_report
 from .catalog import build_catalog, write_json
 from .interfaces import FULL_MODE, MODES
-from .package import export_package
-from .readable import FILENAME, write_readable
-from .registry import build_registry
-from .roles import ROLES_DIR, SCENES_DIR, available, fit_cast, load_role, load_scene
-from .scene import environment_agent, role_seats, run_name
-from .skills import load_library
+from .offline.package import export_package
+from .offline.readable import FILENAME, write_readable
+from .role.registry import build_registry
+from .role.roles import ROLES_DIR, SCENES_DIR, available, fit_cast, load_role, load_scene
+from .run.scene import environment_agent, role_seats, run_name
+from .role.skills import load_library
 
 DEFAULT_ROLES = ["role1", "role2"]
 DEFAULT_SCENE = "test1"
@@ -99,9 +99,9 @@ def main():
 
 
 def _run(args):
-    from .loop import run_scene
-    from .model import ChatModel, MockModel
-    from .registry import Registry
+    from .run.loop import run_scene
+    from .stage.model import ChatModel, MockModel
+    from .role.registry import Registry
     registry = Registry.load()
     library = load_library()
     roles, scene = [load_role(r, library=library) for r in args.roles], load_scene(args.scene)
@@ -114,10 +114,10 @@ def _run(args):
 
 def _profile(args):
     from collections import Counter
-    from .model import ChatModel, MockModel
-    from .profile import ProfileCompiler
-    from .registry import Registry
-    from .repository import ProfileRepository
+    from .stage.model import ChatModel, MockModel
+    from .role.profile import ProfileCompiler
+    from .role.registry import Registry
+    from .role.repository import ProfileRepository
     registry = Registry.load()
     library = load_library()
     roles = [load_role(i, library=library) for i in available(ROLES_DIR)]

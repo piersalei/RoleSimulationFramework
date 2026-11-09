@@ -3,7 +3,7 @@
 本文按"接口在外、实现在内"的思路，说明角色 Agent 对外暴露什么、内部持有什么属性。目的是让维护者只需要关注**接口边界**：边界以内的实现可以替换，边界以外的运行器不受影响。
 
 - 协议原文（环境组，2026-11-07）：[Agent接口说明_环境组_2026-11-07.md](../data/sources/contracts/Agent接口说明_环境组_2026-11-07.md)。它取代了此前的 [Agent接口定义_v1.md](../data/sources/contracts/Agent接口定义_v1.md)（act / perceive / 认知五字段），本仓库称新版为**接口 v2**
-- 可执行定义：[rolesim/agent_api.py](../rolesim/agent_api.py)；我们内部各接口的契约：[rolesim/interfaces.py](../rolesim/interfaces.py)、[plan/10](../plan/10-interfaces.md)
+- 可执行定义：[rolesim/agent/agent_api.py](../rolesim/agent/agent_api.py)；我们内部各接口的契约：[rolesim/interfaces.py](../rolesim/interfaces.py)、[plan/10](../plan/10-interfaces.md)
 - 与 v1、与框架设计的差异及对齐结果：[plan/08](../plan/08-framework-oop-design.md) 第 8 节；早先的对接记录：[plan/07](../plan/07-agent-adapter-integration.md)
 - 证据层级：本文是工程对接说明（本地工程检查），不涉及任何心理机制有效性的结论。
 
@@ -11,19 +11,19 @@
 
 ```
 ┌───────────────────────────────────────────────────┐
-│ 运行器 / 环境（环境组；本地参考实现 loop.py）      │  导演调度、在场范围、行动校验、接收范围解析、
+│ 运行器 / 环境（环境组；本地参考实现 run/loop.py）      │  导演调度、在场范围、行动校验、接收范围解析、
 │                                                   │  生成记录、保存每个角色的观察记录
 └───────────────┬───────────────────────────────────┘
                 │  只依赖 Protocol：IRoleAgent / IEnvironment
 ┌───────────────▼───────────────────────────────────┐
-│ 接口层  agent_api.py                              │  数据类型、双向校验、split / visible
+│ 接口层  agent/agent_api.py                              │  数据类型、双向校验、split / visible
 └───────────────┬───────────────────────────────────┘
 ┌───────────────▼───────────────────────────────────┐
-│ 公共层  adapter.py  RoleAgentBase                 │  interaction_id + character_id 路由、选角色、
+│ 公共层  agent/adapter.py  RoleAgentBase                 │  interaction_id + character_id 路由、选角色、
 │                                                   │  每角色每互动一个 Session、request_id 幂等、串行
 └───────────────┬───────────────────────────────────┘
 ┌───────────────▼───────────────────────────────────┐
-│ 实现    staged.py  StagedRoleAgent                │  入场（IRoleRepository）→ ITurnRunner：
+│ 实现    agent/staged.py  StagedRoleAgent                │  入场（IRoleRepository）→ ITurnRunner：
 │                                                   │  S1 / S3 / S2 → IStateStore → IExpresser
 └───────────────┬───────────────────────────────────┘
                 │  稳定画像（StableProfile） + 动态状态（AgentState）
@@ -39,7 +39,7 @@
 
 ## 2. 对外接口
 
-两个 `Protocol`，全部为 `async`，同进程调用。环境组文档里叫 `AgentAdapter` / `EnvironmentAdapter`，我们这边统一按 `I...` 命名为 `IRoleAgent` / `IEnvironment`（定义在 `agent_api.py`，`interfaces.py` 再导出），签名完全一致：
+两个 `Protocol`，全部为 `async`，同进程调用。环境组文档里叫 `AgentAdapter` / `EnvironmentAdapter`，我们这边统一按 `I...` 命名为 `IRoleAgent` / `IEnvironment`（定义在 `agent/agent_api.py`，`interfaces.py` 再导出），签名完全一致：
 
 ```python
 class IRoleAgent(Protocol):     # 我们实现（环境组：AgentAdapter）
@@ -59,7 +59,7 @@ class IEnvironment(Protocol):    # 环境组实现（环境组：EnvironmentAdap
 
 **没有 perceive。** 角色看到的新记录不会被单独推送，而是在它下一次被要求行动时随 `observations` 一起到达，我们在那时补做感知评价。
 
-### 2.1 数据类型（`agent_api.py`）
+### 2.1 数据类型（`agent/agent_api.py`）
 
 **`CharacterBootstrap`**（`initialize` 传入，整场不变）
 
@@ -117,7 +117,7 @@ class IEnvironment(Protocol):    # 环境组实现（环境组：EnvironmentAdap
 4. 原文允许思考发给别人；我们自己的思考只发给本人。若运行器把别人的思考放进我们的观察记录，不吸收、不进任何提示，只记告警。
 5. 同一 `request_id` 重发返回第一次的结果；同一个 id 配不同输入会被拒绝；出错时抛异常且不记入缓存，可以重来。重复 `initialize` 同一份资料无副作用，资料不同则拒绝。
 
-## 3. 实现：`StagedRoleAgent`（`staged.py`）
+## 3. 实现：`StagedRoleAgent`（`agent/staged.py`）
 
 `StagedRoleAgent(roles, registry, model, trace=None, repository=None, store=None, mode="profile_state_mechanisms", use_skills=True)` 是 `IRoleAgent` 的唯一实现，继承 `adapter.RoleAgentBase`。
 
@@ -148,7 +148,7 @@ class IEnvironment(Protocol):    # 环境组实现（环境组：EnvironmentAdap
 
 运行器只看到我们返回的行动内容；稳定画像和动态状态都留在内部。接口 v2 不回传认知摘要。
 
-### 4.1 稳定画像（`StableProfile`，`profile.py`）
+### 4.1 稳定画像（`StableProfile`，`role/profile.py`）
 
 来源是 `profiles/<id>.json`（profile-1 档案）；没有档案时由 `profile.profile_from_role` 把角色文件（persona 2.0，见 [04-authoring.md](04-authoring.md)）转换过来，再由 `ProfileCompiler` 编译。
 
@@ -159,18 +159,18 @@ class IEnvironment(Protocol):    # 环境组实现（环境组：EnvironmentAdap
 
 ### 4.2 动态状态（`AgentState`，`IStateStore`）
 
-- 按构念 ID 存：42 个动态构念（`d.*`）和 3 个记忆构念（`m.*`），布局见 `slots.py`；入场状态的 ID 为 `{角色ID}@entry`，之后每次提交形如 `{角色ID}@{事件}#{序号}.{类型}`，前后相连成状态链。
+- 按构念 ID 存：42 个动态构念（`d.*`）和 3 个记忆构念（`m.*`），布局见 `state/slots.py`；入场状态的 ID 为 `{角色ID}@entry`，之后每次提交形如 `{角色ID}@{事件}#{序号}.{类型}`，前后相连成状态链。
 - 唯一的写入口是 `ConstructStore.commit`：阶段的提议 → 登记表授权的算子 → 幅度档 → 验证 → 按依赖组原子提交。每条变化记下变化前后的值、证据（记录编号）、依据的决策过程、幅度档和软异常；越界一律拒绝，不截断。
 - 动态状态只能由本角色可见的证据更新（证据门：本人行动或被明确发送的记录；别人的思考、本人的思考、没发给自己的记录都排除）。
 
 ### 4.3 开场设定与人格 skill
 
-- **开场设定**（角色文件的 `setup`，`briefing.py` 校验）：互动目标写成当前目标 `g-setup`，前情写成入场记忆；S1 / S2 / S3 看得到全部内容（包括不打算说出口的事和打算怎么不说），表达调用只看到目标和可以说出的部分。
+- **开场设定**（角色文件的 `setup`，`role/briefing.py` 校验）：互动目标写成当前目标 `g-setup`，前情写成入场记忆；S1 / S2 / S3 看得到全部内容（包括不打算说出口的事和打算怎么不说），表达调用只看到目标和可以说出的部分。
 - **人格 skill**（角色文件的 `skills`，库在 `library/skills/*/SKILL.md`）：S2 看到全部绑定 skill 的名称与说明，以及被 S1 的线索或开场设定激活的至多 3 个 skill 的决策要点和不会做的事；表达调用拿到被激活 skill 的表达要点。`use_skills=False`（命令行 `--no-skills`）时 skill 留在记录里，不进任何提示。
 
 隔离原则：S1 / S2 / S3 和表达的提示都不含他人的任何状态、思考和开场设定，也不含 `world_private`；表达调用另外看不到状态数值、构念与过程 ID、其他候选、假设和不打算说的事。
 
-## 5. 本地参考运行器（`loop.py`）
+## 5. 本地参考运行器（`run/loop.py`）
 
 按环境组接口实现的参考运行器，供离线联调和回归测试使用：
 

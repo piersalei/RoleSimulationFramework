@@ -3,7 +3,7 @@
 2026-11-07 起草。依据心理学组交付的 v1 材料（[data/sources/psychology_v1/](../data/sources/psychology_v1/README.md)：构念登记、角色状态说明、状态变化规则、三个心理流程 skill），把整个框架按"对象—字段—接口"重新梳理一遍。
 
 - **这是目标设计，不是现状。** 现状见 [docs/07-architecture.md](../docs/07-architecture.md)。本文落地后，行为说明要同步进 `docs/`。
-- **对外接口已按环境组 2026-11-07 的接口说明对齐**（[原文](../data/sources/contracts/Agent接口说明_环境组_2026-11-07.md)，本仓库称接口 v2）：第 7.3、8.1 节是对齐后的版本；外部接口层代码（`agent_api.py` / `adapter.py` / `loop.py`）已经按 v2 改完，内部的三阶段与状态重建还没开始。
+- **对外接口已按环境组 2026-11-07 的接口说明对齐**（[原文](../data/sources/contracts/Agent接口说明_环境组_2026-11-07.md)，本仓库称接口 v2）：第 7.3、8.1 节是对齐后的版本；外部接口层代码（`agent/agent_api.py` / `agent/adapter.py` / `run/loop.py`）已经按 v2 改完，内部的三阶段与状态重建还没开始。
 - **逐字段的规格**（每个构念、过程对象、日志、接口的字段与维护方）单独写在 [09](09-interface-and-field-spec.md)；本文管对象划分与流程，两者冲突时字段以 09 为准。
 - 证据层级：本文是**工程设计**；引用的数值（幅度分档、半衰期、门槛）是心理学组标注的"本版本初始值"，不是经过验证的规律。
 
@@ -120,7 +120,7 @@ flowchart TB
 
 这些对象把心理学组的 md 文件变成程序可查的表。**原文件不改**；另建一份机器可读的登记（建议 `data/registry/psy_v1.json`），由脚本从原文抽取、人工核对，带原文行号和哈希，和现在的 `catalog.json` 同一做法。
 
-> 2026-11-07 已实现为 `data/registry.json` + `rolesim/registry.py`。最终字段以 [plan/10 §2.2](10-interfaces.md) 为准：下面草图里的 `value_form`、`other_visibility`、`primary`、`reads`、`triggers` 等没有抽取，原因见那一节。
+> 2026-11-07 已实现为 `data/registry.json` + `rolesim/role/registry.py`。最终字段以 [plan/10 §2.2](10-interfaces.md) 为准：下面草图里的 `value_form`、`other_visibility`、`primary`、`reads`、`triggers` 等没有抽取，原因见那一节。
 
 ```python
 @dataclass(frozen=True)
@@ -667,17 +667,17 @@ sequenceDiagram
 
 | 文件 | 去向 |
 |---|---|
-| `agent_api.py`、`adapter.py`、`loop.py` | 外部接口层，**已按接口 v2 改完**（initialize / act、路由键、无 perceive、无认知） |
+| `agent/agent_api.py`、`agent/adapter.py`、`run/loop.py` | 外部接口层，**已按接口 v2 改完**（initialize / act、路由键、无 perceive、无认知） |
 | `contract.py` 的 `Event` | 扩成内部 `Observation`：加 channel、audience、scene_time |
 | `state.py` | 拆为 `StateStore` + `CommitEngine`；白名单改为按 construct_id 从 Registry 读取；加阶段权限 |
 | `modules.py` | 并入 `StableModule` / `DynamicField` 的状态与元数据检查 |
-| `persona.py` | 升级为 schema 3.0（按登记表 42 条），`compile_views` 并入 `Projector` |
+| `role/persona.py` | 升级为 schema 3.0（按登记表 42 条），`compile_views` 并入 `Projector` |
 | `mechanisms.py`、`vocab.py` | 5 张卡和 5 种线索退役；由 `MechanismRegistry` + 三个 Stage 取代；高影响 dm 的机制卡（变化规则 §4.1）作为 Registry 数据 |
 | `stateview.py` | 并入 `Projector`（`cognition.py` 随接口 v2 已删除） |
-| `memory.py` | 扩为 `MemoryStore`（可及性、再激活、重新解释） |
+| `stage/memory.py` | 扩为 `MemoryStore`（可及性、再激活、重新解释） |
 | `agent.py` | 拆为 `PhaseOrchestrator` + 三个 `Stage` |
-| `skills.py`、`library/skills/` | 保留（只影响提示，不写状态）；改称"人格 skill"或"表达 skill"，避免和心理流程的 skill 混淆 |
-| `audit.py`、`package.py`、`readable.py` | 保留，按 §8.4 增加检查和字段 |
+| `role/skills.py`、`library/skills/` | 保留（只影响提示，不写状态）；改称"人格 skill"或"表达 skill"，避免和心理流程的 skill 混淆 |
+| `offline/audit.py`、`offline/package.py`、`offline/readable.py` | 保留，按 §8.4 增加检查和字段 |
 
 ---
 

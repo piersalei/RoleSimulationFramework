@@ -6,9 +6,9 @@ import unittest
 from pathlib import Path
 
 from rolesim.catalog import build_catalog, digest
-from rolesim.providers import strict_json
-from rolesim.roles import fit_cast, load_role, load_scene
-from rolesim.scene import WorldAgent, code_version, run_name, validate_scenario
+from rolesim.stage.providers import strict_json
+from rolesim.role.roles import fit_cast, load_role, load_scene
+from rolesim.run.scene import WorldAgent, code_version, run_name, validate_scenario
 
 ROOT = Path(__file__).resolve().parents[1]
 CAST = ["role1", "role2", "role3"]

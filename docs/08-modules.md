@@ -6,23 +6,23 @@
 
 | 接口 | 模块 | 职责 |
 |---|---|---|
-| **1 IRoleAgent**（对外，环境组接口 v2） | `agent_api.py`、`adapter.py`、`staged.py` | 数据类型与双向校验；选角色、按 `interaction_id + character_id` 的会话、`request_id` 重试；`StagedRoleAgent` 是唯一实现 |
-| 1.1 ITurnRunner | `runner.py` | 一次行动里各阶段的编排、反馈判断、S2 被拒重做、失败后接着做 |
-| 1.2 ITrace | `trace.py` | 阶段记录与模型调用按互动、按角色落盘 |
-| **2 IRoleRepository** | `repository.py` | 档案文件优先、否则转换角色文件；入场状态（档案 → 开场设定 → bootstrap → §8.2 默认值）；开场设定与人格 skill |
-| 2.1 IProfileCompiler | `profile.py` | profile-1 档案 → 稳定画像 + 待审核清单；条件化语句检查 |
-| 2.2 IRegistry | `registry.py` | 心理学组 v1 文件 → `data/registry.json`，只读查询 |
-| **3 IStage** | `stages.py` | S1 / S2 / S3：视图（自知层、开场设定、skill、模式）、调用、解析 |
-| 3.1 IEvidenceGate | `evidence.py` | 可见证据、排除原因、记忆取回 |
-| 3.2 IMechanism | （在阶段调用里由模型判断）`schemas.py` | 判断的 schema 与登记表核对；按规则实现的过程还没有 |
-| 3.3 IModel | `model.py`、`providers.py`、`schemas.py` | 每个调用一次结构化请求；输出 schema；chat-completions 传输 |
-| 3.4 IExpresser | `expresser.py` | 按需可见的表达调用 → 思考 / 发言 / 动作 |
-| **4 IStateStore** | `store.py`、`slots.py` | 按构念 ID 的状态布局；唯一的写入口 |
-| 4.1 IUpdateOperator | `operators.py` | 11 个算子（规则全部来自登记表） |
-| 4.2 IMagnitude | `magnitude.py` | 合法变化区间 |
-| 4.3 IValidator | `validator.py` | 硬错 / 软异常 |
+| **1 IRoleAgent**（对外，环境组接口 v2） | `agent/agent_api.py`、`agent/adapter.py`、`agent/staged.py` | 数据类型与双向校验；选角色、按 `interaction_id + character_id` 的会话、`request_id` 重试；`StagedRoleAgent` 是唯一实现 |
+| 1.1 ITurnRunner | `agent/runner.py` | 一次行动里各阶段的编排、反馈判断、S2 被拒重做、失败后接着做 |
+| 1.2 ITrace | `agent/trace.py` | 阶段记录与模型调用按互动、按角色落盘 |
+| **2 IRoleRepository** | `role/repository.py` | 档案文件优先、否则转换角色文件；入场状态（档案 → 开场设定 → bootstrap → §8.2 默认值）；开场设定与人格 skill |
+| 2.1 IProfileCompiler | `role/profile.py` | profile-1 档案 → 稳定画像 + 待审核清单；条件化语句检查 |
+| 2.2 IRegistry | `role/registry.py` | 心理学组 v1 文件 → `data/registry.json`，只读查询 |
+| **3 IStage** | `stage/stages.py` | S1 / S2 / S3：视图（自知层、开场设定、skill、模式）、调用、解析 |
+| 3.1 IEvidenceGate | `stage/evidence.py` | 可见证据、排除原因、记忆取回 |
+| 3.2 IMechanism | （在阶段调用里由模型判断）`stage/schemas.py` | 判断的 schema 与登记表核对；按规则实现的过程还没有 |
+| 3.3 IModel | `stage/model.py`、`stage/providers.py`、`stage/schemas.py` | 每个调用一次结构化请求；输出 schema；chat-completions 传输 |
+| 3.4 IExpresser | `stage/expresser.py` | 按需可见的表达调用 → 思考 / 发言 / 动作 |
+| **4 IStateStore** | `state/store.py`、`state/slots.py` | 按构念 ID 的状态布局；唯一的写入口 |
+| 4.1 IUpdateOperator | `state/operators.py` | 11 个算子（规则全部来自登记表） |
+| 4.2 IMagnitude | `state/magnitude.py` | 合法变化区间 |
+| 4.3 IValidator | `state/validator.py` | 硬错 / 软异常 |
 
-不属于某个接口的支撑模块：`roles.py`、`persona.py`、`briefing.py`、`skills.py`、`scene.py`、`vocab.py`（输入文件的格式与校验），`loop.py`（本地参考运行器与运行目录），`audit.py`、`package.py`、`readable.py`（离线工具），`catalog.py`（来源索引），`memory.py`（字面相似度检索），`__main__.py`（命令行）。
+不属于某个接口的支撑模块：`role/roles.py`、`role/persona.py`、`role/briefing.py`、`role/skills.py`、`run/scene.py`、`vocab.py`（输入文件的格式与校验），`run/loop.py`（本地参考运行器与运行目录），`offline/audit.py`、`offline/package.py`、`offline/readable.py`（离线工具），`catalog.py`（来源索引），`stage/memory.py`（字面相似度检索），`__main__.py`（命令行）。
 
 ## 2. 人格方案：三案互斥
 

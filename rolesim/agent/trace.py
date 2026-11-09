@@ -14,8 +14,8 @@ never enters another prompt.
 import json
 from pathlib import Path
 
-from .interfaces import InterfaceError
-from .model import plain, view_payload
+from ..interfaces import InterfaceError
+from ..stage.model import plain, view_payload
 
 
 def phase_entry(key, log):

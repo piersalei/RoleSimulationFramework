@@ -5,10 +5,10 @@ import unittest
 from pathlib import Path
 
 from fixtures import ROOT, load, role_file
-from rolesim.loop import run_scene
-from rolesim.model import MockModel
-from rolesim.registry import Registry
-from rolesim.roles import ROLES_DIR, SCENES_DIR, available, fit, fit_cast, load_role, load_scene
+from rolesim.run.loop import run_scene
+from rolesim.stage.model import MockModel
+from rolesim.role.registry import Registry
+from rolesim.role.roles import ROLES_DIR, SCENES_DIR, available, fit, fit_cast, load_role, load_scene
 
 
 class Scratch:

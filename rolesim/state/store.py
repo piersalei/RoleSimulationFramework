@@ -22,7 +22,7 @@ import hashlib
 import math
 from dataclasses import replace
 
-from .interfaces import AgentState, ChangeProposal, CommitResult, InterfaceError, RejectedChange, Violation
+from ..interfaces import AgentState, ChangeProposal, CommitResult, InterfaceError, RejectedChange, Violation
 from .magnitude import Magnitude
 from .operators import operators
 from .slots import SLOTS, check_layout, layer_of, put

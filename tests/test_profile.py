@@ -6,15 +6,15 @@ import unittest
 from pathlib import Path
 
 from rolesim import interfaces as I
-from rolesim.evidence import EvidenceGate
-from rolesim.expresser import ModelExpresser
-from rolesim.model import MockModel, view_payload
-from rolesim.profile import (PROFILE_FORMAT, REVIEW_HIGH_IMPACT, REVIEW_NO_PHRASE, ProfileCompiler, check_phrase,
+from rolesim.stage.evidence import EvidenceGate
+from rolesim.stage.expresser import ModelExpresser
+from rolesim.stage.model import MockModel, view_payload
+from rolesim.role.profile import (PROFILE_FORMAT, REVIEW_HIGH_IMPACT, REVIEW_NO_PHRASE, ProfileCompiler, check_phrase,
                              profile_from_persona)
-from rolesim.registry import Registry
-from rolesim.repository import ENTRY_MEMORY, ProfileRepository, tom_ceiling
-from rolesim.roles import load_role
-from rolesim.stages import TENDENCIES, ModelStage, self_profile
+from rolesim.role.registry import Registry
+from rolesim.role.repository import ENTRY_MEMORY, ProfileRepository, tom_ceiling
+from rolesim.role.roles import load_role
+from rolesim.stage.stages import TENDENCIES, ModelStage, self_profile
 
 REG = Registry.load()
 ROLES = [load_role(r) for r in ("role1", "role2")]

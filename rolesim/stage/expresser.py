@@ -12,9 +12,9 @@ role alone; speech and action reach everyone present, the audience being only wh
 addresses, unless the plan made the expression private, when only its audience receives them.
 A failure raises StageError; nothing is sent.
 """
-from . import skills as sk
+from ..role import skills as sk
 from .evidence import EvidenceGate
-from .interfaces import ModelCallRecord, ModelError, PromptView, StageError
+from ..interfaces import ModelCallRecord, ModelError, PromptView, StageError
 from .schemas import EXPRESS_KINDS, EXPRESS_SCHEMA, parse_expression
 from .stages import active_skills, expression_briefing, self_profile, visible_records
 

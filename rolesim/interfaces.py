@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Generic, Literal, Mapping, Optional, Protocol, Sequence, TypeVar, Union, runtime_checkable
 
-from .agent_api import (AgentActionContent, CharacterBootstrap, IEnvironment, InteractionRecord,
+from .agent.agent_api import (AgentActionContent, CharacterBootstrap, IEnvironment, InteractionRecord,
                         InterfaceError, IRoleAgent, Present)
 
 __all__ = [

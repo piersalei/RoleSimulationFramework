@@ -6,7 +6,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest.mock import patch
 
-from rolesim.providers import ChatBackend
+from rolesim.stage.providers import ChatBackend
 
 
 class TransportTests(unittest.TestCase):

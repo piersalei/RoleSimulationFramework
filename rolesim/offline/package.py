@@ -19,7 +19,7 @@ import json
 import random
 from pathlib import Path
 
-from .catalog import write_json
+from ..catalog import write_json
 
 DIMENSIONS = ["字段有效性", "证据与可见性", "机制与写回相容性", "稳定一致性", "动态合理性",
               "角色可区分性", "外显行为与隐状态匹配", "错误推断的合理性", "轨迹可追溯性"]

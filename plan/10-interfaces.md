@@ -30,7 +30,7 @@
 
 ## 1 `IRoleAgent`（对外，已实现）
 
-环境组定义的接口，签名不能改。环境组文档里叫 `AgentAdapter`，对面那一侧叫 `EnvironmentAdapter`；我们统一按 `I...` 命名为 `IRoleAgent` / `IEnvironment`（都定义在 `agent_api.py`）。`IEnvironment` 由环境组实现，我们只在本地运行器里调用。
+环境组定义的接口，签名不能改。环境组文档里叫 `AgentAdapter`，对面那一侧叫 `EnvironmentAdapter`；我们统一按 `I...` 命名为 `IRoleAgent` / `IEnvironment`（都定义在 `agent/agent_api.py`）。`IEnvironment` 由环境组实现，我们只在本地运行器里调用。
 
 ```python
 class IRoleAgent(Protocol):
@@ -70,7 +70,7 @@ class ITurnRunner(Protocol):
 | 流程 | 新记录按 `action_id` 分组，每组一个事件阶段：`S1.run` → commit；若该组是对本角色此前行动 / 承诺的反馈，再 `S3.run` → commit。全部处理完后 `S2.run` → commit → `IExpresser.realize` |
 | 保证 | 每个阶段读上一次提交后的快照；同一阶段内不读未提交的候选；S2 的依赖组被拒时不发出行动 |
 | 出错 | 任一阶段失败即整次 act 失败，已提交的阶段保留，未提交的丢弃 |
-| 实现 | `rolesim/runner.py` `TurnRunner`（已实现） |
+| 实现 | `rolesim/agent/runner.py` `TurnRunner`（已实现） |
 | 什么算反馈 | 上次计划的受众（计划没指定受众时为除自己和环境以外的任何人）之后第一组本角色收得到的发言或行动；发言默认在场者都收到，所以在多人场景里，受众的下一句公开发言（不论对谁说）都算反馈；每个计划只判断一次 |
 | S2 被拒 | 计划自己的依赖组（目标、承诺、策略）有硬错 → 行动不按原样发出，在新阶段重新做 S2，把拒绝原因放在 `upstream["rejected"]`；第二次仍被拒 → 整次 act 失败 |
 | 重试 | S1 已提交的记录组算已吸收；没做完的反馈判断、已提交但没表达出去的计划都记着，重试时接着做，不会把同一阶段提交两次 |
@@ -90,7 +90,7 @@ class ITrace(Protocol):
 
 只写不读，没有写状态的权限。按 `interaction_id` 落盘。
 
-实现：`rolesim/trace.py`（已实现）。`JsonlTrace(root)` 写 `<root>/<interaction_id>/<character_id>/phases.jsonl`（每次提交一条 `PhaseLog`）和 `model_calls.jsonl`（每次模型调用的视图、原始输出、推理）；`MemoryTrace` 在内存里收同样的记录。接环境组的真实运行器后，这份记录由我们自己写，不依赖运行器。
+实现：`rolesim/agent/trace.py`（已实现）。`JsonlTrace(root)` 写 `<root>/<interaction_id>/<character_id>/phases.jsonl`（每次提交一条 `PhaseLog`）和 `model_calls.jsonl`（每次模型调用的视图、原始输出、推理）；`MemoryTrace` 在内存里收同样的记录。接环境组的真实运行器后，这份记录由我们自己写，不依赖运行器。
 
 ---
 
@@ -107,9 +107,9 @@ class IRoleRepository(Protocol):
 |---|---|
 | `load` | 按角色库 ID 取稳定画像快照；同一 ID 同一版本永远返回同一对象 |
 | `enter` | 生成入场状态：dynamic 按"档案入场状态 → bootstrap / 场景 → 先验"取值，`core_goals` 文本 → 当前目标，`history_memory` → 入场记忆；没有依据的字段为 unknown |
-| 关键类型 | `StableProfile`：snapshot_id、modules（`{construct_id: StableModule}`，每个带 status / source_kind / confidence / needs_review）。`AgentState`：state_id、prev_state_id、stable_snapshot_id、dynamic、memory（都按构念 ID 存，形状见 `rolesim/slots.py`）、versions、status（每个构念或实例的状态标记）。`EnableConfig`：每个模块 / 字段 / 决策过程是否启用 |
+| 关键类型 | `StableProfile`：snapshot_id、modules（`{construct_id: StableModule}`，每个带 status / source_kind / confidence / needs_review）。`AgentState`：state_id、prev_state_id、stable_snapshot_id、dynamic、memory（都按构念 ID 存，形状见 `rolesim/state/slots.py`）、versions、status（每个构念或实例的状态标记）。`EnableConfig`：每个模块 / 字段 / 决策过程是否启用 |
 | 出错 | 角色不存在、档案结构错 → 抛错；缺证据不报错，写 unknown |
-| 实现 | `rolesim/repository.py` `ProfileRepository`（已实现）：`profiles/<id>.json` 优先，否则把角色文件转换后编译；同一 ID 返回同一对象，待审核项在 `review[id]`。`enter` 依次取档案入场状态、bootstrap（core_goals → 当前目标，history_memory → 入场记忆）、角色状态说明 §8.2 的默认值（情绪强度 0 标签空、效价唤醒取情绪基线；压力与威胁 / 奖赏激活无额外负荷；调节 inactive；羞耻与面子成本 0；自我评价取自尊基线；心理理论上限按 71 维 1.1.4 / 1.5.2 和年龄，当前 = 上限，需审核；激活、威胁、冲突、修订候选为零；目标承诺取核心目标优先级；生命经历 → 入场记忆），其余 unknown；每个值的来源记在 `entry_notes[id]` |
+| 实现 | `rolesim/role/repository.py` `ProfileRepository`（已实现）：`profiles/<id>.json` 优先，否则把角色文件转换后编译；同一 ID 返回同一对象，待审核项在 `review[id]`。`enter` 依次取档案入场状态、bootstrap（core_goals → 当前目标，history_memory → 入场记忆）、角色状态说明 §8.2 的默认值（情绪强度 0 标签空、效价唤醒取情绪基线；压力与威胁 / 奖赏激活无额外负荷；调节 inactive；羞耻与面子成本 0；自我评价取自尊基线；心理理论上限按 71 维 1.1.4 / 1.5.2 和年龄，当前 = 上限，需审核；激活、威胁、冲突、修订候选为零；目标承诺取核心目标优先级；生命经历 → 入场记忆），其余 unknown；每个值的来源记在 `entry_notes[id]` |
 | `StableModule` | 另有 phrase（条件化语句，5.4）与 reason（为什么 unknown / 关闭，或推断依据）；source_kind 加 default；status 取全部六种状态标记 |
 
 ### 2.1 `IProfileCompiler`：档案 → 稳定画像
@@ -124,7 +124,7 @@ class IProfileCompiler(Protocol):
 | 输入 | 自然语言或半结构化档案 |
 | 输出 | 画像 + 待审核清单（`ReviewItem`：construct_id、value、source_kind、原文依据、原因） |
 | 规则 | 明写 → explicit；规则推断 → inferred；模型推断 → model_inferred（必须带原文）；无依据 → unknown，不随机补值。按登记表的装配顺序生成，派生字段最后计算 |
-| 实现 | `rolesim/profile.py` `ProfileCompiler`（已实现），档案格式 profile-1 见 [docs/04-authoring.md](../docs/04-authoring.md) 第 6 节。模型推断只补档案没明写的构念，引文必须逐字出现在原文里，否则进待审核清单；人格方案三选一；71 维未写取 0（default）；条件化语句不得含系统 ID、数字或“总是 / 绝不”。待审核：非明写的高影响字段、不能自知又没有语句的构念、没被采用的推断、被去掉的语句 |
+| 实现 | `rolesim/role/profile.py` `ProfileCompiler`（已实现），档案格式 profile-1 见 [docs/04-authoring.md](../docs/04-authoring.md) 第 6 节。模型推断只补档案没明写的构念，引文必须逐字出现在原文里，否则进待审核清单；人格方案三选一；71 维未写取 0（default）；条件化语句不得含系统 ID、数字或“总是 / 绝不”。待审核：非明写的高影响字段、不能自知又没有语句的构念、没被采用的推断、被去掉的语句 |
 | 还没做 | §4.10 决策偏好的先验映射；派生字段；大部分模块的取值形式只检查是否为有限 JSON |
 
 ### 2.2 `IRegistry`：心理学登记表查询（已实现）
@@ -145,7 +145,7 @@ class IRegistry(Protocol):
 
 | | 内容 |
 |---|---|
-| 实现 | `rolesim/registry.py`：`build_registry()` 从 `data/sources/psychology_v1/` 抽取，`python3 -m rolesim registry` 写成 `data/registry.json`；`Registry.load()` 读这个文件，实现本接口 |
+| 实现 | `rolesim/role/registry.py`：`build_registry()` 从 `data/sources/psychology_v1/` 抽取，`python3 -m rolesim registry` 写成 `data/registry.json`；`Registry.load()` 读这个文件，实现本接口 |
 | 抽取方式 | 结构规整的部分机械抽取：构念与决策过程条目、算子写入白名单、算子的时间与优先级、每个阶段可调用的算子和决策过程、机制卡。只写在叙述里的部分放在一张带原文引语的对照表里：依赖组、快慢变归类、衰减规则、自知程度、高影响字段，以及 12 个决策过程的可选项断句修正 |
 | 保证 | 只读；`basis` 记录每个属性出自哪份文件、哪一节、哪句话；`registry.json` 与原文不一致时测试失败 |
 | 出错 | 未登记的 ID → `KeyError`。原文改动使对照表的引语找不到、§九多出一条、声明的数量对不上、一个构念出现两个主写入算子 → 构建失败（`RegistryBuildError`），需要人工重读后再生成 |
@@ -198,7 +198,7 @@ class IEvidenceGate(Protocol):
 
 只放本角色可见的；他人思考、他人隐状态、场景私有数据一律排除并记在 excluded。是否"听说"由 S1 从文字判断后补进 `channel`。
 
-实现：`rolesim/evidence.py` `EvidenceGate`（已实现）。读 `ctx.history` 和 `ctx.records`：本角色是行动者或被明确发送的记录进 included（本人的为 `own_action`，其余 `witnessed`）；排除原因 `other_thought`（他人的思考，即使被误发过来）、`own_thought`（本人的思考是过程记录，不是证据）、`not_recipient`；按刚看到的内容取回最多 k 条记忆（`m.entry`，字面相似度 × 重要性 × 可及性）。他人隐状态和场景私有数据从不到达本方，所以没有可排除的。
+实现：`rolesim/stage/evidence.py` `EvidenceGate`（已实现）。读 `ctx.history` 和 `ctx.records`：本角色是行动者或被明确发送的记录进 included（本人的为 `own_action`，其余 `witnessed`）；排除原因 `other_thought`（他人的思考，即使被误发过来）、`own_thought`（本人的思考是过程记录，不是证据）、`not_recipient`；按刚看到的内容取回最多 k 条记忆（`m.entry`，字面相似度 × 重要性 × 可及性）。他人隐状态和场景私有数据从不到达本方，所以没有可排除的。
 
 ### 3.2 `IMechanism`：一个决策过程
 
@@ -232,8 +232,8 @@ class IModel(Protocol):
 
 | | 内容 |
 |---|---|
-| 实现 | `rolesim/model.py`：`ChatModel`（沿用 `providers.ChatBackend` 的传输，每个阶段一段系统提示，载荷是 PromptView + task + output_schema，回复在本地按 schema 校验）、`MockModel`（离线夹具，三个阶段都给出合 schema、合登记表的输出，提议只新建条目，不碰需要当前数值的幅度档；内容不是心理学证据） |
-| 输出 schema | `rolesim/schemas.py` `stage_schema(stage, registry)`：product（三个产物各自的必备字段）、judgments（dm_id 只能是本阶段可调用的过程）、proposals（construct_id 只能是本阶段有算子可写的构念）；S1 另有 evidence_notes（哪些记录的内容是转述 / 推断） |
+| 实现 | `rolesim/stage/model.py`：`ChatModel`（沿用 `providers.ChatBackend` 的传输，每个阶段一段系统提示，载荷是 PromptView + task + output_schema，回复在本地按 schema 校验）、`MockModel`（离线夹具，三个阶段都给出合 schema、合登记表的输出，提议只新建条目，不碰需要当前数值的幅度档；内容不是心理学证据） |
+| 输出 schema | `rolesim/stage/schemas.py` `stage_schema(stage, registry)`：product（三个产物各自的必备字段）、judgments（dm_id 只能是本阶段可调用的过程）、proposals（construct_id 只能是本阶段有算子可写的构念）；S1 另有 evidence_notes（哪些记录的内容是转述 / 推断） |
 | 解析 | `parse_output(stage, output, registry, evidence) -> StageOutput`：先按 schema 校验，再查登记表（option 必须是该过程的可选项；提议依据的过程必须在本阶段判断过；转述必须写出被转述的命题；证据只能降级，不能把转述升成亲见），任何一条不满足 → `StageError`，整阶段不产生提议。judgments 的 hands_to 由登记表填 |
 | 还没做 | 结构化解码（服务端按 schema 约束生成）没有接，现在用 `json_object` + 本地校验；task 数据每阶段约 8—14K 字符，以后可按需裁剪 |
 
@@ -246,11 +246,11 @@ class IExpresser(Protocol):
 
 只拿表达需要的信息：自知画像、表达基线、计划里的表达目标与受众、可见历史；不拿要隐瞒的内容、机制名和状态数值。我们自己的思考固定只发给本人。
 
-实现：`rolesim/expresser.py` `ModelExpresser`（已实现），一次 `IModel.complete("express", …)`。给：身份、核心目标、表达基线（只限能自知的）、感受（情绪标签 + 低 / 中 / 高，不带数值）、最近 12 条可见记录、计划里的主行动、表达目标 / 受众 / 方式、承诺。不给：状态数值、构念和过程 ID、其他候选及其约束、假设。回复按 `schemas.EXPRESS_SCHEMA` 解析成 `AgentActionContent`：思考只发本人，发言和动作默认发给在场所有人（受众只表示对谁说），计划把表达标为 `private` 时才只发给受众，并用环境组的 `validate_action_content` 检查。
+实现：`rolesim/stage/expresser.py` `ModelExpresser`（已实现），一次 `IModel.complete("express", …)`。给：身份、核心目标、表达基线（只限能自知的）、感受（情绪标签 + 低 / 中 / 高，不带数值）、最近 12 条可见记录、计划里的主行动、表达目标 / 受众 / 方式、承诺。不给：状态数值、构念和过程 ID、其他候选及其约束、假设。回复按 `schemas.EXPRESS_SCHEMA` 解析成 `AgentActionContent`：思考只发本人，发言和动作默认发给在场所有人（受众只表示对谁说），计划把表达标为 `private` 时才只发给受众，并用环境组的 `validate_action_content` 检查。
 
 ### 3.5 三个阶段的实现（已实现）
 
-`rolesim/stages.py` `ModelStage(name)`：阶段与 phase.kind 必须对应（S1 ↔ event、S2 ↔ plan、S3 ↔ feedback），S3 要求 `upstream["plan"]`；`IEvidenceGate` → `PromptView`（只含自知层：登记表里 aware / partial 的 stable 模块、active 的 dynamic 构念及其值、取回的记忆、可见记录、上游产物、在场者、task）→ `IModel` → 写 `ITrace`（在解析之前，失败的输出也留下）→ `parse_output`；S2 的受众必须是在场的其他人。模型失败或输出不合规 → `StageError`，整阶段不产生提议。
+`rolesim/stage/stages.py` `ModelStage(name)`：阶段与 phase.kind 必须对应（S1 ↔ event、S2 ↔ plan、S3 ↔ feedback），S3 要求 `upstream["plan"]`；`IEvidenceGate` → `PromptView`（只含自知层：登记表里 aware / partial 的 stable 模块、active 的 dynamic 构念及其值、取回的记忆、可见记录、上游产物、在场者、task）→ `IModel` → 写 `ITrace`（在解析之前，失败的输出也留下）→ `parse_output`；S2 的受众必须是在场的其他人。模型失败或输出不合规 → `StageError`，整阶段不产生提议。
 
 不能自知（或来源没写）的 stable 模块只以档案里的条件化语句进入提示，不带名字、不带数值，放在“说不出来、但会影响你的倾向”下；没有语句就不进任何提示。能自知的模块有语句时也用语句代替数值。
 
@@ -272,7 +272,7 @@ class IStateStore(Protocol):
 
 | | 内容 |
 |---|---|
-| 实现 | `rolesim/store.py` `ConstructStore`；状态布局 `rolesim/slots.py`（45 个 dynamic / memory 构念的键、字段、取值形式、哪些字段有幅度档、只追加 / 固定事实，字段名按 09 §3.4—3.5） |
+| 实现 | `rolesim/state/store.py` `ConstructStore`；状态布局 `rolesim/state/slots.py`（45 个 dynamic / memory 构念的键、字段、取值形式、哪些字段有幅度档、只追加 / 固定事实，字段名按 09 §3.4—3.5） |
 | 流程 | 提议 → 交给对应构念的 `IUpdateOperator` 补全为 `StateChange` → `IMagnitude` 给区间 → `IValidator` 检查 → 按依赖组原子提交；没变的值丢弃；同一阶段别的算子已写的地址，衰减不再处理 |
 | 保证 | 只有这里能产生新 `AgentState`；stable 永远不写；`ctx.state` 必须是当前快照；同一 `(角色, 事件, 阶段, kind)` 重试返回第一次的结果，载荷不同则拒绝；交出去的快照是副本；写入过的 unknown 构念转为 active |
 | 出错 | 某依赖组有硬错 → 整组拒绝，其他组照常提交；软异常照写并标记。另有两项要看历史或多条变化的软检查：无新证据却反复翻转、四个关系维度同比例变化 |
@@ -287,7 +287,7 @@ class IUpdateOperator(Protocol):
                 judgments: list[Judgment]) -> tuple[list[StateChange], list[RejectedChange]]: ...
 ```
 
-每个算子只接收白名单内构念的提议，补上 before、evidence、decision_mechanisms、band、group；没有证据、地址不对、同一地址给出不同值的提议退回（同值的合并，证据去重）。阶段权限由 `OperatorRule.stages` 决定（例如 relation_update 只能在 S3）。`decay_or_recovery` 只在时间推进或阶段末运行。实现：`rolesim/operators.py`，11 个算子是同一个类，差别全部来自登记表的写入白名单、阶段权限和依赖组。
+每个算子只接收白名单内构念的提议，补上 before、evidence、decision_mechanisms、band、group；没有证据、地址不对、同一地址给出不同值的提议退回（同值的合并，证据去重）。阶段权限由 `OperatorRule.stages` 决定（例如 relation_update 只能在 S3）。`decay_or_recovery` 只在时间推进或阶段末运行。实现：`rolesim/state/operators.py`，11 个算子是同一个类，差别全部来自登记表的写入白名单、阶段权限和依赖组。
 
 ### 4.2 `IMagnitude`：合法变化区间
 
@@ -297,7 +297,7 @@ class IMagnitude(Protocol):
               evidence: Sequence[EvidenceRef], stable: StableProfile, instance: Any = None) -> Optional[Band]: ...
 ```
 
-`Band`：name（微小 / 小 / 中 / 大 / 扩展）、low、high、extended（只有四级事件有：落在 (high, extended] 的值照写并标软异常 `extended_range`）。按事件等级取基准区间（效价 ×2、当前自我评价 ×4），人格调节最多移一档（敏感度分面合并后 |z| ≥ 1.5 时移到相邻档的半区），证据只有听说的最多到"中"、只有推断的最多到"小"。模型的取值必须落在区间内，越界拒绝不截断。不属于幅度档的字段（类别、文字、登记表未归快慢变的构念）返回 None。实现：`rolesim/magnitude.py`；人格敏感度目前只接 P1 分面、依恋焦虑、认知灵活性这几条无条件的映射，其余（P2 / P3、违约后的尽责性、自尊不稳定性）等档案形状确定后再接。
+`Band`：name（微小 / 小 / 中 / 大 / 扩展）、low、high、extended（只有四级事件有：落在 (high, extended] 的值照写并标软异常 `extended_range`）。按事件等级取基准区间（效价 ×2、当前自我评价 ×4），人格调节最多移一档（敏感度分面合并后 |z| ≥ 1.5 时移到相邻档的半区），证据只有听说的最多到"中"、只有推断的最多到"小"。模型的取值必须落在区间内，越界拒绝不截断。不属于幅度档的字段（类别、文字、登记表未归快慢变的构念）返回 None。实现：`rolesim/state/magnitude.py`；人格敏感度目前只接 P1 分面、依恋焦虑、认知灵活性这几条无条件的映射，其余（P2 / P3、违约后的尽责性、自尊不稳定性）等档案形状确定后再接。
 
 ### 4.3 `IValidator`：硬错 / 软异常检查
 
@@ -309,7 +309,7 @@ class IValidator(Protocol):
 
 `Violation`：kind（hard / soft）、code、detail。硬错包括：证据为空或不可见、越出算子白名单或阶段权限、写 stable、写非 active 字段、before 与快照不一致、删除伤害事实或记忆、含对方真实隐状态、心理理论阶数超限、数值越界。软异常包括：超出典型区间、维度同比例联动、无新证据却反复翻转、累计超限。
 
-实现：`rolesim/validator.py`，每条规则一个 code（完整清单在模块说明里），例如 `stage_not_allowed`、`over_band`、`rewrites_fact`、`tom_order_exceeded`、`unregistered_option`。"含对方真实隐状态"在本方无法检查（本方从不持有别的角色的隐状态），以"证据必须可见"作为结构上的替代。
+实现：`rolesim/state/validator.py`，每条规则一个 code（完整清单在模块说明里），例如 `stage_not_allowed`、`over_band`、`rewrites_fact`、`tom_order_exceeded`、`unregistered_option`。"含对方真实隐状态"在本方无法检查（本方从不持有别的角色的隐状态），以"证据必须可见"作为结构上的替代。
 
 ---
 
@@ -336,7 +336,7 @@ IRoleAgent.act
 | **1 IRoleAgent** | ✅ | `staged.StagedRoleAgent`（唯一实现，基于 `adapter.RoleAgentBase`）；按角色的消融模式 | 接口没有结束对话的信号，本地运行跑满 `max_turns`；`enable_config` 只记录 |
 | 　（IEnvironment） | ✅ 本地替身 | `loop.EchoEnvironment` | 环境组实现，我们只调用；剧情事件的 `cues` 不传给角色（接口没有线索字段） |
 | 1.1 ITurnRunner | ✅ | `runner.TurnRunner` | “反馈”按受众规则判断，不由模型判断 |
-| 1.2 ITrace | ✅ | `trace.JsonlTrace` / `MemoryTrace`；离线工具（`audit.py`、`package.py`、`readable.py`）读这个格式 | — |
+| 1.2 ITrace | ✅ | `trace.JsonlTrace` / `MemoryTrace`；离线工具（`offline/audit.py`、`offline/package.py`、`offline/readable.py`）读这个格式 | — |
 | **2 IRoleRepository** | ✅ | `repository.ProfileRepository`（档案、入场状态、开场设定、人格 skill） | 权力差、群体成员资格要等场景结构；决策偏好在过程首次调用时播种策略未做；心理理论上限 3 / 4 阶要针对具体对象的证据 |
 | 2.1 IProfileCompiler | ✅ | `profile.ProfileCompiler`（profile-1 档案；自然语言经 `IModel` 的 "profile" 调用） | §4.10 决策偏好先验映射（约 60 个属性名要心理学组核对）、派生字段（P2 全局因素、HEXACO 领域、组织标签）、只检查了一部分模块的取值形式；示例角色还没有 profile-1 档案 |
 | 2.2 IRegistry | ✅ | `registry.Registry` + `data/registry.json` | 待心理学组核对 `review` 清单 |
@@ -345,9 +345,9 @@ IRoleAgent.act
 | 　S3 | ✅ | `stages.ModelStage("S3")` | 什么算反馈由 `ITurnRunner` 判断 |
 | 3.1 IEvidenceGate | ✅ | `evidence.EvidenceGate` | 记忆检索是字面相似度（`memory.search`），不是语义检索 |
 | 3.2 IMechanism | ◐ | 决策过程在阶段调用里由模型判断（schema 的 judgments，只在 `profile_state_mechanisms` 模式），解析时查登记表 | 没有按规则实现的过程；各过程输出字段要等 F2 |
-| 3.3 IModel | ✅ | `model.ChatModel` / `model.MockModel`，输出 schema 与解析在 `schemas.py`，传输在 `providers.py` | 结构化解码未接；还没有跑过真实模型 |
+| 3.3 IModel | ✅ | `model.ChatModel` / `model.MockModel`，输出 schema 与解析在 `stage/schemas.py`，传输在 `stage/providers.py` | 结构化解码未接；还没有跑过真实模型 |
 | 3.4 IExpresser | ✅ | `expresser.ModelExpresser`（模型调用 "express"），带被激活 skill 的表达要点 | — |
-| **4 IStateStore** | ✅ | `store.ConstructStore` + `slots.py` | 跨阶段累计上限、习惯化、按时间衰减要等场景时间单位（F3） |
+| **4 IStateStore** | ✅ | `store.ConstructStore` + `state/slots.py` | 跨阶段累计上限、习惯化、按时间衰减要等场景时间单位（F3） |
 | 4.1 IUpdateOperator | ✅ | `operators.Operator`（11 个，规则来自登记表） | 规则卡里要判断事件的部分（情绪方向、习惯化）由阶段提出、验证器检查，不在算子里计算 |
 | 4.2 IMagnitude | ✅ | `magnitude.Magnitude` | 人格敏感度只接了无条件映射（P1 分面、依恋焦虑、认知灵活性）；P2 / P3、违约后的尽责性、自尊不稳定性未接 |
 | 4.3 IValidator | ✅ | `validator.Validator` | “含对方真实隐状态”本方无法检查；规则卡里的单条软规则（如“无调节过程而强度大幅下降”）未收 |
@@ -356,13 +356,13 @@ IRoleAgent.act
 
 | 旧的 | 是什么 | 去向 |
 |---|---|---|
-| `skills.py` | 人格 skill（应对 / 说话习惯的提示，不写状态） | 保留：由 `IRoleRepository.skills` 取出，经 `StageContext.skills` 进入 S2 和表达；被 S1 的线索或开场设定激活，至多 3 个 |
-| `briefing.py` | 开场设定：目标、想透露 / 想隐瞒的、前情 | 保留：`IRoleRepository.setup` + `enter`（目标 → 当前目标 `g-setup`，前情 → 入场记忆）；隐瞒内容进 S1 / S2 / S3，不进 `IExpresser` |
+| `role/skills.py` | 人格 skill（应对 / 说话习惯的提示，不写状态） | 保留：由 `IRoleRepository.skills` 取出，经 `StageContext.skills` 进入 S2 和表达；被 S1 的线索或开场设定激活，至多 3 个 |
+| `role/briefing.py` | 开场设定：目标、想透露 / 想隐瞒的、前情 | 保留：`IRoleRepository.setup` + `enter`（目标 → 当前目标 `g-setup`，前情 → 入场记忆）；隐瞒内容进 S1 / S2 / S3，不进 `IExpresser` |
 | 消融档位 | 旧的三档提示 | 重新定义为 `interfaces.MODES`：`profile_only` 提示里没有动态状态和决策过程判断，`profile_state` 有状态没有判断，`profile_state_mechanisms` 全部；只改提示和输出 schema，状态照常计算 |
-| `agent.py`、`state.py`、`stateview.py`、`mechanisms.py`、`contract.py`、`runtime.py`、`modules.py` | `Agent.step`、六域状态、三档视图、5 张机制卡、环境契约 v0 路径 | 删除；`runtime.py` 里还要用的剧情工具搬到 `scene.py`，`modules.py` 的模块状态工具并入 `persona.py` |
-| `adapter.RoleAgentAdapter`；`providers.py` 的 `appraise / decide / express` 与 `MockBackend` | 旧的接口实现与后端 | 删除；`adapter.py` 只剩公共的 `RoleAgentBase`，`providers.py` 只剩 chat-completions 传输 |
+| `agent.py`、`state.py`、`stateview.py`、`mechanisms.py`、`contract.py`、`runtime.py`、`modules.py` | `Agent.step`、六域状态、三档视图、5 张机制卡、环境契约 v0 路径 | 删除；`runtime.py` 里还要用的剧情工具搬到 `run/scene.py`，`modules.py` 的模块状态工具并入 `role/persona.py` |
+| `adapter.RoleAgentAdapter`；`stage/providers.py` 的 `appraise / decide / express` 与 `MockBackend` | 旧的接口实现与后端 | 删除；`agent/adapter.py` 只剩公共的 `RoleAgentBase`，`stage/providers.py` 只剩 chat-completions 传输 |
 | `memory.add / recall` | 旧 Agent 的记忆列表 | 删除；`memory.search` 留给证据门 |
-| `audit.py`、`package.py`、`readable.py` | 离线工具 | 改读新格式（只认 `manifest.pipeline == "stages"`）；审计 10 项检查 |
+| `offline/audit.py`、`offline/package.py`、`offline/readable.py` | 离线工具 | 改读新格式（只认 `manifest.pipeline == "stages"`）；审计 10 项检查 |
 | `compile`、`--interface`、`--pipeline`、`--appraise-state` | 命令行 | 删除；`run` 只有一条管线，加 `--mode`、`--no-skills` |
 
 ### 6.2 卡在外部的
@@ -396,9 +396,9 @@ C8（[08 §1](08-framework-oop-design.md)）：幅度由程序给合法区间，
 | 偏离 | 在哪里 | 后果 |
 |---|---|---|
 | 阶段调用直接产出状态提议：改哪个构念、哪个键和字段、目标值、事件等级 | `IStage.run` 返回 `proposals`；`schemas.stage_schema` 的 `proposals` | 模型在管状态；Qwen3-8B 实测大量写错地址、改写固定字段、幅度越档 |
-| 算子只整理模型的提议，不按规则卡生成变化 | `IUpdateOperator.propose(ctx, proposals, judgments)`；`operators.py` | 11 张规则卡的触发、方向、调节没有在 harness 里实现 |
-| 区间在模型选值**之后**才算，只用来检查 | `operators.py` 调 `IMagnitude.range`，`validator._magnitude` 判越档 | 模型选值时不知道按本人人格与证据算出的区间，提示里只有一张通用参考表 |
-| `IMechanism` 没有实现，全部在阶段调用里由模型判断 | `stages.py` 文档串 | 可以接受（3.2 允许模型实现），但判断的输出字段没有类型，算子无法读取 |
+| 算子只整理模型的提议，不按规则卡生成变化 | `IUpdateOperator.propose(ctx, proposals, judgments)`；`state/operators.py` | 11 张规则卡的触发、方向、调节没有在 harness 里实现 |
+| 区间在模型选值**之后**才算，只用来检查 | `state/operators.py` 调 `IMagnitude.range`，`validator._magnitude` 判越档 | 模型选值时不知道按本人人格与证据算出的区间，提示里只有一张通用参考表 |
+| `IMechanism` 没有实现，全部在阶段调用里由模型判断 | `stage/stages.py` 文档串 | 可以接受（3.2 允许模型实现），但判断的输出字段没有类型，算子无法读取 |
 
 ### 7.2 修正后的分工
 

@@ -64,20 +64,6 @@ def validate_briefing(briefing, reserved_ids=()):
     return briefing
 
 
-def recap_entries(briefing):
-    return [{"id": item["id"], "type": "recap", "actor": "memory", "content": item["text"], "cues": {}}
-            for item in (briefing or {}).get("recap", [])]
-
-
-def controller_view(briefing):
-    return {"goal": briefing["goal"], "want_known": [i["text"] for i in briefing["disclose"]],
-            "keep_private": [{"text": i["text"], "strategy": i["strategy"]} for i in briefing["conceal"]]}
-
-
-def expression_view(briefing):
-    return {"goal": briefing["goal"], "may_share": [i["text"] for i in briefing["disclose"]]}
-
-
 def mentions(speech, items):
     """Ids of briefing items whose markers appear in a spoken line."""
     return [item["id"] for item in items if any(m in speech for m in item["markers"])]

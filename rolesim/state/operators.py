@@ -14,7 +14,7 @@ proposes the value and the validator checks it.
 """
 import math
 
-from .interfaces import STAGE_OF_KIND, RejectedChange, StateChange, Violation
+from ..interfaces import STAGE_OF_KIND, RejectedChange, StateChange, Violation
 from .slots import AddressError, band_scale, get, instance_after, resolve
 
 

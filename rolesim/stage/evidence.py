@@ -15,8 +15,8 @@ down what was excluded. Here:
 Other roles' hidden state and scene-private data never reach this side, so there is nothing to
 filter for them; the runner's observations are all this gate ever reads.
 """
-from .agent_api import record_id, sees
-from .interfaces import EvidenceRef, EvidenceSet, Excluded
+from ..agent.agent_api import record_id, sees
+from ..interfaces import EvidenceRef, EvidenceSet, Excluded
 from .memory import RECALL_K, search
 
 

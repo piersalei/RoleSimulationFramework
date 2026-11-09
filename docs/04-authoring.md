@@ -120,6 +120,6 @@ python3.11 -m rolesim profile role1 --export profiles/role1.json   # 编译并�
 - `source`：`explicit`（档案明写，默认）、`inferred`（按规则推断，`basis` 写规则）、`model_inferred`（模型推断，`basis` 写原文引文）、`default`（默认先验）。没有依据的构念不要写，编译后为 unknown，不随机补值；71 维未写的条目取 0 并标为 default。
 - 人格方案三选一（P1 / P2 / P3），另外两套自动关闭。
 - `phrase`：条件化的自然语言（心智建模库 5.4：通常倾向、典型触发、压力下的变化、例外条件、别人能看到的信号），不用心理学术语、数字，不写“总是”“绝不”。有 phrase 时提示里用它代替数值；**角色不能自知的构念（如 71 维能力、发展位置、人格功能）只能以 phrase 进入提示，没有 phrase 就不进任何提示**。
-- `entry`：档案给出的入场状态（dynamic / memory 构念，形状见 `rolesim/slots.py`）。没写的按角色状态说明 §8.2 取默认值（情绪强度为零、无额外压力、自我评价取自尊基线、心理理论上限按 71 维两项映射等），其余为 unknown。
+- `entry`：档案给出的入场状态（dynamic / memory 构念，形状见 `rolesim/state/slots.py`）。没写的按角色状态说明 §8.2 取默认值（情绪强度为零、无额外压力、自我评价取自尊基线、心理理论上限按 71 维两项映射等），其余为 unknown。
 - 编译时列出待审核项：非明写的高影响字段（角色状态说明 §8.3）、不能自知又没有 phrase 的构念、没被采用的模型推断、被去掉的 phrase。
 

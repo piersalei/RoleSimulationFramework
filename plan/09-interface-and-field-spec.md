@@ -4,7 +4,7 @@
 
 - 来源：心理学组 v1 接口文件（[data/sources/psychology_v1/](../data/sources/psychology_v1/README.md)：构念登记、角色状态说明、状态变化规则、三个阶段 skill）和环境组接口说明（[Agent接口说明_环境组_2026-11-07.md](../data/sources/contracts/Agent接口说明_环境组_2026-11-07.md)）。对象划分和阶段流程见 [08](08-framework-oop-design.md)；本文只写**字段**和**接口**。
 - 心理学含义以构念登记为准，本文不新增心理构念。凡是心理学文件没写死、由工程侧补的结构，标 **〔工程〕**，需要心理学组确认。
-- 现状：对外接口已实现（`rolesim/agent_api.py`）；本文第 3—6 节是目标结构，代码尚未按它重建。
+- 现状：对外接口已实现（`rolesim/agent/agent_api.py`）；本文第 3—6 节是目标结构，代码尚未按它重建。
 - 证据层级：工程规格，不含任何心理有效性结论。
 - **先看 [10](10-interfaces.md)**：那里是关键接口清单；本文是这些接口所用数据类型的完整字段附录，其中照抄心理学文件的部分以后由脚本生成，不手工维护。
 
@@ -295,7 +295,7 @@ memory 条目使用同一套元数据。
 
 ### 3.4 `DynamicState`
 
-> 2026-11-07：本节与 3.5 已落成 `rolesim/slots.py`（状态布局，由 `IStateStore` 使用）。与下表的差异：`d.policy.mechanism_preference_state` 改为按 `entry_id` 的条目，便于定位；`d.policy.action_commitment` 的阶段暂不收〔工程〕的“延误”“重新协商”（待 F1）；1.2 的逐字段元数据（source、confidence、last_updated_event、version）还没有放进状态，变化的来源与证据记在 `StateChange` 和提交历史里。
+> 2026-11-07：本节与 3.5 已落成 `rolesim/state/slots.py`（状态布局，由 `IStateStore` 使用）。与下表的差异：`d.policy.mechanism_preference_state` 改为按 `entry_id` 的条目，便于定位；`d.policy.action_commitment` 的阶段暂不收〔工程〕的“延误”“重新协商”（待 F1）；1.2 的逐字段元数据（source、confidence、last_updated_event、version）还没有放进状态，变化的来源与证据记在 `StateChange` 和提交历史里。
 
 每条都带 1.2 的元数据。"维护方"是唯一主写入算子；`decay_or_recovery` 只回落标出的字段。
 

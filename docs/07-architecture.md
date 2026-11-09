@@ -26,8 +26,8 @@ flowchart TB
     TR["ITurnRunner：runner.TurnRunner"]
     ST["IStage：stages.ModelStage S1 / S2 / S3<br/>IEvidenceGate：evidence.EvidenceGate"]
     EX["IExpresser：expresser.ModelExpresser"]
-    MD["IModel：model.ChatModel / MockModel<br/>schemas.py：各调用的输出 schema 与解析"]
-    SS["IStateStore：store.ConstructStore<br/>算子 operators.py · 幅度档 magnitude.py · 验证 validator.py · 布局 slots.py"]
+    MD["IModel：model.ChatModel / MockModel<br/>stage/schemas.py：各调用的输出 schema 与解析"]
+    SS["IStateStore：store.ConstructStore<br/>算子 state/operators.py · 幅度档 state/magnitude.py · 验证 state/validator.py · 布局 state/slots.py"]
   end
   subgraph DEF["定义与入场"]
     REG["IRegistry：registry.Registry"]
@@ -35,7 +35,7 @@ flowchart TB
   end
   subgraph OUT["记录与评审"]
     TRACE["ITrace：trace.JsonlTrace → 运行目录"]
-    AUD["audit.py · package.py · readable.py"]
+    AUD["offline/audit.py · offline/package.py · offline/readable.py"]
   end
   PSY --> REG
   ROLE --> REP
@@ -60,18 +60,31 @@ flowchart TB
 
 ## 3. 代码地图
 
+`rolesim/` 按 [plan/10](../plan/10-interfaces.md) 的 4 个顶层接口分子目录（2026-11-09 起）：
+
+| 目录 | 对应接口 | 内容 |
+|---|---|---|
+| `agent/` | 1 IRoleAgent · ITurnRunner · ITrace | 对外接口、一次 act 的编排、轨迹 |
+| `role/` | 2 IRoleRepository · IProfileCompiler · IRegistry | 登记表、档案编译、入场、角色文件、开场设定、人格 skill |
+| `stage/` | 3 IStage · IEvidenceGate · IModel · IExpresser | 三个阶段、证据门、记忆检索、表达、输出 schema、模型调用与传输 |
+| `state/` | 4 IStateStore · IUpdateOperator · IMagnitude · IValidator | 状态布局、算子、幅度档、校验、提交 |
+| `run/` | — | 本地参考运行器与剧情文件 |
+| `offline/` | — | 审计、评审包、可读版 |
+
+顶层只留 `__main__.py`（命令行）、`interfaces.py`（全部接口契约）、`vocab.py`（词表）、`catalog.py`（来源索引与通用工具）。
+
 | 层 | 文件 | 职责 | 状态 |
 |---|---|---|---|
-| 对外接口 | `agent_api.py` | 环境组接口 v2：`IRoleAgent` / `IEnvironment` 的数据类型、双向校验、记录拆分与可见性 | 完成 |
-| | `adapter.py`、`staged.py` | `RoleAgentBase`（选角色、会话、`request_id` 重试、串行）与 `StagedRoleAgent`（第一次行动时入场，之后交给 `TurnRunner`；按角色的消融模式） | 完成 |
-| 一次行动 | `runner.py` | `TurnRunner`：记录组 → S1；对上次计划的反馈 → S3；S2（被拒重做一次）；表达；失败后接着做 | 完成 |
-| | `evidence.py`、`stages.py`、`expresser.py` | 证据门（可见记录、排除原因、记忆取回）；三个阶段（自知层视图、开场设定、人格 skill、模式）；按需可见的表达 | 完成 |
-| | `model.py`、`schemas.py`、`providers.py` | 每个阶段一次结构化调用（`ChatModel` 用 chat-completions 传输，`MockModel` 为夹具）；输出 schema 由登记表生成，解析时再查登记表 | 完成；结构化解码未接 |
-| 状态 | `store.py`、`operators.py`、`magnitude.py`、`validator.py`、`slots.py` | 按构念 ID 的状态布局；11 个算子；幅度档（事件等级、效价 ×2、自我评价 ×4、证据封顶、人格移档、四级扩展区间）；硬错 / 软异常；依赖组原子提交 | 完成；跨阶段累计上限、习惯化、按时间衰减等场景时间单位 |
-| 定义与入场 | `registry.py`、`data/registry.json` | 从心理学组 v1 文件生成 87 个构念、75 个决策过程、11 个算子规则，每项带原文出处 | 完成；`review` 清单待心理学组确认 |
-| | `profile.py`、`repository.py` | profile-1 档案编译（来源类型、待审核、条件化语句）；档案文件优先、否则转换角色文件；按角色状态说明 §8.2 入场 | 完成；§4.10 决策偏好先验与派生字段未做 |
-| 角色与剧情文件 | `roles.py`、`persona.py`、`briefing.py`、`skills.py`、`scene.py`、`vocab.py` | 角色文件（persona 2.0 校验、skill 绑定、开场设定）、剧情文件与环境 agent、人格 skill 库 | 完成 |
-| 记录与评审 | `trace.py`、`loop.py`、`audit.py`、`package.py`、`readable.py` | 轨迹落盘、本地参考运行器与运行目录、自动审计、盲化评审包、可读版 | 完成 |
+| 对外接口 | `agent/agent_api.py` | 环境组接口 v2：`IRoleAgent` / `IEnvironment` 的数据类型、双向校验、记录拆分与可见性 | 完成 |
+| | `agent/adapter.py`、`agent/staged.py` | `RoleAgentBase`（选角色、会话、`request_id` 重试、串行）与 `StagedRoleAgent`（第一次行动时入场，之后交给 `TurnRunner`；按角色的消融模式） | 完成 |
+| 一次行动 | `agent/runner.py` | `TurnRunner`：记录组 → S1；对上次计划的反馈 → S3；S2（被拒重做一次）；表达；失败后接着做 | 完成 |
+| | `stage/evidence.py`、`stage/stages.py`、`stage/expresser.py` | 证据门（可见记录、排除原因、记忆取回）；三个阶段（自知层视图、开场设定、人格 skill、模式）；按需可见的表达 | 完成 |
+| | `stage/model.py`、`stage/schemas.py`、`stage/providers.py` | 每个阶段一次结构化调用（`ChatModel` 用 chat-completions 传输，`MockModel` 为夹具）；输出 schema 由登记表生成，解析时再查登记表；结构化解码（json_schema） | 完成 |
+| 状态 | `state/store.py`、`state/operators.py`、`state/magnitude.py`、`state/validator.py`、`state/slots.py` | 按构念 ID 的状态布局；11 个算子；幅度档（事件等级、效价 ×2、自我评价 ×4、证据封顶、人格移档、四级扩展区间）；硬错 / 软异常；依赖组原子提交 | 完成；跨阶段累计上限、习惯化、按时间衰减等场景时间单位 |
+| 定义与入场 | `role/registry.py`、`data/registry.json` | 从心理学组 v1 文件生成 87 个构念、75 个决策过程、11 个算子规则，每项带原文出处 | 完成；`review` 清单待心理学组确认 |
+| | `role/profile.py`、`role/repository.py` | profile-1 档案编译（来源类型、待审核、条件化语句）；档案文件优先、否则转换角色文件；按角色状态说明 §8.2 入场 | 完成；§4.10 决策偏好先验与派生字段未做 |
+| 角色与剧情文件 | `role/roles.py`、`role/persona.py`、`role/briefing.py`、`role/skills.py`、`run/scene.py`、`vocab.py` | 角色文件（persona 2.0 校验、skill 绑定、开场设定）、剧情文件与环境 agent、人格 skill 库 | 完成 |
+| 记录与评审 | `agent/trace.py`、`run/loop.py`、`offline/audit.py`、`offline/package.py`、`offline/readable.py` | 轨迹落盘、本地参考运行器与运行目录、自动审计、盲化评审包、可读版 | 完成 |
 | 来源 | `catalog.py`、`data/catalog.json` | 两份心理学库的章节索引与哈希；其中的指令性文字没有执行权限 | 完成 |
 | 契约 | `interfaces.py` | plan/10 的全部 Protocol 与数据类型 | 完成 |
 | 入口 | `__main__.py` | `catalog` `registry` `profile` `list` `validate` `skills` `run` `audit` `package` `readable` | 完成 |

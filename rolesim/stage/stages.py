@@ -23,13 +23,13 @@ the stage call, as the schema's judgments.
 """
 import json
 
-from . import skills as sk
-from .agent_api import record_id
+from ..role import skills as sk
+from ..agent.agent_api import record_id
 from .evidence import EvidenceGate
-from .interfaces import (FULL_MODE, MODES, STAGE_OF_KIND, InterfaceError, ModelCallRecord, ModelError, PromptView,
+from ..interfaces import (FULL_MODE, MODES, STAGE_OF_KIND, InterfaceError, ModelCallRecord, ModelError, PromptView,
                          StageError)
 from .schemas import parse_output, stage_schema, stage_task
-from .vocab import ACTIONS
+from ..vocab import ACTIONS
 
 KIND_OF = {stage: kind for kind, stage in STAGE_OF_KIND.items()}
 HISTORY_WINDOW = 30

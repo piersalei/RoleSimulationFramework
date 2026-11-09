@@ -22,12 +22,12 @@ import copy
 import json
 from pathlib import Path
 
-from .agent_api import (ENV_ID, ENV_NAME, MODE, split, validate_action_result, validate_bootstrap,
+from ..agent.agent_api import (ENV_ID, ENV_NAME, MODE, split, validate_action_result, validate_bootstrap,
                         validate_environment_content, validate_environment_view, validate_turn_input,
                         visible)
-from .catalog import digest, write_json
-from .interfaces import FULL_MODE
-from .roles import fit_cast, origin
+from ..catalog import digest, write_json
+from ..interfaces import FULL_MODE
+from ..role.roles import fit_cast, origin
 from .scene import WorldAgent, code_version, environment_agent, now, role_seats
 
 INTERFACE = "agent-api-v2"
@@ -182,11 +182,11 @@ def _module(m):
 def run_scene(roles, scene, model, output, registry=None, mode=FULL_MODE, use_skills=True):
     """Run a scene: StagedRoleAgent behind the local runner and the echo environment. The pipeline
     writes its own trace under trace/; the audit and transcript.md follow at the end."""
-    from .audit import write_report
-    from .readable import write_readable
-    from .registry import Registry
-    from .staged import StagedRoleAgent
-    from .trace import JsonlTrace
+    from ..offline.audit import write_report
+    from ..offline.readable import write_readable
+    from ..role.registry import Registry
+    from ..agent.staged import StagedRoleAgent
+    from ..agent.trace import JsonlTrace
 
     registry = registry or Registry.load()
     ep = episode(roles, scene)

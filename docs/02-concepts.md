@@ -47,12 +47,12 @@
 | 证据门 | 每个阶段开始时决定什么能当证据：本人的行动、明确发给自己的记录；排除别人的思考、本人的思考、没发给自己的记录，并记原因；另取回至多 4 条相关记忆 | [06-runtime-flow.md](06-runtime-flow.md) §2 |
 | 线索（cue） | S1 给出的五种情境特征强度：`uncertainty` 不确定、`pressure` 压力、`commitment` 承诺、`repair` 修复、`conflict` 冲突，0–1；只用来激活人格 skill | `rolesim/vocab.py` |
 | 变化提议（`ChangeProposal`） | 阶段对一个构念实例的变化提议：构念、实例键、字段、目标值、事件等级、证据、依据的决策过程 | [06-runtime-flow.md](06-runtime-flow.md) §4 |
-| 更新算子 | 11 个写入通道：`emotion_update`、`belief_revision`、`other_model_update`、`self_state_update`、`relation_update`、`group_state_update`、`goal_update`、`commitment_update`、`strategy_learning`、`memory_update`、`decay_or_recovery`；白名单、阶段与依赖组都来自登记表 | `rolesim/operators.py` |
+| 更新算子 | 11 个写入通道：`emotion_update`、`belief_revision`、`other_model_update`、`self_state_update`、`relation_update`、`group_state_update`、`goal_update`、`commitment_update`、`strategy_learning`、`memory_update`、`decay_or_recovery`；白名单、阶段与依赖组都来自登记表 | `rolesim/state/operators.py` |
 | 幅度档（band） | 一次变化允许的范围：按事件等级分档，效价 ×2、自我评价 ×4，只有听说 / 推断的证据时封顶，人格敏感度最多移一档；越界拒绝，不截断 | [06-runtime-flow.md](06-runtime-flow.md) §4 |
 | 依赖组 | 相互依赖的变化放一组，组内有硬错整组不写 | 同上 |
 | 硬错 / 软异常 | 硬错拒绝写入（如 `over_band`、`stage_not_allowed`、`writes_stable`）；软异常照写并标记 | 同上 |
 | 模块状态 | 每个构念的启用情况：`active` 有值、`unknown` 未知（值为 null）、`inactive` 当前没在起作用、`disabled` 关闭、`not_modeled` 未建模、`not_applicable` 不适用；未知不等于 0 | [13-agent-interface.md](13-agent-interface.md) §4.1 |
-| 记忆 | `m.entry` 只增；入场时来自开场设定的前情、生命经历和 bootstrap 的此前经历，之后由 S2 / S3 按证据写入；阶段开始时按字面相似度、重要性和可及性取回 | `rolesim/memory.py` |
+| 记忆 | `m.entry` 只增；入场时来自开场设定的前情、生命经历和 bootstrap 的此前经历，之后由 S2 / S3 按证据写入；阶段开始时按字面相似度、重要性和可及性取回 | `rolesim/stage/memory.py` |
 | 状态 ID | 入场为 `{角色ID}@entry`，之后每次提交形如 `{角色ID}@{事件}#{序号}.{类型}`，用 `prev_state_id` 串成链 | [13-agent-interface.md](13-agent-interface.md) §4.2 |
 
 ## 4. 运行与评测

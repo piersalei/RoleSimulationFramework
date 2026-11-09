@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from rolesim.roles import binding
+from rolesim.role.roles import binding
 
 ROOT = Path(__file__).resolve().parents[1]
 

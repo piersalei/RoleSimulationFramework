@@ -8,13 +8,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest.mock import patch
 
 from rolesim import interfaces as I
-from rolesim import slots
-from rolesim.model import STAGE_PROMPTS, ChatModel, MockModel, view_payload
-from rolesim.providers import ChatBackend
-from rolesim.registry import Registry
-from rolesim.schemas import (PRODUCTS, compact_schema, join_keys, keys_as_lists, narrow_evidence, parse_output, stage_constructs, stage_mechanisms, stage_schema, stage_task,
+from rolesim.state import slots
+from rolesim.stage.model import STAGE_PROMPTS, ChatModel, MockModel, view_payload
+from rolesim.stage.providers import ChatBackend
+from rolesim.role.registry import Registry
+from rolesim.stage.schemas import (PRODUCTS, compact_schema, join_keys, keys_as_lists, narrow_evidence, parse_output, stage_constructs, stage_mechanisms, stage_schema, stage_task,
                              validate)
-from rolesim.store import ConstructStore
+from rolesim.state.store import ConstructStore
 
 REG = Registry.load()
 KINDS = {"S1": "event", "S2": "plan", "S3": "feedback"}

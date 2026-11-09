@@ -5,13 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rolesim.audit import audit_run, write_report
-from rolesim.loop import run_scene
-from rolesim.model import MockModel
-from rolesim.package import export_package
-from rolesim.readable import FILENAME, render, write_readable
-from rolesim.registry import Registry
-from rolesim.roles import load_role, load_scene
+from rolesim.offline.audit import audit_run, write_report
+from rolesim.run.loop import run_scene
+from rolesim.stage.model import MockModel
+from rolesim.offline.package import export_package
+from rolesim.offline.readable import FILENAME, render, write_readable
+from rolesim.role.registry import Registry
+from rolesim.role.roles import load_role, load_scene
 
 REG = Registry.load()
 CHECKS = {"trajectory_traceable", "operator_write_compatible", "evidence_visible", "prompt_isolation",

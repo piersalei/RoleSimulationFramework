@@ -13,7 +13,7 @@ __main__._run
   roles.load_role × N（角色文件：persona 2.0 + skills + 开场设定，逐项校验）、roles.load_scene（scene 3.0）
   loop.run_scene
     episode(roles, scene)          入座检查 fit_cast；角色 ID = 角色文件 ID；背景 → trigger_facts；环境 agent 规则 → 导演指令
-    StagedRoleAgent（staged.py）   IRoleAgent 的实现：一个角色在一场互动里一个 Session
+    StagedRoleAgent（agent/staged.py）   IRoleAgent 的实现：一个角色在一场互动里一个 Session
     LocalRunner.run()              本地参考运行器（环境组运行器的替身），环境用 EchoEnvironment
       initialize × 每个角色         bootstrap：场景、背景、人物概况、关系句、mechanism.mode
       每轮：
@@ -61,7 +61,7 @@ StagedRoleAgent.act
 3. 验证：权限与阶段（来自登记表）、状态标记、取值形式与范围、证据可见、变化前的值、伤害事实与记忆只增不改、幅度档（按事件等级，人格敏感度最多移一档，只有听说 / 推断的证据封顶）、心理理论阶数、策略取值是登记的选项……
 4. 有硬错的依赖组整组拒绝，其余照常提交；软异常照写并标记。
 
-状态布局见 `rolesim/slots.py`；所有阈值与区间是心理学组的初始值，未标定。
+状态布局见 `rolesim/state/slots.py`；所有阈值与区间是心理学组的初始值，未标定。
 
 ## 5. 运行目录
 

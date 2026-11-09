@@ -16,13 +16,13 @@ import copy
 
 from .adapter import RoleAgentBase
 from .agent_api import MODE, InterfaceError, record_id
-from .profile import ProfileCompiler
-from .repository import ProfileRepository
-from .expresser import ModelExpresser
-from .interfaces import FULL_MODE, MODES, AgentCallError, ModelError, StageError
+from ..role.profile import ProfileCompiler
+from ..role.repository import ProfileRepository
+from ..stage.expresser import ModelExpresser
+from ..interfaces import FULL_MODE, MODES, AgentCallError, ModelError, StageError
 from .runner import TurnRunner
-from .stages import model_stages
-from .store import ConstructStore
+from ..stage.stages import model_stages
+from ..state.store import ConstructStore
 from .trace import MemoryTrace
 
 

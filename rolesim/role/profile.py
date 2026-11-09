@@ -34,8 +34,8 @@ import math
 import re
 from typing import Mapping
 
-from .catalog import digest
-from .interfaces import (EnableConfig, InterfaceError, PromptView, ReviewItem, StableModule, StableProfile,
+from ..catalog import digest
+from ..interfaces import (EnableConfig, InterfaceError, PromptView, ReviewItem, StableModule, StableProfile,
                          STATUSES)
 from .persona import FACET_KEYS, SCHWARTZ_VALUES
 
@@ -178,7 +178,7 @@ class ProfileCompiler:
             raise InterfaceError(f"profile: unexpected fields {sorted(extra)}")
         if raw.get("setup") is not None:
             from .briefing import validate_briefing
-            from .scene import RESERVED_IDS
+            from ..run.scene import RESERVED_IDS
             try:
                 validate_briefing(raw["setup"], RESERVED_IDS)
             except ValueError as exc:
@@ -217,7 +217,7 @@ class ProfileCompiler:
         return raw
 
     def _from_text(self, profile, given, review):
-        from .schemas import profile_schema, profile_task
+        from ..stage.schemas import profile_schema, profile_task
         text = profile["text"]
         view = PromptView({}, (), "", {}, profile.get("id", ""), {}, profile_task(self.registry, set(given)),
                           {"档案原文": text})

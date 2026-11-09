@@ -15,8 +15,8 @@ import dataclasses
 import json
 from typing import Mapping
 
-from .agent_api import ENV_ID, record_id
-from .interfaces import ModelError, ModelResult
+from ..agent.agent_api import ENV_ID, record_id
+from ..interfaces import ModelError, ModelResult
 from .schemas import compact_schema, join_keys, keys_as_lists, narrow_evidence, validate
 
 COMMON = (

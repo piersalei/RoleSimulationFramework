@@ -29,13 +29,13 @@ the model. Judgments' hands_to also comes from the registry.
 import math
 from typing import Mapping
 
-from .agent_api import validate_action_content
-from .interfaces import (STAGE_OF_KIND, ActionCandidate, ActionPlan, Appraisal, ChangeProposal, Commitment,
+from ..agent.agent_api import validate_action_content
+from ..interfaces import (STAGE_OF_KIND, ActionCandidate, ActionPlan, Appraisal, ChangeProposal, Commitment,
                          CommitmentRuling, EvidenceRef, EvidenceSet, EvolutionResult, Expression, Hypothesis,
                          InterfaceError, Judgment, RelationCourse, SituationInterpretation, StageError, StageOutput,
                          SwitchCondition)
-from .slots import EMOTION_FAMILIES, RANGES, SLOTS
-from .vocab import CUES
+from ..state.slots import EMOTION_FAMILIES, RANGES, SLOTS
+from ..vocab import CUES
 
 STAGES = tuple(STAGE_OF_KIND.values())
 TEXT = {"type": "string", "minLength": 1, "maxLength": 400}
@@ -346,7 +346,7 @@ def band_guide():
     """Typical |change| per event grade for each tempo class (状态变化规则 §5.0), as guidance:
     a banded field's scale multiplies it; personality and evidence quality may move it by one
     band; the program checks the final value."""
-    from .magnitude import FAST, GRADE_LEVEL, SLOW
+    from ..state.magnitude import FAST, GRADE_LEVEL, SLOW
     return {name: {str(g): list(table[level]) for g, level in GRADE_LEVEL.items()}
             for name, table in (("slow", SLOW), ("fast", FAST))}
 

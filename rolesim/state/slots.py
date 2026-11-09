@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Mapping, Optional
 
-from .interfaces import AgentState, EnableConfig, InterfaceError
+from ..interfaces import AgentState, EnableConfig, InterfaceError
 
 STATE_SCHEMA_VERSION = "construct-state-1"
 EMOTION_FAMILIES = ("喜悦", "信任", "恐惧", "惊讶", "悲伤", "厌恶", "愤怒", "期待", "轻蔑")

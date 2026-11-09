@@ -22,7 +22,7 @@ All numbers are the psychology group's initial values awaiting calibration.
 """
 from typing import Mapping
 
-from .interfaces import BANDS, Band, InterfaceError
+from ..interfaces import BANDS, Band, InterfaceError
 from .slots import RANGES, SLOTS, band_scale, kind_of
 
 SLOW = {"tiny": (0.0, .05), "small": (.05, .15), "medium": (.15, .30), "large": (.30, .45), "extended": (.45, .85)}

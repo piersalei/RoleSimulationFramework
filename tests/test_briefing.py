@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rolesim.briefing import mentions, validate_briefing
-from rolesim.scene import RESERVED_IDS, validate_scenario
+from rolesim.role.briefing import mentions, validate_briefing
+from rolesim.run.scene import RESERVED_IDS, validate_scenario
 from fixtures import load, setup
 
 

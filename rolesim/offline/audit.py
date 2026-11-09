@@ -30,10 +30,10 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from .briefing import mentions
-from .catalog import write_json
-from .registry import Registry
-from .slots import OPTION_SLOTS, SLOTS, check_instance
+from ..role.briefing import mentions
+from ..catalog import write_json
+from ..role.registry import Registry
+from ..state.slots import OPTION_SLOTS, SLOTS, check_instance
 
 HUMAN_DIMENSIONS = ["机制与写回相容性（理论层面）", "动态合理性", "角色可区分性", "外显行为与隐状态匹配", "错误推断的合理性"]
 MAX_DETAILS = 20

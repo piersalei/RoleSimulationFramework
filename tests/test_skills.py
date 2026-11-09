@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from rolesim import vocab
-from rolesim.skills import (ACTIONS, BINDING_VERSION, CUES, LIBRARY, bind, load_library, parse_skill,
+from rolesim.role.skills import (ACTIONS, BINDING_VERSION, CUES, LIBRARY, bind, load_library, parse_skill,
                             select)
 from fixtures import load, setup
 

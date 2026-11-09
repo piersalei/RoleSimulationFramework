@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from rolesim.catalog import digest
-from rolesim.persona import SCHWARTZ_VALUES, STABLE_MODULES, validate_persona
+from rolesim.role.persona import SCHWARTZ_VALUES, STABLE_MODULES, validate_persona
 from fixtures import load, setup
 
 

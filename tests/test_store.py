@@ -4,10 +4,10 @@ import re
 import unittest
 
 from rolesim import interfaces as I
-from rolesim import slots
-from rolesim.magnitude import BASIS, FAST, SLOW, Magnitude
-from rolesim.registry import FILES, SOURCE_DIR, Registry
-from rolesim.store import ConstructStore
+from rolesim.state import slots
+from rolesim.state.magnitude import BASIS, FAST, SLOW, Magnitude
+from rolesim.role.registry import FILES, SOURCE_DIR, Registry
+from rolesim.state.store import ConstructStore
 
 REG = Registry.load()
 KEY = ("i1", "c1")

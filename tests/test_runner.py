@@ -10,18 +10,18 @@ import unittest
 from pathlib import Path
 
 from rolesim import interfaces as I
-from rolesim.agent_api import validate_action_content
-from rolesim.repository import ENTRY_GOAL, ENTRY_MEMORY, ProfileRepository, background
-from rolesim.expresser import ModelExpresser
-from rolesim.loop import run_scene
-from rolesim.model import MockModel
-from rolesim.registry import Registry
-from rolesim.roles import load_role, load_scene
-from rolesim.runner import TurnRunner
-from rolesim.stages import model_stages
-from rolesim.staged import StagedRoleAgent
-from rolesim.store import ConstructStore
-from rolesim.trace import JsonlTrace, MemoryTrace
+from rolesim.agent.agent_api import validate_action_content
+from rolesim.role.repository import ENTRY_GOAL, ENTRY_MEMORY, ProfileRepository, background
+from rolesim.stage.expresser import ModelExpresser
+from rolesim.run.loop import run_scene
+from rolesim.stage.model import MockModel
+from rolesim.role.registry import Registry
+from rolesim.role.roles import load_role, load_scene
+from rolesim.agent.runner import TurnRunner
+from rolesim.stage.stages import model_stages
+from rolesim.agent.staged import StagedRoleAgent
+from rolesim.state.store import ConstructStore
+from rolesim.agent.trace import JsonlTrace, MemoryTrace
 
 ROOT = Path(__file__).resolve().parents[1]
 REG = Registry.load()

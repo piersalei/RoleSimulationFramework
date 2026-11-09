@@ -14,12 +14,12 @@ from pathlib import Path
 
 from . import skills as sk
 from .briefing import validate_briefing
-from .catalog import digest
+from ..catalog import digest
 from .persona import validate_persona
-from .providers import strict_json
-from .scene import RESERVED_IDS, role_seats, validate_scenario
+from ..stage.providers import strict_json
+from ..run.scene import RESERVED_IDS, role_seats, validate_scenario
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 ROLES_DIR = ROOT / "roles"
 SCENES_DIR = ROOT / "scenes"
 ROLE_FORMAT = "role-1.0"

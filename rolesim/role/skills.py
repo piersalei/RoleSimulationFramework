@@ -14,11 +14,11 @@ import json
 import re
 from pathlib import Path
 
-from .catalog import digest
+from ..catalog import digest
 from .persona import bounded, text
-from .vocab import ACTIONS, CUES
+from ..vocab import ACTIONS, CUES
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 LIBRARY = ROOT / "library" / "skills"
 CATALOG = ROOT / "data" / "catalog.json"
 BINDING_VERSION = "skills-binding-1.0"

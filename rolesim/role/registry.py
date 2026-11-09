@@ -31,9 +31,9 @@ import re
 from pathlib import Path
 from types import MappingProxyType
 
-from .interfaces import STAGES, Construct, DecisionMechanism, OperatorRule
+from ..interfaces import STAGES, Construct, DecisionMechanism, OperatorRule
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SOURCE_DIR = ROOT / "data" / "sources" / "psychology_v1"
 REGISTRY_PATH = ROOT / "data" / "registry.json"
 SCHEMA_VERSION = "registry-1.0"

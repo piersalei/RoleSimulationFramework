@@ -44,7 +44,7 @@ def _short(value, limit=60):
 
 def _names():
     try:
-        from .registry import Registry
+        from ..role.registry import Registry
         registry = Registry.load()
         return {cid: registry.construct(cid).name for cid in registry.ids("construct")}
     except Exception:

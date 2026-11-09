@@ -4,10 +4,10 @@ import inspect
 import unittest
 
 from rolesim import interfaces as I
-from rolesim import staged
-from rolesim.loop import EchoEnvironment
-from rolesim.runner import TurnRunner
-from rolesim.staged import StagedRoleAgent
+from rolesim.agent import staged
+from rolesim.run.loop import EchoEnvironment
+from rolesim.agent.runner import TurnRunner
+from rolesim.agent.staged import StagedRoleAgent
 
 EV = (I.EvidenceRef("r1", "witnessed"),)
 

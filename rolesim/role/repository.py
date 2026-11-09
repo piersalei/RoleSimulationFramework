@@ -28,11 +28,11 @@ import json
 from pathlib import Path
 from typing import Mapping
 
-from .interfaces import AgentState, EnableConfig, InterfaceError
+from ..interfaces import AgentState, EnableConfig, InterfaceError
 from .profile import ProfileCompiler, profile_from_role
-from .slots import SLOTS, blank_state, check_instance, put
+from ..state.slots import SLOTS, blank_state, check_instance, put
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 PROFILES_DIR = ROOT / "profiles"
 ENTRY_GOAL, ENTRY_MEMORY, SETUP_GOAL = "g-entry", "m-entry", "g-setup"
 TOM_RULE = "角色状态说明 §8.2：1.1.4 为 -2 → 0 阶；1.5.2 ≤ -1 → 1 阶；否则 2 阶（两项未赋值取 default 0）；约 4 岁以下 ≤ 0 阶，4—6 岁 ≤ 1 阶"

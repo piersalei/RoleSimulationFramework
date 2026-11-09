@@ -15,10 +15,10 @@ import subprocess
 import zoneinfo
 from pathlib import Path
 
-from .persona import bounded, text
-from .vocab import ACTIONS, CUES
+from ..role.persona import bounded, text
+from ..vocab import ACTIONS, CUES
 
-CODE_ROOT = Path(__file__).resolve().parents[1]
+CODE_ROOT = Path(__file__).resolve().parents[2]
 
 # Background only: who is present and what everyone knows. Goals and secrets come with
 # the role (roles.py, briefing.py); what happens next is up to the roles.
@@ -31,7 +31,6 @@ OPEN_ID = "open"
 WORLD_PREFIX = "world:"
 RESERVED_IDS = {OPEN_ID}
 WORLD_KEYS = {"time", "weather", "place", "noise"}
-WORLD_TEXT = {"time": "时间", "weather": "天气", "place": "地点", "noise": "环境声音"}
 RULE_KEYS = {"minutes_per_round", "announce_time", "events"}
 WORLD_EVENT_KEYS = {"round", "text", "set", "audience", "cues"}
 TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -123,10 +122,6 @@ def role_seats(scenario):
 
 def environment_agent(scenario):
     return next((a for a in scenario["agents"] if a["kind"] == "environment"), None)
-
-
-def describe_world(world):
-    return "；".join(f"{WORLD_TEXT[k]}：{v}" for k, v in world.items())
 
 
 class WorldAgent:

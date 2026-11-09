@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 from rolesim import interfaces as I
-from rolesim.registry import (FILES, REGISTRY_PATH, SOURCE_DIR, Registry, RegistryBuildError,
+from rolesim.role.registry import (FILES, REGISTRY_PATH, SOURCE_DIR, Registry, RegistryBuildError,
                               build_registry)
 
 ROOT = Path(__file__).resolve().parents[1]
