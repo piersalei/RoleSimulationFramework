@@ -1,4 +1,4 @@
-"""IUpdateOperator (plan/10 §4.1, §7): the 11 update operators turn judgments into ChangeSlots.
+"""IUpdateOperator (docs/14 §4.1, §7): the 11 update operators turn judgments into ChangeSlots.
 
 Design constraint C8 (状态变化规则v1 §二, §5.0; 事件建模skill §3.9): decision processes only judge;
 an update operator decides from its rule card whether to write, where, in which direction and at
@@ -10,7 +10,7 @@ band. What an operator reads:
               those whose registry `hands_to` includes this operator
   product     the stage product (S1 hypotheses, S2 commitment and audience, S3 rulings)
 
-Implemented in this version (plan/10 §7.5), each from its rule card:
+Implemented in this version (docs/14 §4.1), each from its rule card:
 
   emotion_update      S1 appraisal (dm.affect.primary_secondary_appraisal): option 无关 or no
                       output -> nothing. Otherwise intensity and arousal up at the appraised grade

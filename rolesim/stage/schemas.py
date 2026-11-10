@@ -1,4 +1,4 @@
-"""What each stage's model call must return, and how that becomes a StageOutput (plan/10 §3, §3.3).
+"""What each stage's model call must return, and how that becomes a StageOutput (docs/14 §3, §3.3).
 
   stage_schema(stage, registry)   JSON schema of one stage's model output: the product and the
                                   judgments (only processes this stage may call, registry §4.1 of

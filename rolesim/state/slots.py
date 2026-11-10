@@ -1,6 +1,6 @@
 """Where each dynamic / memory construct lives in AgentState, and what its values may be.
 
-The code form of plan/09 §3.4-3.5 (field names) over 角色状态说明v1 §5-6 (value forms).
+The code form of plan/05 §2.4-2.5 (field names) over 角色状态说明v1 §5-6 (value forms).
 `SLOTS[construct_id]` gives:
   keys         the key levels below the construct, e.g. ("partner",) for d.relation.trust
   fields       field -> kind for one instance; "" means the instance itself is a value;
@@ -18,7 +18,7 @@ process named by the first key segment) · enum(a|b|...). A trailing "?" allows 
 Addresses are (construct_id, key, field): `key` has one "/"-separated segment per key level,
 `field` is a "."-path inside the instance, and None means the whole instance.
 
-Which field names and enum values exist is an engineering reading of the sources (plan/09);
+Which field names and enum values exist is an engineering reading of the sources (plan/05);
 open items are listed there (§7, F1). Ranges come from 角色状态说明 §3.1 / §5.
 """
 import copy
@@ -157,7 +157,7 @@ SLOTS = MappingProxyType({
         {"commitment_id": "text", "content": "text", "to": "text", "formed_at": "text", "deadline": "text?",
          "stage": "enum(形成|维持|兑现|违约|暂停|撤销)", "public": "bool", "means": "text?", "verification": "text?"},
         keys=("commitment_id",), append_only=True, fixed=("commitment_id", "formed_at"),
-        basis=f"{_STATE} §5.6：兑现、违约或撤销的承诺保留，不删除（plan/09 的“延误”“重新协商”待确认，未收）"),
+        basis=f"{_STATE} §5.6：兑现、违约或撤销的承诺保留，不删除（plan/05 的“延误”“重新协商”待确认，未收）"),
     "d.policy.current_strategy": _slot({"": "opt"}, keys=("dm", "context"),
                                        basis=f"{_STATE} §5.6：策略取值为登记表第七部分该过程的可选项"),
     "d.policy.fallback_strategy": _slot({"": "opt"}, keys=("dm", "context"), basis=f"{_STATE} §5.6"),
@@ -174,7 +174,7 @@ SLOTS = MappingProxyType({
         {"entry_id": "text", "summary": "text", "source_events": "refs", "time": "text?", "involved": "refs",
          "channel": "enum(亲见|听说|推断|入场前)", "importance": "u", "valence": "v", "interpretations": "list"},
         keys=("entry_id",), append_only=True, fixed=("entry_id", "summary", "source_events", "time", "involved", "channel"),
-        basis=f"{_STATE} §六：不可见的事件不能形成记忆；条目只追加（plan/09：原条目与后来的解释分开）"),
+        basis=f"{_STATE} §六：不可见的事件不能形成记忆；条目只追加（plan/05：原条目与后来的解释分开）"),
     "m.accessibility": _slot({"": "u"}, keys=("entry_id",), basis=f"{_STATE} §六"),
     "m.reactivation": _slot({"": "list"}, keys=("entry_id",), append_only=True,
                             basis=f"{_STATE} §六：每次再激活的事件和线索"),

@@ -1,4 +1,4 @@
-"""IRoleRepository (plan/10 §2): where a role comes from, and the state it enters with.
+"""IRoleRepository (docs/14 §2): where a role comes from, and the state it enters with.
 
 load(role_ref)   profiles/<role_ref>.json (profile-1) when it exists, else the role file of that
                  id converted (profile.profile_from_persona), compiled by IProfileCompiler. The same

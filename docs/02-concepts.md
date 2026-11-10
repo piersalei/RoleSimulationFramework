@@ -39,16 +39,18 @@
 
 | 术语 | 含义 | 详见 |
 |---|---|---|
-| 登记表（registry） | 从心理学组 v1 文件生成的 `data/registry.json`：87 个构念、75 个决策过程、11 个算子规则，每项带原文出处；代码只经它读心理学定义 | [08-modules.md](08-modules.md) §3 |
+| 设计约束 C1—C8 | 心理学组 v1 材料落成的硬约束；其中 C8 规定"模型只判断和在区间内选值，状态由 harness 管" | [01-design.md](01-design.md) §2 |
+| 登记表（registry） | 从心理学组 v1 文件生成的 `data/registry.json`：87 个构念、75 个决策过程、11 个算子规则，每项带原文出处；代码只经它读心理学定义 | [14-interfaces.md](14-interfaces.md) §2.2 |
 | 构念 | `s.*` 稳定、`d.*` 动态、`m.*` 记忆；每个有取值形式、主写入算子、阶段权限、自知性、依赖组 | `data/registry.json` |
-| 决策过程（`dm.*`） | 心理学组列出的过程（如初级 / 次级评价、信念更新、冲突模式）；现在只在阶段调用里由模型判断（`profile_state_mechanisms` 模式），没有按规则实现的过程 | [07-architecture.md](07-architecture.md) §5 |
+| 决策过程（`dm.*`） | 心理学组列出的过程（如初级 / 次级评价、信念更新、冲突模式）；现在只在阶段调用里由模型判断（`profile_state_mechanisms` 模式），每个阶段至多 6 条；有机制卡的 6 个过程带固定输出字段 | [14-interfaces.md](14-interfaces.md) §3.2 |
 | 阶段 S1 / S2 / S3 | 事件建模 / 行动计划 / 长期演化，各是一次结构化模型调用；只出产物和决策过程的判断，不写状态（C8） | [06-runtime-flow.md](06-runtime-flow.md) §2 |
 | 表达 | 按计划生成思考 / 发言 / 动作的那次调用，只拿到需要的信息 | [06-runtime-flow.md](06-runtime-flow.md) §3 |
 | 证据门 | 每个阶段开始时决定什么能当证据：本人的行动、明确发给自己的记录；排除别人的思考、本人的思考、没发给自己的记录，并记原因；另取回至多 4 条相关记忆 | [06-runtime-flow.md](06-runtime-flow.md) §2 |
 | 线索（cue） | S1 给出的五种情境特征强度：`uncertainty` 不确定、`pressure` 压力、`commitment` 承诺、`repair` 修复、`conflict` 冲突，0–1；只用来激活人格 skill | `rolesim/vocab.py` |
 | 变化槽位（`ChangeSlot`） | 算子按规则卡从判断生成的一处待写变化：地址、变化前的值、方向、事件等级、合法区间（选值前算好）、证据、依据的过程与规则；记录与类别由算子组装好 | [06-runtime-flow.md](06-runtime-flow.md) §4 |
-| 选值（values 调用） | 模型在每个数值槽位的区间内选一个值并给理由；越界拒绝，不截断 | `rolesim/state/chooser.py` |
-| 更新算子 | 11 个写入通道：`emotion_update`、`belief_revision`、`other_model_update`、`self_state_update`、`relation_update`、`group_state_update`、`goal_update`、`commitment_update`、`strategy_learning`、`memory_update`、`decay_or_recovery`；白名单、阶段与依赖组都来自登记表 | `rolesim/state/operators.py` |
+| 选值（values 调用） | 模型在每个数值槽位的区间内选一个值并给理由；越界拒绝，不截断；拿不到合法值的槽位不写（`no_value`） | [14-interfaces.md](14-interfaces.md) §4.4 |
+| 未写（`skipped`） | 规则卡会写、但这一版没写的变化，带原因：算子还没有规则（`not_implemented`）、字段到头（`no_room`）、同址方向冲突（`conflict_unresolved`）、引用了不存在的信念（`unknown_belief`）等；记在轨迹和可读版里 | [14-interfaces.md](14-interfaces.md) §4 |
+| 更新算子 | 11 个写入通道：`emotion_update`、`belief_revision`、`other_model_update`、`self_state_update`、`relation_update`、`group_state_update`、`goal_update`、`commitment_update`、`strategy_learning`、`memory_update`、`decay_or_recovery`；白名单、阶段与依赖组都来自登记表；按规则卡从判断生成变化槽位，现在 7 个有规则 | [14-interfaces.md](14-interfaces.md) §4.1 |
 | 幅度档（band） | 一次变化允许的范围：按事件等级分档，效价 ×2、自我评价 ×4，只有听说 / 推断的证据时封顶，人格敏感度最多移一档；越界拒绝，不截断 | [06-runtime-flow.md](06-runtime-flow.md) §4 |
 | 依赖组 | 相互依赖的变化放一组，组内有硬错整组不写 | 同上 |
 | 硬错 / 软异常 | 硬错拒绝写入（如 `over_band`、`stage_not_allowed`、`writes_stable`）；软异常照写并标记 | 同上 |
@@ -65,5 +67,5 @@
 | 运行目录 | 一次运行的全部产物：`manifest.json`、`records.jsonl`、`calls.jsonl`、`scene.json`、`roles/<id>/…`、`trace/<互动>/<id>/…`、`transcript.md` | [06-runtime-flow.md](06-runtime-flow.md) §5 |
 | 自动审计 | 从落盘文件重新推导的检查：轨迹可追溯、写入权限、证据可见、提示隔离、隐瞒内容不进表达、表达里没有系统 ID、不能自知的数值不进提示、思考只给本人、稳定画像不变、字段有效；通过只说明工程正确 | [07-architecture.md](07-architecture.md) §4 |
 | 评审包 / 盲化 | 把运行导出成给人评分的样本，方法标签只存在 `blind_key.json`，评审者看不到 | [09-evaluation.md](09-evaluation.md) |
-| 四类版本号 | `construct_definition_version`、`update_rule_version`（两份心理学组原文的哈希）、`state_schema_version`、`evaluation_protocol_version`（尚未登记）；每个状态都带着，见 `final_state.json` | [plan/01-roadmap.md](../plan/01-roadmap.md) §1 |
+| 四类版本号 | `construct_definition_version`、`update_rule_version`（两份心理学组原文的哈希）、`state_schema_version`、`evaluation_protocol_version`（尚未登记）；每个状态都带着，见 `final_state.json` | [16-history.md](16-history.md) §2.1 |
 | 证据层级 | 来源理论、工程假设、作者自述结果、本地工程检查、模型实验、人工验证；文档里写结论时要说明处于哪一层 | `AGENTS.md` |

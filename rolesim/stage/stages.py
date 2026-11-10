@@ -1,4 +1,4 @@
-"""IStage (plan/10 §3): the three psychology stages, each one model call.
+"""IStage (docs/14 §3): the three psychology stages, each one model call.
 
 ModelStage(name) runs one stage on one StageContext:
   1. the phase kind must match the stage (event -> S1, plan -> S2, feedback -> S3); S3 needs the

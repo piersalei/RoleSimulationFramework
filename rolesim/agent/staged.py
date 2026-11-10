@@ -1,4 +1,4 @@
-"""IRoleAgent over the staged pipeline (plan/10 §1): initialize / act -> ITurnRunner.
+"""IRoleAgent over the staged pipeline (docs/14 §1): initialize / act -> ITurnRunner.
 
 Same routing as the old adapter (RoleAgentBase: role library, a session per interaction_id +
 character_id, retries by request_id, one call at a time). At a character's first act:

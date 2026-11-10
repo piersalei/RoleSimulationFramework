@@ -1,4 +1,4 @@
-"""IValueChooser (plan/10 §7): a value inside each slot's band, chosen by the model with a reason.
+"""IValueChooser (docs/14 §4.4): a value inside each slot's band, chosen by the model with a reason.
 
 C8 / 状态变化规则v1 §5.0 "模型的选择范围": the program sets the legal range, the event grade and the
 hard caps; the model only picks the concrete change inside the range and says why. Here:

@@ -1,4 +1,4 @@
-"""The framework's key interfaces (plan/10-interfaces.md), as Protocols and data types.
+"""The framework's key interfaces (docs/14-interfaces.md), as Protocols and data types.
 
 Four top-level interfaces, each with a few sub-interfaces:
 
@@ -11,14 +11,15 @@ Four top-level interfaces, each with a few sub-interfaces:
                                                                 4.3 IValidator  4.4 IValueChooser
 
 Dependencies point down only: IRoleAgent -> ITurnRunner -> IStage / IStateStore. Design constraint
-C8 (plan/08 §1, 状态变化规则v1 §5.0): a stage only *judges* (product + judgments, no state); the
+C8 (docs/01-design.md §2, 状态变化规则v1 §5.0): a stage only *judges* (product + judgments, no state); the
 update operators turn judgments into ChangeSlots by their rule cards, with the legal band computed
 before any value is chosen; IValueChooser picks a value inside each band (the model, with a
 reason); IStateStore.commit validates and writes. The model never names a construct or an address.
 
 This module holds contracts only: no behaviour beyond small checks on the data types. Values that
 must not change once produced (products, profiles, states, changes) are frozen dataclasses with
-tuple fields. Full field lists are in plan/09-interface-and-field-spec.md.
+tuple fields. Full field lists are in plan/05-field-spec-draft.md (draft) and
+rolesim/state/slots.py.
 """
 from __future__ import annotations
 
@@ -496,7 +497,7 @@ class PromptView:
     """All a model call may see: self-known profile, visible records, state text, upstream.
 
     `task` is program-built, from the registry: the decision processes this stage may call
-    (with their options) and the constructs it may propose changes to (with their fields).
+    (with their options and output fields); for the values call, the slots to fill.
     """
     self_profile: Mapping[str, str]         # not-self-visible fields already turned into phrases
     records: tuple[InteractionRecord, ...]

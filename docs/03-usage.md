@@ -23,9 +23,9 @@ python3.11 -m rolesim run --roles role1 role2 --scene test1 --mode profile_state
 python3.11 -m rolesim run --roles role1 role2 role3 --scene test3   # 三个角色 + 环境 agent
 ```
 
-角色一律放在环境组接口 v2（`initialize` / `act`）后面，由本地参考运行器驱动；每次行动走分阶段管线（S1 / S3 / S2 → 状态存储 → 表达），见 [06-runtime-flow.md](06-runtime-flow.md)。
+角色一律放在环境组接口 v2（`initialize` / `act`）后面，由本地参考运行器驱动；每次行动走分阶段管线（S1 / S3 / S2，每个阶段：阶段调用 → 算子生成槽位 → 区间内选值 → 提交；最后表达），见 [06-runtime-flow.md](06-runtime-flow.md)。
 
-`mock`（`MockModel`）按关键词给出线索和一条信念、固定选"说明情况并提出方案"、用模板表达（"我想先……"），**只能用来验证流程**。角色输出不同不构成心理有效性证据。
+`mock`（`MockModel`）按关键词给出线索、固定的几条判断（S1 评价与信念更新、S2 冲突方式与形成承诺、S3 原谅与信任）、选值时取区间中点、用模板表达（"我想先……"），**只能用来验证流程**。角色输出不同不构成心理有效性证据。
 
 `run` 的参数：
 
@@ -42,7 +42,11 @@ python3.11 -m rolesim run --roles role1 role2 role3 --scene test3   # 三个角�
 
 ## 3. 接服务器模型
 
-当前支持提供 `/chat/completions` 的兼容接口，默认用**结构化解码**：每次阶段调用把输出 schema 作为 `response_format: json_schema` 发给服务端（vLLM、OpenAI 支持），服务端不支持时设 `ROLE_SIM_STRUCTURED=0` 退回 JSON object。解码用的 schema 比提示里给模型看的更严：证据只能取本次调用看得到的记录 ID，S2 受众只能取在场其他人的 ID，每个决策过程只能取它自己的选项，每个提议只能落在状态布局里存在的构念 / 字段上并取该字段的值类型，键按层级写成定长列表（程序再拼回 `a/b`）。提示里只放精简版（约 5k 字符）。每次行动的请求：每个记录组一次事件建模（S1），对上次计划有回应时一次长期演化（S3），一次行动计划（S2，被拒时两次），一次表达；两人 8 次发言约 37 次请求（按 mock 运行计数），三人时每次行动要处理的记录组更多。档案里有自然语言原文时，入场时另有一次档案调用。思考模式保持开启：服务端返回的推理内容只写进 `trace/<互动>/<角色>/model_calls.jsonl` 的 `reasoning`，不进入任何提示。每次调用的输出先按 schema 和登记表检查，不合格整个阶段失败；失败时模型的原始回复也写进轨迹。提议引用了本阶段没判断过的决策过程不算输出不合格，而是由状态存储拒绝这条变化（`unjudged_mechanism`，连同依赖组）。不支持此协议的提供方需要另写适配器。
+当前支持提供 `/chat/completions` 的兼容接口，默认用**结构化解码**：每次调用把输出 schema 作为 `response_format: json_schema` 发给服务端（vLLM、OpenAI 支持），服务端不支持时设 `ROLE_SIM_STRUCTURED=0` 退回 JSON object。解码用的 schema 比提示里给模型看的更严：证据只能取本次调用看得到的记录 ID，S2 受众只能取在场其他人的 ID，每个决策过程只能取它自己的选项，选值调用里每个槽位的数只能落在它自己的区间内。提示里只放精简版（约 2—3k 字符）。
+
+每次行动的请求：每个记录组一次事件建模（S1），对上次计划有回应时一次长期演化（S3），一次行动计划（S2，被拒时两次），一次表达；每个阶段有数值槽位时另有一次选值（values）。两人 8 次发言用 Qwen3-8B 实测为 48 次请求（S1 15、values 11、S2 8、表达 8、S3 6），三人时每次行动要处理的记录组更多。档案里有自然语言原文时，入场时另有一次档案调用。
+
+思考模式保持开启：服务端返回的推理内容只写进 `trace/<互动>/<角色>/model_calls.jsonl` 的 `reasoning`，不进入任何提示。阶段调用的输出先按 schema 和登记表检查，不合格整个阶段失败，失败时模型的原始回复也写进轨迹；选值调用失败只让那些数值槽位不写（`no_value`），行动照常。不支持此协议的提供方需要另写适配器。
 
 ```bash
 export ROLE_SIM_BASE_URL='http://127.0.0.1:8000/v1'
@@ -108,7 +112,7 @@ PYTHONPATH=. python3.11 scripts/bootstrap_examples.py       # 重建 roles/ 与 
 
 ## 6. 测试与 CI
 
-- `tests/` 下按模块分文件：`test_agent_api`、`test_interfaces`、`test_registry`、`test_store`、`test_model`、`test_stages`、`test_runner`、`test_profile`、`test_ports`（开场设定、skill、模式、路由）、`test_offline`（审计、评审包、可读版）、`test_scene`、`test_roles`、`test_persona`、`test_briefing`、`test_skills`、`test_memory`、`test_transport`；共用夹具在 `tests/fixtures.py`。
+- `tests/` 下按模块分文件：`test_agent_api`、`test_interfaces`、`test_registry`、`test_store`、`test_operators`（算子规则、区间、选值）、`test_model`、`test_stages`、`test_runner`、`test_profile`、`test_ports`（开场设定、skill、模式、路由）、`test_offline`（审计、评审包、可读版）、`test_scene`、`test_roles`、`test_persona`、`test_briefing`、`test_skills`、`test_memory`、`test_transport`；共用夹具在 `tests/fixtures.py`。
 - `test_transport` 会在本机起一个临时回环 HTTP 服务器，验证请求格式；沙箱不允许监听时需要在有权限的环境运行，不能跳过后宣称全通过。
 - `.github/workflows/ci.yml`（`push` / `pull_request`）：跑全部测试，校验三个角色，用 mock 跑默认、换座位、无 skill、只给画像、三角色加环境 agent 五种运行并分别审计。执行结果以远端 Actions 为准。
 - 按 `AGENTS.md` 的要求，改了运行时或合同后要跑全部测试，并如实报告环境限制。

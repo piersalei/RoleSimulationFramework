@@ -1,4 +1,4 @@
-"""IMagnitude (plan/10 §4.2): the legal band for one numeric change.
+"""IMagnitude (docs/14 §4.2): the legal band for one numeric change.
 
 状态变化规则v1 §5.0 gives four bands per tempo class, one per event grade, plus an extended range
 open only to grade-4 events; §七 lets personality sensitivity move the band by at most one level

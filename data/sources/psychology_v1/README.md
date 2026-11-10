@@ -15,7 +15,7 @@
 
 `data/registry.json` 由这些文件生成（`python3 -m rolesim registry`，实现见 `rolesim/registry.py`）：原文更新后重新生成，测试会检查两者一致；原文本身不改。
 
-注意：这里的 "skill" 指心理学组定义的**心理流程阶段**，与 `library/skills/` 里的**人格 skill**（SKILL.md，只影响提示内容）不是一回事。框架设计里把前者称为"阶段（Stage）"，见 [plan/08](../../../plan/08-framework-oop-design.md)。
+注意：这里的 "skill" 指心理学组定义的**心理流程阶段**，与 `library/skills/` 里的**人格 skill**（SKILL.md，只影响提示内容）不是一回事。框架设计里把前者称为"阶段（Stage）"，见 [docs/14-interfaces.md](../../../docs/14-interfaces.md)。
 
 证据层级：这些文件是**来源理论 + 心理学组的工程化约定**；其中的数值（幅度分档、半衰期、门槛、调节映射）文件自己标为"本版本初始值，待标定"，不是经过验证的心理学规律。
 

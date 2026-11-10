@@ -1,4 +1,4 @@
-"""IValidator (plan/10 §4.3): hard errors and soft anomalies for one drafted change.
+"""IValidator (docs/14 §4.3): hard errors and soft anomalies for one drafted change.
 
 状态变化规则v1 §八. Hard (the change's dependency group is rejected):
   unregistered_construct · writes_stable · not_in_whitelist · stage_not_allowed · wrong_group

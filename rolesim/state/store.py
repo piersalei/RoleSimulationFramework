@@ -1,4 +1,4 @@
-"""IStateStore (plan/10 §4): the only place a new AgentState comes from.
+"""IStateStore (docs/14 §4): the only place a new AgentState comes from.
 
 draft(ctx, output): every update operator allowed in this stage reads the judgments and the
 product and returns ChangeSlots with their bands (C8: the band exists before a value is chosen).

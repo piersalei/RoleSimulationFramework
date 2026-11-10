@@ -1,4 +1,4 @@
-"""Key interfaces (rolesim/interfaces.py, plan/10-interfaces.md): shapes, invariants, call chain."""
+"""Key interfaces (rolesim/interfaces.py, docs/14-interfaces.md): shapes, invariants, call chain."""
 import dataclasses
 import inspect
 import unittest

@@ -1,4 +1,4 @@
-"""ITrace (plan/10 §1.2): write-only run records, kept on our side.
+"""ITrace (docs/14 §1.2): write-only run records, kept on our side.
 
 The environment group's runner keeps observations, not our state, so this side writes its own:
   JsonlTrace(root)   <root>/<interaction_id>/<character_id>/phases.jsonl      one PhaseLog per

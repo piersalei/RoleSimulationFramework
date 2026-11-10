@@ -1,4 +1,4 @@
-"""IModel (plan/10 §3.3): one structured model call per stage.
+"""IModel (docs/14 §3.3): one structured model call per stage.
 
 ChatModel   the opt-in chat-completions transport (providers.ChatBackend) with a system prompt per
             stage; the payload carries the PromptView, the stage task and the output schema; the

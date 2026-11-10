@@ -1,4 +1,4 @@
-"""IProfileCompiler (plan/10 §2.1): a profile -> StableProfile + review items.
+"""IProfileCompiler (docs/14 §2.1): a profile -> StableProfile + review items.
 
 A profile ("profile-1", profiles/<id>.json) is keyed by the registry's stable construct ids:
 

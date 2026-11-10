@@ -3,8 +3,8 @@
 本文按"接口在外、实现在内"的思路，说明角色 Agent 对外暴露什么、内部持有什么属性。目的是让维护者只需要关注**接口边界**：边界以内的实现可以替换，边界以外的运行器不受影响。
 
 - 协议原文（环境组，2026-11-07）：[Agent接口说明_环境组_2026-11-07.md](../data/sources/contracts/Agent接口说明_环境组_2026-11-07.md)。它取代了此前的 [Agent接口定义_v1.md](../data/sources/contracts/Agent接口定义_v1.md)（act / perceive / 认知五字段），本仓库称新版为**接口 v2**
-- 可执行定义：[rolesim/agent/agent_api.py](../rolesim/agent/agent_api.py)；我们内部各接口的契约：[rolesim/interfaces.py](../rolesim/interfaces.py)、[plan/10](../plan/10-interfaces.md)
-- 与 v1、与框架设计的差异及对齐结果：[plan/08](../plan/08-framework-oop-design.md) 第 8 节；早先的对接记录：[plan/07](../plan/07-agent-adapter-integration.md)
+- 可执行定义：[rolesim/agent/agent_api.py](../rolesim/agent/agent_api.py)；我们内部各接口的契约：[rolesim/interfaces.py](../rolesim/interfaces.py)、[14-interfaces.md](14-interfaces.md)
+- 从接口 v1 到 v2 的经过：[16-history.md](16-history.md) 第 2.3 节；还待环境组确认的事项：[plan/03](../plan/03-environment-and-time.md)
 - 证据层级：本文是工程对接说明（本地工程检查），不涉及任何心理机制有效性的结论。
 
 ## 1. 分层与职责
@@ -132,7 +132,7 @@ class IEnvironment(Protocol):    # 环境组实现（环境组：EnvironmentAdap
 - **第一次 `act` 时入场**（此时才知道在场者）：`IRoleRepository.load`（`profiles/<id>.json`，没有则转换角色文件，由 `IProfileCompiler` 编译）→ `enter`（档案入场状态 → 开场设定的目标与前情 → bootstrap 的总体目标与此前经历 → 角色状态说明 §8.2 的默认值）→ 取绑定的人格 skill 与开场设定 → `ITurnRunner.begin`。
 - **每次 `act`**：只把没吸收过的记录交给 `ITurnRunner.run(key, 新记录, 在场者)`；别人的思考即使出现在观察记录里也不吸收，只记告警。一次行动内部的阶段顺序见 [06-runtime-flow.md](06-runtime-flow.md) 第 2 节。
 - **返回**：`{thought, speech, action, order}`。思考只发给本人；发言和动作默认发给当前全部在场者（`recipient_ids = null`）。S2 计划里的受众只表示"对谁说"，不限制谁听得到；只有计划把表达标为 `private`（耳语、私下递话）时，发言和动作才只发给受众，这时受众不能为空。不返回任何内部状态。
-- **消融模式**：`bootstrap.mechanism.mode` 给出时，该角色在该互动里用这个模式，否则用构造时的默认模式；不认识的模式抛 `InterfaceError`。模式只决定提示和输出 schema，状态在三种模式下都照常提议、校验、写入和记录：
+- **消融模式**：`bootstrap.mechanism.mode` 给出时，该角色在该互动里用这个模式，否则用构造时的默认模式；不认识的模式抛 `InterfaceError`。模式只决定提示和输出 schema，状态更新的流程在三种模式下相同；没有判断的模式里，算子只能按产物写（他心推断、承诺、记忆），按判断写的变化（情绪、信念、信任、策略）就不会发生：
 
 | 模式（`interfaces.MODES`） | 提示里的动态状态与感受 | 决策过程判断 |
 |---|---|---|
@@ -160,7 +160,7 @@ class IEnvironment(Protocol):    # 环境组实现（环境组：EnvironmentAdap
 ### 4.2 动态状态（`AgentState`，`IStateStore`）
 
 - 按构念 ID 存：42 个动态构念（`d.*`）和 3 个记忆构念（`m.*`），布局见 `state/slots.py`；入场状态的 ID 为 `{角色ID}@entry`，之后每次提交形如 `{角色ID}@{事件}#{序号}.{类型}`，前后相连成状态链。
-- 唯一的写入口是 `ConstructStore.commit`：阶段的判断 → 登记表授权的算子按规则卡生成槽位（幅度档此时算好）→ 模型在区间内选值 → 验证 → 按依赖组原子提交。每条变化记下变化前后的值、证据（记录编号）、依据的决策过程、幅度档和软异常；越界一律拒绝，不截断。
+- 唯一的写入口是 `ConstructStore.commit`：阶段的判断 → 登记表授权的算子按规则卡生成槽位（`ConstructStore.draft`，幅度档此时算好）→ 模型在区间内选值（`ModelValueChooser`）→ 验证 → 按依赖组原子提交。每条变化记下变化前后的值、证据（记录编号）、依据的决策过程、幅度档和软异常；越界一律拒绝，不截断。
 - 动态状态只能由本角色可见的证据更新（证据门：本人行动或被明确发送的记录；别人的思考、本人的思考、没发给自己的记录都排除）。
 
 ### 4.3 开场设定与人格 skill
@@ -198,7 +198,7 @@ python3.11 -m rolesim run --roles role1 role2 role3 --scene test3
 | 结束对话 | 接口没有这个信号，分阶段管线也没有"结束这次沟通"的动作；本地运行跑满 `max_turns` |
 | 环境线索 | 接口没有 `signals`；S1 自己给出线索强度（压力、不确定、承诺、修复、冲突，0—1），只用来激活人格 skill |
 | 审计与打包 | 只认分阶段的运行目录（`manifest.pipeline == "stages"`）：`rolesim audit` / `package` / `readable` |
-| 待环境组确认 | 见 [plan/08](../plan/08-framework-oop-design.md) 第 8.1 节 |
+| 待环境组确认 | 见 [plan/03](../plan/03-environment-and-time.md) |
 
 ## 7. 测试
 

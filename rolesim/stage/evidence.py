@@ -1,4 +1,4 @@
-"""IEvidenceGate (plan/10 §3.1): what one stage of one role may treat as evidence.
+"""IEvidenceGate (docs/14 §3.1): what one stage of one role may treat as evidence.
 
 状态变化规则v1 §3.1: at the start of each phase, build the role's visible evidence set and write
 down what was excluded. Here:

@@ -22,7 +22,7 @@ This module is the executable form of that definition: data shapes, the checks e
 what it receives, and runner-side helpers used by the local reference runner (loop.py). It does
 not implement any agent.
 
-Agreed with the environment group (plan/08, section 8.1):
+Agreed with the environment group (docs/13-agent-interface.md §2.3):
 - Character ids are fixed in advance and stay the same across interactions: they are the ids of
   a static, extensible role library (here: the role files under roles/).
 - `present_characters` in a turn input contains the acting character itself.

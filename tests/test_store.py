@@ -1,4 +1,4 @@
-"""State writes (plan/10 §4): layout, IMagnitude, IValidator, IStateStore.commit.
+"""State writes (docs/14 §4): layout, IMagnitude, IValidator, IStateStore.commit.
 
 The update operators and the value chooser have their own tests (test_operators.py). Here a change
 is built the way an operator + chooser would build it (P -> StateChange: before from the snapshot,

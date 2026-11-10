@@ -91,7 +91,7 @@ python3.11 -m rolesim run --roles role1 role2 role3 --scene test3   # 三个角�
 
 `--roles` 按座位顺序为每个角色座位写一个编号或文件路径，`--scene` 写一个。新增角色或剧情只需要放一个新文件，不用改代码。入座检查（`fit_cast`）里，错误会阻止运行（例如座位数不对、同一角色坐两个座位、开场设定用了环境保留的 id）；提示只报告，例如"这个 skill 在该剧情里永远不会被激活"。运行记录 `manifest.json` 的 `origin` 字段记下用了哪些角色文件和剧情文件及其哈希。
 
-给环境组接入用的是 `rolesim.staged.StagedRoleAgent`：按接口 v2 调 `initialize` / `act`，角色文件按 `character_id`（或 `personality.role_ref`、名字）选出，开场设定和 skill 由角色文件带来，见 [13-agent-interface.md](13-agent-interface.md)。
+给环境组接入用的是 `rolesim.agent.staged.StagedRoleAgent`：按接口 v2 调 `initialize` / `act`，角色文件按 `character_id`（或 `personality.role_ref`、名字）选出，开场设定和 skill 由角色文件带来，见 [13-agent-interface.md](13-agent-interface.md)。
 
 ## 6. 档案：`profiles/<id>.json`（profile-1）
 

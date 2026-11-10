@@ -1,6 +1,6 @@
-"""IExpresser (plan/10 §3.4): an ActionPlan becomes what the role outwardly does.
+"""IExpresser (docs/14 §3.4): an ActionPlan becomes what the role outwardly does.
 
-One model call ("express") on a need-to-know view (plan/10 §3.4; 角色状态说明 §七):
+One model call ("express") on a need-to-know view (docs/14 §3.4; 角色状态说明 §七):
   given     who the role is, its goals and speech style (self-known stable modules only), how it
             feels in words (emotion label and a low / middle / high level, no numbers), the
             recent visible records, the plan's chosen action, expression goal, audience, manner

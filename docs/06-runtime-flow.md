@@ -1,6 +1,6 @@
 # 一次运行是怎么跑起来的
 
-本文跟着一条命令走完一次运行：读了哪些文件、调用了哪些函数、参数怎么传、写出了什么。各接口的签名与保证见 [plan/10](../plan/10-interfaces.md)，模块与接口的对应见 [08-modules.md](08-modules.md)，整体架构见 [07-architecture.md](07-architecture.md)。
+本文跟着一条命令走完一次运行：读了哪些文件、调用了哪些函数、参数怎么传、写出了什么。各接口的签名与保证见 [14-interfaces.md](14-interfaces.md)，模块与接口的对应见 [08-modules.md](08-modules.md)，整体架构见 [07-architecture.md](07-architecture.md)。
 
 ```bash
 python3.11 -m rolesim run --roles role1 role2 role3 --scene test3 [--backend mock|chat] [--mode …] [--no-skills]
@@ -33,15 +33,17 @@ StagedRoleAgent.act
              → TurnRunner.begin（带上模式、绑定的 skill、开场设定）
   TurnRunner.run（只交未吸收的记录；别人的思考丢弃并告警）
     每个记录组（同一 action_id）一个事件阶段：
-      S1 = ModelStage("S1").run  ── EvidenceGate → 视图（只含自知层）→ IModel → parse_output
-      ConstructStore.commit       ── 算子起草 → 幅度档 → 验证 → 按依赖组原子提交
-      上次计划的受众对本角色的第一次回应（每个计划一次）：S3.run → commit
-    S2.run → commit（计划自己的目标 / 承诺 / 策略被拒 → 带着原因重做一次）
+      S1 = ModelStage("S1").run  ── EvidenceGate → 视图（只含自知层）→ IModel → 解析：产物 + 判断
+      ConstructStore.draft        ── 本阶段允许的算子按规则卡生成槽位，幅度档此时算好
+      ModelValueChooser.choose    ── 有数值槽位时一次 values 调用，在区间内取值
+      ConstructStore.commit       ── 验证 → 按依赖组原子提交
+      上次计划的受众对本角色的第一次回应（每个计划一次）：S3，同样四步
+    S2，同样四步（计划自己的目标 / 承诺 / 策略被拒 → 带着原因重做一次）
     ModelExpresser.realize       ── 按需可见的表达调用 → {thought（只给自己）, speech, action, order}
   每次提交写 trace/<interaction_id>/<character_id>/phases.jsonl，每次模型调用写 model_calls.jsonl
 ```
 
-每次行动的模型调用：每个记录组一次 S1，有反馈时一次 S3，一次 S2（被拒时两次），一次表达。`--backend mock` 用 `MockModel`（离线夹具，内容不是心理学证据），`--backend chat` 用 `ChatModel`（`ROLE_SIM_BASE_URL`、`ROLE_SIM_MODEL`、`ROLE_SIM_API_KEY`、`ROLE_SIM_MAX_TOKENS`、`ROLE_SIM_TIMEOUT`），失败直接报错，不回退 mock。
+每次行动的模型调用：每个记录组一次 S1，有反馈时一次 S3，一次 S2（被拒时两次），一次表达；每个阶段有数值槽位时另有一次 values。`--backend mock` 用 `MockModel`（离线夹具，内容不是心理学证据），`--backend chat` 用 `ChatModel`（`ROLE_SIM_BASE_URL`、`ROLE_SIM_MODEL`、`ROLE_SIM_API_KEY`、`ROLE_SIM_MAX_TOKENS`、`ROLE_SIM_TIMEOUT`），失败直接报错，不回退 mock。
 
 ## 3. 各阶段看到什么
 
@@ -50,6 +52,7 @@ StagedRoleAgent.act
 | S1 事件建模 | 自知层画像（能自知的模块，有条件化语句时用语句；不能自知的只以语句出现）、入场时被告知的情况与开场设定（含不打算说的事）、状态（`profile_only` 时没有）、取回的记忆、可见记录、本阶段可调用的决策过程及其选项与输出字段（`profile_state_mechanisms` 时才有） | 别人的思考、没发给自己的记录、场景私有数据、别人的任何状态 |
 | S2 行动计划 | 同上 + 上次的 S1 产物和计划、被拒的变化及原因、人格 skill（全部的名称与说明；被 S1 的线索或开场设定激活的至多 3 个附决策要点和不会做的事） | 同上 |
 | S3 长期演化 | 同 S1 + 上次的计划 | 同上 |
+| 选值（values） | 自知层画像、状态文字、槽位引用的记录、本阶段产物、每个槽位的说明（构念中文名、字段、方向、区间或取值范围、依据） | 构念 ID、别人的任何状态 |
 | 表达 | 身份、核心目标、表达基线、不能自知模块的条件化语句、感受（情绪标签 + 低 / 中 / 高，`profile_only` 时没有）、最近 12 条可见记录、计划里的主行动 / 表达目标 / 受众 / 方式 / 承诺、开场设定里可以说出的部分、被激活 skill 的表达要点 | 不打算说的事、状态数值、构念与过程 ID、其他候选、假设 |
 
 ## 4. 状态怎么更新
@@ -93,6 +96,6 @@ StagedRoleAgent.act
 ## 7. 排查时先看哪里
 
 - 某句话为什么这么说：`transcript.md` 里该角色的内部过程，再看 `model_calls.jsonl` 里那次 S2 与表达调用的输入和原始输出。
-- 状态为什么没变：`phases.jsonl` 里该阶段的 `commit.rejected`，每条带硬错代码（如 `over_band`、`stage_not_allowed`）。
+- 状态为什么没变：`phases.jsonl` 里该阶段的 `commit.rejected`（每条带硬错代码，如 `over_band`、`no_value`）和 `commit.skipped`（算子没写的原因，如 `not_implemented`、`no_room`）；`transcript.md` 里也列出"未写"。
 - 审计没过：`audit_report.md`，每项失败带详情。
 - 运行失败：`manifest.json` 的 `error_type`、`error`；阶段失败时 `model_calls.jsonl` 里留着那次不合规的输出。

@@ -1,6 +1,6 @@
 # 模块划分
 
-代码按 [plan/10](../plan/10-interfaces.md) 的 4 个顶层接口组织，每个接口一组模块。接口不变，实现可以替换；接口的签名、保证、出错方式以 plan/10 为准，契约的代码形式在 `rolesim/interfaces.py`。
+代码按 [14-interfaces.md](14-interfaces.md) 的 4 个顶层接口组织，每个接口一组模块。接口不变，实现可以替换；接口的签名、保证、出错方式以 14-interfaces.md 为准，契约的代码形式在 `rolesim/interfaces.py`。
 
 ## 1. 接口与模块
 
@@ -18,9 +18,10 @@
 | 3.3 IModel | `stage/model.py`、`stage/providers.py`、`stage/schemas.py` | 每个调用一次结构化请求；输出 schema；chat-completions 传输 |
 | 3.4 IExpresser | `stage/expresser.py` | 按需可见的表达调用 → 思考 / 发言 / 动作 |
 | **4 IStateStore** | `state/store.py`、`state/slots.py` | 按构念 ID 的状态布局；唯一的写入口 |
-| 4.1 IUpdateOperator | `state/operators.py` | 11 个算子（规则全部来自登记表） |
+| 4.1 IUpdateOperator | `state/operators.py` | 11 个算子：白名单、阶段、依赖组来自登记表；规则卡写成规则函数，7 个已实现 |
 | 4.2 IMagnitude | `state/magnitude.py` | 合法变化区间 |
 | 4.3 IValidator | `state/validator.py` | 硬错 / 软异常 |
+| 4.4 IValueChooser | `state/chooser.py` | 模型在每个数值槽位的区间内选值 |
 
 不属于某个接口的支撑模块：`role/roles.py`、`role/persona.py`、`role/briefing.py`、`role/skills.py`、`run/scene.py`、`vocab.py`（输入文件的格式与校验），`run/loop.py`（本地参考运行器与运行目录），`offline/audit.py`、`offline/package.py`、`offline/readable.py`（离线工具），`catalog.py`（来源索引），`stage/memory.py`（字面相似度检索），`__main__.py`（命令行）。
 

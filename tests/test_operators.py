@@ -1,4 +1,4 @@
-"""C8 (plan/10 §7): update operators turn judgments into slots; the chooser picks values inside bands.
+"""C8 (docs/14 §4): update operators turn judgments into slots; the chooser picks values inside bands.
 
 The model never names a construct or a number for state: these tests drive the operators with
 judgments and products only, and check that every numeric slot has its band before any value

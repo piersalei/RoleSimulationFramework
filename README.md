@@ -43,7 +43,7 @@ python3.11 -m rolesim run --roles role1 role2 --scene test1 --mode profile_only 
 
 ## 文档
 
-`docs/` 说明框架**现在是什么、怎么用、怎么运转**；`plan/` 记录**做过什么、正在做什么、接下来做什么**。两者分开维护。
+`docs/` 说明**已经定下来、已经实现的部分**：框架现在是什么、怎么用、怎么运转，以及做过的验证和设计演变；`plan/` 只放**还没完成的部分**：待做的工程、待心理学组和环境组定的问题、未冻结的草案。做完一项就从 `plan/` 移到 `docs/`。
 
 ### 入门
 
@@ -67,6 +67,7 @@ python3.11 -m rolesim run --roles role1 role2 --scene test1 --mode profile_only 
 |---|---|
 | [docs/06-runtime-flow.md](docs/06-runtime-flow.md) | 整体运行流程：从命令到落盘，调用链与参数传递 |
 | [docs/07-architecture.md](docs/07-architecture.md) | 当前架构：总体结构、代码地图、隔离与校验、还空着的 |
+| [docs/14-interfaces.md](docs/14-interfaces.md) | 关键接口：4 个顶层接口及子接口的签名、类型、保证、出错方式，模型与 harness 的分工（C8），实现一览 |
 | [docs/08-modules.md](docs/08-modules.md) | 四个顶层接口与模块的对应、人格方案、模块间的硬边界 |
 | [docs/13-agent-interface.md](docs/13-agent-interface.md) | 对外接口（环境组接口 v2）、`StagedRoleAgent`、智能体属性、本地参考运行器 |
 
@@ -77,10 +78,12 @@ python3.11 -m rolesim run --roles role1 role2 --scene test1 --mode profile_only 
 | [docs/09-evaluation.md](docs/09-evaluation.md) | 评测方案：两种质量、对照设计、盲评、内部审计 |
 | [docs/10-persona-skills-survey.md](docs/10-persona-skills-survey.md) | 人格 skills 调研与路线选择，以及在本仓库的落地方式 |
 | [docs/11-personaforge.md](docs/11-personaforge.md) | 与 PersonaForge 的关系及证据范围 |
+| [docs/15-verification-log.md](docs/15-verification-log.md) | 验证记录：每次做过的测试、mock 与真实模型运行，结果与没覆盖的部分 |
+| [docs/16-history.md](docs/16-history.md) | 设计演变：v0 → state-v1 → 按接口重建 → C8，每一版为什么改 |
 
 ### 计划与进度
 
-见 [plan/README.md](plan/README.md)：过去 / 现在 / 将来的总览，以及模块计划、多 agent 与状态—机制的改动计划、时间轴与打断设计、验证记录。
+见 [plan/README.md](plan/README.md)：待做的工程、待心理学组裁定的问题、待环境组确认的接口与时间轴、会话记忆与提速、未冻结的字段规格草案。
 
 ## 仓库结构
 
@@ -92,8 +95,8 @@ python3.11 -m rolesim run --roles role1 role2 --scene test1 --mode profile_only 
 | `scenes/` | 剧情文件，一个剧情一个文件（`test1.json`–`test3.json`） |
 | `library/skills/` | 人格 skill 库（兼容 Agent Skills 规范的 `SKILL.md`） |
 | `data/` | 两份心理学库原文（`sources/`）、章节索引（`catalog.json`）、与心理学组和环境组的接口合同（`sources/contracts/`）、心理学组 v1 接口文件与三个心理流程 skill（`sources/psychology_v1/`）、由它生成的登记表（`registry.json`） |
-| `docs/` | 框架说明 |
-| `plan/` | 计划与进度 |
+| `docs/` | 框架说明（已实现的部分） |
+| `plan/` | 还没完成的计划与待定问题 |
 | `tests/` | 测试 |
 | `scripts/` | `bootstrap_examples.py`：重建 `roles/` 与 `scenes/` 示例 |
 | `runs/`、`outputs/` | 运行结果与导出物，不进入 Git |

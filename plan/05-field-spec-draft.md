@@ -1,12 +1,11 @@
-# 接口与维护字段规格 v1（草案，待确认后冻结）
+# 字段规格草案（待确认后冻结）
 
-2026-11-07 起草。目的：把**对外接口、内部接口，以及每一类内容要维护哪些字段**一次写定，作为后续实现、心理学组审定和环境组对接的唯一依据。
+2026-11-07 起草，2026-11-10 整理：只保留**还没冻结**的部分，即每一类角色数据要维护哪些字段。确认后移入 `docs/`，此后字段的增删改按角色状态说明第十部分的兼容规则走版本号。
 
-- 来源：心理学组 v1 接口文件（[data/sources/psychology_v1/](../data/sources/psychology_v1/README.md)：构念登记、角色状态说明、状态变化规则、三个阶段 skill）和环境组接口说明（[Agent接口说明_环境组_2026-11-07.md](../data/sources/contracts/Agent接口说明_环境组_2026-11-07.md)）。对象划分和阶段流程见 [08](08-framework-oop-design.md)；本文只写**字段**和**接口**。
-- 心理学含义以构念登记为准，本文不新增心理构念。凡是心理学文件没写死、由工程侧补的结构，标 **〔工程〕**，需要心理学组确认。
-- 现状：对外接口已实现（`rolesim/agent/agent_api.py`）；本文第 3—6 节是目标结构，代码尚未按它重建。
+- 来源：心理学组 v1 接口文件（[data/sources/psychology_v1/](../data/sources/psychology_v1/README.md)）。心理学含义以构念登记为准，本文不新增心理构念。凡是心理学文件没写死、由工程侧补的结构，标 **〔工程〕**，需要心理学组确认（F1）。
+- 和代码的关系：动态状态与记忆的实际布局在 [`rolesim/state/slots.py`](../rolesim/state/slots.py)，字段名按本文第 2.4—2.5 节；稳定画像按构念 ID 组织（`role/profile.py`）。本文里比代码多出来的字段（例如 `AgentState` 的 `enable_config_id`、`phase`，第 1 节的部分元数据）是目标结构，**还没实现**。
+- 已经定下来、已实现的部分不在这里：对外接口的字段见 [docs/13-agent-interface.md](../docs/13-agent-interface.md)；过程对象（证据集、判断、三个阶段的产物、变化槽位、状态变化、提交结果）、日志和内部接口见 [docs/14-interfaces.md](../docs/14-interfaces.md)。原稿第 2、4、5、6 节（对外接口、过程对象、日志、内部接口）已删除：其中按"模型提议状态"写的部分在 C8 之后不再成立，其余已写进上面两份文档。原稿在 Git 历史里。
 - 证据层级：工程规格，不含任何心理有效性结论。
-- **先看 [10](10-interfaces.md)**：那里是关键接口清单；本文是这些接口所用数据类型的完整字段附录，其中照抄心理学文件的部分以后由脚本生成，不手工维护。
 
 ## 0. 记法
 
@@ -95,63 +94,9 @@ memory 条目使用同一套元数据。
 
 ---
 
-## 2. 对外接口（与环境组，已实现）
+## 2. 角色数据：维护字段
 
-### 2.1 `IRoleAgent.initialize(interaction_id, character_id, bootstrap) -> None`
-
-每个角色在一场互动开始时调用一次。
-
-**`CharacterBootstrap`**
-
-| 字段 | 取值 | 说明 / 我们怎么用 |
-|---|---|---|
-| `setting.place` | `text?` | 进情境背景 |
-| `setting.time_text` | `text?` | 进情境背景；场景时间的正式表示待环境组定 |
-| `trigger_facts` | `[text]` | 公共触发事实；作为场景公开信息 |
-| `name` | `text` | 提示里的称呼 |
-| `profile_summary` | `text` | 他者可见层的人物总结；**不覆盖** stable |
-| `core_goals` | `text?` | 本次互动的总体目标 → 入场 `d.goal.goals_now`（来源 `scene`）；不是 `s.core_goals.primary` |
-| `relationships` | `[text]` | 关系句 → 入场关系背景（推断出的 trust 等需审核） |
-| `history_memory` | `text?` | 互动前经历 → 入场 memory 条目（`channel = pre_entry`） |
-| `personality` | `{role_ref?: text, …}` | `role_ref` 选角色文件；其余键原样保存 |
-| `mechanism` | `{mode?: text, enable_config?: text, …}` | `mode` = 消融档位；`enable_config` = 启用配置（§3.3） |
-
-### 2.2 `IRoleAgent.act(interaction_id, character_id, context, request_id) -> AgentActionContent`
-
-**`CharacterTurnInput`**：`bootstrap = null`；`observations: [InteractionRecord]`（本角色看到过的全部记录，按发生顺序）；`present_characters: {id: {name}}`（含本人）。
-
-**`InteractionRecord`**
-
-| 字段 | 取值 | 说明 |
-|---|---|---|
-| `action_id` | `text` | 同一次复合行动拆出的记录共用 |
-| `turn_index` | `int ≥ 1` | 在接口 v2 下也是事件序列的时间轴 |
-| `order_index` | `int ≥ 0` | 本轮内顺序 |
-| `actor` | `{actor_id, name}` | 环境为 `{"environment", "环境"}` |
-| `kind` | `enum{thought, speech, action}` | |
-| `content` | `text` | |
-| `recipients` | `{id: {name}}` | 明确接收者；也作为受众 / 公开程度的依据 |
-
-**`AgentActionContent`**：`thought?`、`speech?`、`action?` 各为 `{content: text, recipient_ids: [id]?}`，至少一项非空；`order` 恰好列出非空项。`recipient_ids = null` 表示全体在场者；我们的思考固定为 `[本人]`。不返回认知、编号、状态。
-
-### 2.3 `IEnvironment.act(interaction_id, context, request_id) -> AgentActionContent`
-
-`EnvironmentActorView`：`setting`、`story_background`、`trigger_facts`、`present_characters`、`environment_directive`。输出同 2.2。环境组实现，本仓库只有替身。
-
-### 2.4 双方各自维护什么
-
-| 内容 | 环境组 | 我们 |
-|---|---|---|
-| 导演调度、在场范围、行动校验、接收范围、记录生成 | ✔ | |
-| 每个角色的观察记录 | ✔ | 只读 |
-| stable / dynamic / memory、StateDelta、mechanism_log、thought、版本号 | | ✔ 按 `interaction_id` 落盘 |
-| 场景时间、时间推进 | ✔（待定形式） | 只读 |
-
----
-
-## 3. 角色数据：维护字段
-
-### 3.1 `AgentState`（每次提交一个，不可变）
+### 2.1 `AgentState`（每次提交一个，不可变）
 
 | 字段 | 取值 | 维护方 | 说明 |
 |---|---|---|---|
@@ -165,9 +110,9 @@ memory 条目使用同一套元数据。
 | `memory` | 3.5 | memory_update | |
 | `phase` | `{event_id, phase_no}` | 提交 | 产生本快照的事件阶段 |
 
-`thought`、`mechanism_log` 不放在这里，作为轨迹日志另存（第 5 节）。
+思考和阶段记录不放在这里，作为轨迹日志另存（`trace/<互动>/<角色>/`，见 docs/14 第 1.2 节）。
 
-### 3.2 `StableProfile`（不可变快照）
+### 2.2 `StableProfile`（不可变快照）
 
 外层：`snapshot_id`、`previous_snapshot_id?`、`revision_ref?`（由哪条审核通过的修订生成）、`assembled_at`、`assembly_order`、`derived_computed_at`。下列每个模块都带 1.1 的元数据，维护方均为"装配"（派生项为"派生"），轨迹内只读，改变只能"审核"。
 
@@ -283,7 +228,7 @@ memory 条目使用同一套元数据。
 | | `tone`、`verbosity`、`politeness`、`directness`、`pace`、`volume`、`formality`、`narrative_preference`、`lexicon` | `text` 或 `z` 〔工程：取值形式待确认〕 |
 | | `situational_changes` | `[{when: text, change: text}]` |
 
-### 3.3 `EnableConfig`（每条轨迹一份，轨迹内不变）
+### 2.3 `EnableConfig`（每条轨迹一份，轨迹内不变）
 
 | 字段 | 取值 | 说明 |
 |---|---|---|
@@ -293,7 +238,7 @@ memory 条目使用同一套元数据。
 | `decision_mechanisms` | 同上，按 `dm` | |
 | `personality_scheme` | `enum{P1, P2, P3}` | |
 
-### 3.4 `DynamicState`
+### 2.4 `DynamicState`
 
 > 2026-11-07：本节与 3.5 已落成 `rolesim/state/slots.py`（状态布局，由 `IStateStore` 使用）。与下表的差异：`d.policy.mechanism_preference_state` 改为按 `entry_id` 的条目，便于定位；`d.policy.action_commitment` 的阶段暂不收〔工程〕的“延误”“重新协商”（待 F1）；1.2 的逐字段元数据（source、confidence、last_updated_event、version）还没有放进状态，变化的来源与证据记在 `StateChange` 和提交历史里。
 
@@ -383,7 +328,7 @@ memory 条目使用同一套元数据。
 
 〔工程〕"延误""重新协商"两个承诺阶段来自长期演化 skill §3.5，角色状态说明的阶段表里没有，需心理学组确认是否加入。
 
-### 3.5 Memory
+### 2.5 Memory
 
 | 构念 | 字段 | 取值 | 维护方 |
 |---|---|---|---|
@@ -393,208 +338,7 @@ memory 条目使用同一套元数据。
 
 ---
 
-## 4. 过程对象：维护字段
-
-过程对象由阶段在一个事件阶段内生成，生成后只读，进 mechanism_log；后续阶段只能标"已被取代"，不能改原内容。
-
-### 4.1 `EventPhase`
-
-| 字段 | 取值 |
-|---|---|
-| `event_id` | 本阶段处理的记录组（同一 `action_id`）的编号 |
-| `phase_no` | `int` |
-| `kind` | `enum{new_cue, new_evidence, feedback, own_action_done, time_advance, rule_change}` |
-| `snapshot_id` | 本阶段唯一读取的快照 |
-| `stages_run` | `[enum{S1, S2, S3, decay}]` |
-
-### 4.2 `EvidenceSet`
-
-| 字段 | 取值 |
-|---|---|
-| `included` | `[EvidenceRef]` |
-| `excluded` | `[{event, reason}]`（只记编号与原因，不记内容） |
-| `attended` | `[ref:event]` |
-| `unattended` | `[{event, reason}]` |
-| `retrieved_memories` | `[ref:memory]` |
-
-### 4.3 `Judgment`（决策过程的输出，无写权限）
-
-| 字段 | 取值 |
-|---|---|
-| `dm` | 决策过程 |
-| `option` | `opt(dm)?` |
-| `inputs` | `{construct_id: 摘要}` |
-| `output` | 本过程的中间判断（结构随过程而定，见机制卡） |
-| `evidence` | `[EvidenceRef]` |
-| `dominant_mode` / `amplified_bias` / `correction_chance` | `text?`（组合规则：只记一个主导模式、被放大的偏差和一个主要校正机会） |
-| `handed_to` | `[算子名]` |
-
-### 4.4 `SituationInterpretation`（S1 事件建模）
-
-| 字段 | 取值 |
-|---|---|
-| `evidence` | `EvidenceSet` |
-| `tom` | `{ceiling, available: int, downgrade_reason?}` |
-| `situation_definition` | `{definition: text, others_definitions: [{who, definition}], consistent: bool?}` |
-| `norm_violation` | `{norm: text, level: enum{失礼, 越界, 道德违背, 制度违约, 法律违背}?, violated: bool?}` |
-| `primary_appraisal` | `[{goal: ref, relevance: u, congruent: bool?, type: enum{无关, 积极, 损失, 威胁, 挑战, 收益}, horizon: enum{短期, 长期}}]` |
-| `secondary_appraisal` | `{control: u, resources: [text], support: [text], time_window: text, changeable: bool?, face_identity: text?}` |
-| `event_grade` | `{维度: grade}`，与参考等级相差不超过一级，否则标软异常 |
-| `attribution` | 同 `d.cognition.attribution` 的结构，自他分开 |
-| `hypotheses` | `[Hypothesis]`，1—3 个 |
-| `judgment_state` | `enum{settled, multiple, suspended}` |
-| `mentalizing_mode` | `enum{自动, 反思, 过度心智化, 心智化不足, 暂停判断}` |
-| `information_needs` | `[{what, from: ref:role?, to_discriminate: [hypothesis_id]}]` |
-| `action_cues` | `[enum{接近, 回避, 对抗, 暂停, 求助, 谈判}]` |
-| `relation_signals`、`commitment_signals` | `[{about: ref:role, event, meaning: text, depends_on: [hypothesis_id]}]`（交给 S3） |
-
-**`Hypothesis`**：`{hypothesis_id, about: ref:role, kind: enum{goal, belief, intention, ability, constraint, emotion}, content, order: int ≤ tom.available, confidence: u?, supports: [EvidenceRef], counters: [EvidenceRef], alternatives: [text], discriminating_info: text, exclusive_with: [hypothesis_id], compatible_with: [hypothesis_id], superseded_by?}`
-
-### 4.5 `ActionPlan`（S2 行动计划）
-
-| 字段 | 取值 |
-|---|---|
-| `situation_ref` | 所依据的 `SituationInterpretation` |
-| `frame` | `{serves: [ref:goal], core_goals: [ref], affected: [ref:role], horizon: enum{即时, 本阶段, 长期}, public: bool, audience: [ref:role], reversible: bool, unacceptable_risks: [text], active_identity: text}` |
-| `interaction_structure` | `{type: enum{协调, 互补合作, 竞争, 讨价还价, 重复互动, 不完全信息}, confidence: u, alternative?: 同 enum}` |
-| `choice_rule` | `{rule: opt(dm.choice.choice_rule), path: enum{habit, goal_directed}}` |
-| `candidates` | `[CandidateAction]`，含被筛掉的 |
-| `chosen` / `fallbacks` | `candidate_id` / `[candidate_id]` |
-| `rejected_costs` | `{candidate_id: text}` |
-| `per_hypothesis_prediction` | `{hypothesis_id: {candidate_id: text}}` |
-| `value_conflict` | `{values: [text], priority: [text], floor: text, compensation: text}?` |
-| `mechanism_votes` | `[{dm, supports: [candidate_id], opposes: [candidate_id]}]` |
-| `sampling` | `{weights: {candidate_id: u}, reason: text}?`（只在受限随机时） |
-| `switch_conditions` | `[{signal: text, then: candidate_id}]`，可观察信号 |
-| `expected_outcomes`、`watch_signals` | `[text]`（预测，不是结果） |
-| `commitment` | `{decision: enum{none, form, keep, adjust, pause, withdraw}, content, to, deadline?, verification?, public: bool, reason}` |
-| `expression` | `{goal: text, audience: [ref:role], directness: text, face_strategy: opt(dm.comm.politeness_face)?, baseline_adjustment: text, said_or_done: text, visible_to_others: text}` |
-
-**`CandidateAction`**：`{candidate_id, type: enum{直接行动, 澄清搜集, 合作求助, 有限试探, 拒绝设界, 等待降温, 转交第三方, 退出}, target: [ref:role], timing, manner, resources: text, sequence?: [步骤], expected: text, feasible: bool, blocked_by: enum{安全, 法律制度, 能力, 资源, 角色权限, 明确承诺, 个人边界, 依赖不可见信息}?, consequences: {目标进展, 关系依赖, 规范声誉, 身份一致, 情绪面子, 资源成本, 信息价值, 未来选择空间, 升级风险, 下一事件影响: text}}`
-
-### 4.6 `EvolutionResult`（S3 长期演化）
-
-| 字段 | 取值 |
-|---|---|
-| `plan_ref`、`feedback_situation_ref` | 对照的行动计划、反馈阶段的情境解释 |
-| `expected_vs_actual` | `[{dimension, expected, actual, deviation: text}]`（分维度，不压成成败） |
-| `change_layers` | `{事件层, 关系记忆层, 策略自我层, 基线层: {involved: bool, evidence_strength: text}}` |
-| `learning_attribution` | `{self_strategy: u, other: u, situation: u, reason}` |
-| `commitment_rulings` | `[{commitment_id, stage, basis: [EvidenceRef]}]` |
-| `relation_course` | `{对象: {course: enum{恢复信任, 观察期, 有条件修复, 暂缓信任, 低强度关系, 暂时距离, 退出}, repair_conditions: [text], verify_conditions: [text]}}` |
-| `feedback_acceptance` | `enum{采纳, 部分采纳, 质疑, 拒绝, 反击, 转移责任}?` |
-| `generalization` | `[{belief_ref, level: enum{对象, 群体, 一般}}]` |
-| `threshold_check` | `{evidence, consistency, integration, scope: {met: bool, note}, alternatives: [text]}?`（只在长期发展轨迹） |
-| `stable_revision_candidates` | `[StableRevisionCandidate]` |
-| `carry_forward` | `[text]`：下次应观察的证据 |
-
-### 4.7 `StateChange`（StateDelta 的一条）
-
-| 字段 | 取值 | 说明 |
-|---|---|---|
-| `construct_id` | `text` | |
-| `key` | `[text]` | 定位：对象、belief_id、dm 等 |
-| `field` | `text` | 构念内的字段 |
-| `before` / `after` | 任意 | `before` 必须等于快照值 |
-| `evidence` | `[EvidenceRef]` | 非空 |
-| `update_operator` | 11 个之一 | |
-| `decision_mechanisms` | `[dm]` | 实际参与的决策过程 |
-| `stage` | `enum{S1, S2, S3, decay}` | 须在 08 §7.2 的权限内 |
-| `event_grade` | `grade?` | |
-| `band` | `enum{微小, 小, 中, 大, 扩展}?` | 类别型构念为 null |
-| `band_range` | `[u, u]?` | 程序给出的合法区间 |
-| `modulators` | `{grade, evidence_quality, situation, sensitivity, mechanism: text}` | 五类调节因素 |
-| `group` | `enum{情绪自我关系群体, 目标承诺策略, 记忆, 衰减}` | 依赖组 |
-| `reason` | `text` | 只给人读 |
-| `flag` | `{kind: enum{soft_violation, exception_approved}, detail}?` | |
-
-### 4.8 `CommitResult`
-
-| 字段 | 取值 |
-|---|---|
-| `commit_key` | `(interaction_id, character_id, event_id, phase_no, commit_no)`，重试幂等 |
-| `input_state_id` / `output_state_id` | `text` |
-| `accepted` | `[change_index]` |
-| `rejected` | `[{change_index, group, error: enum{结构, 越界, 证据空或不可见, 未登记算子, 越出白名单, 越出阶段权限, 写stable, 写非active, before不一致, 删除事实, 含对方真值, ToM超限, 冲突无法裁决}}]` |
-| `soft_flags` | `[{change_index, kind, params}]` |
-| `deduplicated` | `[change_index]` |
-
-### 4.9 `StableRevisionCandidate`
-
-| 字段 | 取值 |
-|---|---|
-| `target` | `construct_id` |
-| `kind` | `enum{新增, 删除, 降级, 重新排序, 替换, 合并, 分裂, 重新标定}` |
-| `before` / `after` | |
-| `evidence` | `[ref:event]`；`independent_evidence: int` |
-| `window` | `{start, end}` |
-| `self_commitment` | `bool` |
-| `reason`、`scope`、`reversibility` | `text` |
-| `confidence` | `u` |
-| `review` | `{status: enum{pending, approved, rejected}, reviewer?, note?, compatibility?, reevaluation_required: bool}` |
-
----
-
-## 5. 日志：维护字段
-
-### 5.1 `mechanism_log`（每个角色每个事件阶段一条）
-
-| 字段 | 取值 |
-|---|---|
-| `interaction_id`、`character_id`、`event_id`、`phase_no` | |
-| `versions` | 四类版本号 |
-| `input_state_id`、`output_state_id` | |
-| `evidence_set` | `EvidenceSet` |
-| `mechanisms` | `[Judgment]` |
-| `products` | `{S1: SituationInterpretation?, S2: ActionPlan?, S3: EvolutionResult?}` |
-| `operators_called` | `[算子名]` |
-| `changes` | `{candidates: [StateChange], commit: CommitResult}` |
-| `stable_revision_candidates` | `[StableRevisionCandidate]` |
-| `model_calls` | `[{stage, request_ref, response_ref}]`（指向 thought） |
-
-日志没有写权限；理由必须在行动发出前写定（回放一致性）。
-
-### 5.2 `thought`
-
-| 字段 | 取值 |
-|---|---|
-| `call_id`、`stage`、`event_id` | |
-| `input` | 发给模型的完整输入 |
-| `output_raw` | 模型原始输出 |
-| `reasoning` | 思考模式下的推理文本 |
-
-thought 不是心理事实，不可作证据。记录档位为"研究档"：保存全部内容。
-
-### 5.3 轨迹目录（按 `interaction_id`）
-
-`manifest.json`（版本、启用配置、档位、代码版本、模型）、`records.jsonl`（环境组给的记录副本）、`roles/<character_id>/states.jsonl`（AgentState 链）、`deltas.jsonl`、`mechanism_log.jsonl`、`thought.jsonl`、`review_queue.jsonl`（needs_review、软异常、修订候选，交心理学组）。
-
----
-
-## 6. 内部接口
-
-每个接口写明输入、输出、能写什么、出错怎么办。所有"写"都只能经 `CommitEngine`。
-
-| 接口 | 输入 | 输出 | 写权限 | 出错 |
-|---|---|---|---|---|
-| `ProfileCompiler.assemble(profile_text_or_json)` | 档案 | `StableProfile` + 入场 `dynamic` / `memory` + 审核清单 | 只在装配时 | 缺证据写 unknown，不补值；结构错拒绝 |
-| `EvidenceGate.build(phase, records, state)` | 事件阶段、未吸收记录、快照 | `EvidenceSet` | 无 | 不可见内容直接排除并记排除清单 |
-| `StateStore.snapshot / get / stable` | 路由键 / state_id / snapshot_id | 只读对象 | 无 | |
-| `MechanismRunner.run(dm, ctx)` | `StageContext` | `Judgment` | 无 | 选项不在登记表内即拒绝 |
-| `Stage.run(ctx)`（S1 / S2 / S3） | `StageContext = {phase, stable, state, evidence, upstream, scene, registries}` | 产物（4.4 / 4.5 / 4.6）+ `[StateChange]` + 日志片段 | 无（只提候选） | 模型输出不合 schema 即整阶段失败，状态不前进 |
-| `UpdateOperator.propose(ctx, judgments)` | 上下文 + 判断 | `[StateChange]` | 无（只提候选） | 越出白名单 / 阶段权限 → 硬错 |
-| `MagnitudeResolver.band(construct, grade, evidence, stable, situation)` | | `band` + `band_range` | 无 | |
-| `CommitEngine.commit(phase, changes)` | 候选 | `CommitResult` + 新 `AgentState` | 唯一写入口 | 依赖组整组拒绝；其他组照常 |
-| `DecayRecovery.run(phase, Δt, ctx)` | 时间推进 | `[StateChange]` | 无 | 无时间事件时不运行 |
-| `Projector.self_view / other_visible / prompt_view(stage)` | 状态 + 画像 | 视图 | 无 | |
-| `ModelBackend.call(stage, payload, schema)` | 提示视图 + 输出 schema | 结构化结果 + thought | 无 | 失败即停，不回退 mock |
-| `PhaseOrchestrator.on_initialize / on_act` | 对外接口的输入（第 2 节） | 对外接口的输出 | 经 CommitEngine | 抛异常，不返回半成品 |
-
-**模型调用的输出 schema**：S1 返回 4.4 中除 `evidence`、`tom.ceiling` 以外的字段；S2 返回 4.5；S3 返回 4.6；每个阶段同时返回 `[{construct_id, key, field, after, band 内取值理由}]` 形式的变化提议，由算子补齐 `before`、`band_range`、元数据后成为 `StateChange`。程序负责的字段（证据集、ToM 上限、区间、档位、版本）不让模型填。
-
----
-
-## 7. 需要确认的地方
+## 3. 需要确认的地方
 
 | # | 内容 | 谁确认 |
 |---|---|---|
@@ -604,4 +348,4 @@ thought 不是心理事实，不可作证据。记录档位为"研究档"：保�
 | F4 | 场景结构（规范、群体、制度权力）是否会以字段形式提供；不提供则 group / power 的客观部分由 S1 从文字推断或标 unknown | 环境组 |
 | F5 | 第一版启用哪些模块与决策过程（`EnableConfig` 默认值） | 我们 + 心理学组 |
 
-确认后把本文标为"v1 冻结"，此后字段的增删改按角色状态说明第十部分的兼容规则走版本号。
+F1、F2、F5 的讨论见 [02](02-psychology-questions.md)，F3、F4 见 [03](03-environment-and-time.md)。确认后把本文移入 `docs/` 并标为"v1 冻结"。

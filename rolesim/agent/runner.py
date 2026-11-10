@@ -1,4 +1,4 @@
-"""ITurnRunner (plan/10 §1.1): one act of one role, through the three stages and the store.
+"""ITurnRunner (docs/14 §1.1): one act of one role, through the three stages and the store.
 
 run(key, new_records, present):
   1. New records are grouped by action_id, in order. Each group is one event phase:

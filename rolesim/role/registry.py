@@ -1,4 +1,4 @@
-"""IRegistry (plan/10 §2.2): the psychology group's v1 definitions as read-only data.
+"""IRegistry (docs/14 §2.2): the psychology group's v1 definitions as read-only data.
 
 `build_registry(source_dir)` reads the three v1 interface files and the three stage skills in
 data/sources/psychology_v1/ and returns plain JSON data; `python3 -m rolesim registry` writes it
