@@ -1,5 +1,7 @@
 # RoleSimulationFramework
 
+> **2026-11-12 起冻结。** 本仓库不再开发，作为参考实现和对照基线保留（冻结点：tag `freeze-2026-11-12`）。角色模拟改为在 Rise 里作为一个新模块从零搭建；登记表、状态引擎（`rolesim/state/`）、档案编译器等不依赖记录格式的部分会搬过去，其余按 Rise 的接口重写。
+
 把心理学整理的心智建模库与决策机制库，转译为**可审阅的人物档案、分阶段的心理过程、带证据的状态更新与角色行动**。
 
 这是研究原型 v0.1。已提供：从心理学组 v1 文件生成的登记表、带来源类型与待审核项的档案编译、环境组接口 v2 后面的分阶段管线（S1 事件建模 / S2 行动计划 / S3 长期演化 → 状态存储 → 表达）、只经登记表授权的算子并在幅度档内写入的状态、自知层与按需可见的提示隔离、2–6 个角色基于背景自主行动的本地运行器与规则驱动的环境 agent、轨迹记录、自动审计、盲化评审包与模型接口。**尚未证明对真人行为的预测有效性**，也不是 PersonaForge 的复现或改进结果；当前所有验证只到"本地工程检查"这一层。
@@ -67,6 +69,7 @@ python3.11 -m rolesim run --roles role1 role2 --scene test1 --mode profile_only 
 |---|---|
 | [docs/06-runtime-flow.md](docs/06-runtime-flow.md) | 整体运行流程：从命令到落盘，调用链与参数传递 |
 | [docs/07-architecture.md](docs/07-architecture.md) | 当前架构：总体结构、代码地图、隔离与校验、还空着的 |
+| [docs/17-data-fields.md](docs/17-data-fields.md) | 数据与字段：输入文件、稳定画像、动态状态（45 个构念逐个列字段）、过程对象、对外记录、运行目录各保存什么 |
 | [docs/14-interfaces.md](docs/14-interfaces.md) | 关键接口：4 个顶层接口及子接口的签名、类型、保证、出错方式，模型与 harness 的分工（C8），实现一览 |
 | [docs/08-modules.md](docs/08-modules.md) | 四个顶层接口与模块的对应、人格方案、模块间的硬边界 |
 | [docs/13-agent-interface.md](docs/13-agent-interface.md) | 对外接口（环境组接口 v2）、`StagedRoleAgent`、智能体属性、本地参考运行器 |

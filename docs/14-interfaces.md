@@ -3,7 +3,7 @@
 框架面向接口组织：**4 个顶层接口，每个下面 2—4 个子接口**。实现可以替换，接口不变。本文给出每个接口的签名、关键类型、前置条件、保证和出错方式，以及现在由谁实现。
 
 - 代码形式：[`rolesim/interfaces.py`](../rolesim/interfaces.py)（Protocol + 不可变数据类型），测试 `tests/test_interfaces.py`。本文与代码不一致时，以本文为准修改代码。
-- 字段细节：状态布局以 [`rolesim/state/slots.py`](../rolesim/state/slots.py) 为准；完整的字段规格草案（待心理学组确认后冻结）在 [plan/05](../plan/05-field-spec-draft.md)。
+- 字段细节：每类数据保存什么、具体字段见 [17-data-fields.md](17-data-fields.md)；状态布局以 [`rolesim/state/slots.py`](../rolesim/state/slots.py) 为准；完整的字段规格草案（待心理学组确认后冻结）在 [plan/05](../plan/05-field-spec-draft.md)。
 - 设计依据：设计约束 C1—C8 见 [01-design.md](01-design.md) 第 2 节。接口是怎么演变到现在这样的，见 [16-history.md](16-history.md)。
 - 还没实现、正在计划的部分在 [plan/01](../plan/01-engineering-backlog.md)。
 
